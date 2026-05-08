@@ -1,0 +1,11 @@
+streamlit
+pandas
+gspread
+oauth2client
+requests
+playwright
+google-generativeai
+tabulate
+python-dotenv
+psycopg2-binary
+curl_cffi==0.5.9
