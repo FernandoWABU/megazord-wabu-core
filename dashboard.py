@@ -656,7 +656,7 @@ if st.session_state.modo_operativo == "📊 Dashboard Operativo":
         with c1:
             if not ES_SOLO_VISTA:
                 if st.button("🚀 Forzar Barrido Ahora", use_container_width=True, type="primary"):
-                    url = "https://api.github.com/repos/FernandoWABU/bot-liverpool/actions/workflows/main.yml/dispatches"
+                    url = "https://api.github.com/repos/FernandoWABU/megazord-wabu-core/actions/workflows/main.yml/dispatches"
                     headers = {
                         "Accept": "application/vnd.github.v3+json",
                         "Authorization": f"Bearer {st.secrets['GITHUB_PAT']}", 
