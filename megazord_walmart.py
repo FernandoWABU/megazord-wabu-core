@@ -24,12 +24,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ==========================================
-# FUNCIONES DE ENMASCARAMIENTO (SEGURIDAD)
+# FUNCIONES DE ENMASCARAMIENTO (LOGS PÚBLICOS SOLO)
 # ==========================================
 def enmascarar_sku(sku_real):
     """
     Convierte SKU real en hash para logs públicos.
     Ejemplo: SKU12345 -> SKU_a1b2c3
+    
+    NOTA: Esto se usa SOLO en logger.info() para GitHub Actions.
+    Para Telegram (privado), usamos el SKU real.
     """
     hash_sku = hashlib.md5(sku_real.encode()).hexdigest()[:6].upper()
     return f"SKU_{hash_sku}"
@@ -37,12 +40,13 @@ def enmascarar_sku(sku_real):
 def enmascarar_vendedor(nombre_vendedor):
     """
     Enmascarar nombres de vendedores en logs públicos.
-    No exponemos identidades de competidores.
+    
+    NOTA: Esto se usa SOLO en logger.info() para GitHub Actions.
+    Para Telegram (privado), usamos el nombre real.
     """
     if not nombre_vendedor or nombre_vendedor == "Desconocido":
         return "Desconocido"
     
-    # Leer nombre de marca propia desde environment
     marca_propia = os.getenv("PROPIA_BRAND_NAME", "WABU").upper()
     
     if marca_propia in str(nombre_vendedor).upper():
@@ -53,24 +57,22 @@ def enmascarar_vendedor(nombre_vendedor):
         return "RIVAL"
 
 # ==========================================
-# ARMERÍA DE MERCENARIOS (Blindaje Activado)
+# ARMERÍA DE MERCENARIOS
 # ==========================================
-# Leemos las llaves directamente de los secretos de GitHub
 credenciales_crudas = [
     os.getenv("SCRAPERAPI_KEY_1", "").strip(),
     os.getenv("SCRAPERAPI_KEY_2", "").strip(),
     os.getenv("SCRAPERAPI_KEY_3", "").strip(),
 ]
 
-# Filtramos por si alguna llave está vacía
 EXTERNAL_API_CREDENTIALS = [cred for cred in credenciales_crudas if cred]
 CREDENTIAL_ROTATION_INDEX = 0
 
 # ==========================================
-# RADIO TELEGRAM
+# RADIO TELEGRAM (DATOS REALES)
 # ==========================================
 def enviar_mensaje_telegram(mensaje):
-    """Envía un reporte a tu celular vía Telegram"""
+    """Envía un reporte a tu celular vía Telegram CON DATOS REALES"""
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_WMT") 
     
@@ -233,7 +235,7 @@ def espiar_ofertas_walmart(url_producto):
                     return 0.0, [], "Corrupto"
                 
                 # ==========================================
-                # PARSEO DE PRECIOS (Sin exponer en logs)
+                # PARSEO DE PRECIOS
                 # ==========================================
                 precio_actual = 0.0
                 ganador = "Desconocido"
@@ -246,7 +248,7 @@ def espiar_ofertas_walmart(url_producto):
                 if match_precio:
                     precio_actual = float(match_precio.group(1))
 
-                # Buscar vendedor (SIN EXPONER)
+                # Buscar vendedor (nombre real para Telegram)
                 match_vendedor = re.search(r'"sellerName":\s*"([^"]+)"', res.text) or \
                                  re.search(r'Vendido y enviado por\s*([^<]+)', res.text)
                 if match_vendedor:
@@ -321,7 +323,7 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
             min_wmt = limpiar_precio(row.get('minimo_wmt', 0))
             max_wmt = limpiar_precio(row.get('maximo_wmt', 0))
             
-            # ✅ ENMASCARAR SKU EN LOGS
+            # ✅ PARA LOGS: usar SKU enmascarado
             sku_display = enmascarar_sku(sku_wmt)
             logger.info(f"🔍 Evaluando: {sku_display}")
             
@@ -338,8 +340,8 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
                 logger.info(f"   ⏭️ Sin stock. Desactivando automáticamente...")
                 try:
                     hoja_walmart.update_cell(index + 2, 10, "INACTIVO")
-                    # ✅ ENMASCARAR EN TELEGRAM
-                    enviar_mensaje_telegram(f"🚨 *Alerta de Inventario*\nProducto {sku_display} sin stock. Desactivado automáticamente.")
+                    # ✅ TELEGRAM RECIBE DATOS REALES
+                    enviar_mensaje_telegram(f"🚨 *Sin Stock*\nProducto: {sku_wmt}\nAcción: Desactivado automáticamente")
                 except Exception as e:
                     logger.warning(f"Error al desactivar SKU")
                 continue
@@ -347,7 +349,7 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
             # --- 2. ESPIONAJE DE PRECIOS ---
             precio_bb, rivales, ganador = espiar_ofertas_walmart(url_wmt)
             
-            # ✅ ENMASCARAR VENDEDOR
+            # ✅ PARA LOGS: usar vendedor enmascarado
             ganador_enmascarado = enmascarar_vendedor(ganador)
             logger.info(f"   👑 BuyBox: ${precio_bb} (Vendedor: {ganador_enmascarado})")
             
@@ -361,12 +363,22 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
                     if nuevo_precio >= min_wmt:
                         logger.info(f"   ⚔️ Ajuste de precio ejecutado")
                         actualizar_precio_walmart(token, creds_b64, sku_wmt, nuevo_precio)
-                        # ✅ ANONIMIZAR TELEGRAM
-                        enviar_mensaje_telegram(f"📊 *Actualización de Precio*\nProducto {sku_display} actualizado correctamente.")
+                        # ✅ TELEGRAM CON DATOS REALES
+                        enviar_mensaje_telegram(
+                            f"⚔️ *Ataque de Precio*\n"
+                            f"SKU: {sku_wmt}\n"
+                            f"Precio BuyBox: ${precio_bb}\n"
+                            f"Nuevo Precio: ${nuevo_precio}\n"
+                            f"Vendedor: {ganador}"
+                        )
                     else:
                         logger.info(f"   ⚠️ Aterrizando en límite mínimo")
                         actualizar_precio_walmart(token, creds_b64, sku_wmt, min_wmt)
-                        enviar_mensaje_telegram(f"📊 *Actualización de Precio*\nProducto {sku_display} actualizado correctamente.")
+                        enviar_mensaje_telegram(
+                            f"⚠️ *Límite Mínimo*\n"
+                            f"SKU: {sku_wmt}\n"
+                            f"Precio: ${min_wmt}"
+                        )
                 else:
                     # Táctica 2: Emboscada
                     precio_emboscada = None
@@ -383,12 +395,21 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
                             
                         logger.info(f"   🥷 Ajuste estratégico ejecutado")
                         actualizar_precio_walmart(token, creds_b64, sku_wmt, nuevo_precio)
-                        enviar_mensaje_telegram(f"📊 *Actualización de Precio*\nProducto {sku_display} actualizado correctamente.")
+                        enviar_mensaje_telegram(
+                            f"🥷 *Emboscada*\n"
+                            f"SKU: {sku_wmt}\n"
+                            f"Precio Rival: ${precio_emboscada}\n"
+                            f"Nuevo Precio: ${nuevo_precio}"
+                        )
                     else:
                         nuevo_precio = float(int(max_wmt)) + 0.09 if max_wmt > 0 else float(int(min_wmt)) + 0.09
                         logger.info(f"   🛡️ Ajuste defensivo ejecutado")
                         actualizar_precio_walmart(token, creds_b64, sku_wmt, nuevo_precio)
-                        enviar_mensaje_telegram(f"📊 *Actualización de Precio*\nProducto {sku_display} actualizado correctamente.")
+                        enviar_mensaje_telegram(
+                            f"🛡️ *Espera Alta*\n"
+                            f"SKU: {sku_wmt}\n"
+                            f"Nuevo Precio: ${nuevo_precio}"
+                        )
                         
             elif "NOSOTROS" in ganador_enmascarado:
                 # Táctica 3: Optimización (ya ganamos)
@@ -406,7 +427,12 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
                     if nuevo_precio > precio_bb:
                         logger.info(f"   🚀 Optimización de margen ejecutada")
                         actualizar_precio_walmart(token, creds_b64, sku_wmt, nuevo_precio)
-                        enviar_mensaje_telegram(f"📊 *Actualización de Precio*\nProducto {sku_display} actualizado correctamente.")
+                        enviar_mensaje_telegram(
+                            f"🚀 *Optimización de Margen*\n"
+                            f"SKU: {sku_wmt}\n"
+                            f"Precio Anterior: ${precio_bb}\n"
+                            f"Nuevo Precio: ${nuevo_precio}"
+                        )
                     else:
                         logger.info("   ✅ Margen ya optimizado")
                 else:
