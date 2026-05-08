@@ -9,3 +9,4 @@ tabulate
 python-dotenv
 psycopg2-binary
 curl_cffi==0.5.9
+cryptography
