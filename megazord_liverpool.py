@@ -434,8 +434,8 @@ def obtener_info_rivales(liverpool_sku):
         logger.warning(f"Error obteniendo rivales para {liverpool_sku}: {e}")
     return []
 
-def disparar_precio(token, offer_id, stock, base_price, nuevo_precio):
-    """Actualiza precio y cantidad de una oferta."""
+def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notificacion=""):
+    """Actualiza precio y cantidad de una oferta y avisa por Telegram."""
     url = "https://pro-api.liverpool.com.mx/api/offermanagement/offers/price-quantity"
     headers = {
         "Authorization": f"Bearer {token}",
@@ -449,7 +449,7 @@ def disparar_precio(token, offer_id, stock, base_price, nuevo_precio):
         "offerPriceManagement": [{
             "discountPrice": float(nuevo_precio),
             "updatedAt": datetime.now(timezone.utc).isoformat(),
-            "userModified": GMAIL_USER,
+            "userModified": os.getenv("LIVERPOOL_USER", "Bot"),
             "index": 0
         }]
     }]
@@ -459,6 +459,8 @@ def disparar_precio(token, offer_id, stock, base_price, nuevo_precio):
         response = session.put(url, headers=headers, json=payload, timeout=30)
         if response.status_code in [200, 204]:
             logger.info(f"Precio actualizado: ${nuevo_precio}")
+            # 🟢 NUEVO: El Megáfono de Telegram
+            enviar_telegram(f"🔫 *FRANCOTIRADOR LIVERPOOL*\n🎯 Se actualizó un precio a: *${nuevo_precio}*")
             return True
         else:
             logger.warning(f"Error al actualizar precio: {response.status_code}")
