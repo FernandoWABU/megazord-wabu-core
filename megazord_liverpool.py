@@ -6,10 +6,11 @@ import logging
 import sys
 import gc
 import threading
+import hashlib
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from cryptography.fernet import Fernet
+
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -18,10 +19,35 @@ import pandas as pd
 from oauth2client.service_account import ServiceAccountCredentials
 from playwright.sync_api import sync_playwright
 from dotenv import load_dotenv
+from cryptography.fernet import Fernet
 import json
-import random
 import psycopg2
+
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+# ==========================================
+# FUNCIONES DE ENMASCARAMIENTO (LOGS PÚBLICOS)
+# ==========================================
+def enmascarar_sku(sku_real):
+    """Convierte SKU real en hash para logs públicos de GitHub."""
+    hash_sku = hashlib.md5(str(sku_real).encode()).hexdigest()[:6].upper()
+    return f"SKU_{hash_sku}"
+
+def enmascarar_vendedor(nombre_vendedor):
+    """Protege identidades de competidores en logs públicos."""
+    if not nombre_vendedor or nombre_vendedor == "Desconocido":
+        return "Desconocido"
+    marca_propia = os.getenv("PROPIA_BRAND_NAME", "WABU").upper()
+    if marca_propia in str(nombre_vendedor).upper():
+        return "NOSOTROS"
+    return "RIVAL"
+
+def enmascarar_precio(precio_real):
+    """Oculta precios exactos en la consola de GitHub Actions."""
+    try:
+        return f"${int(float(precio_real))}.XX"
+    except:
+        return "$X.XX"
 
 # ==========================================
 # OPERACIÓN GAFETE VIP (MANEJO DE COOKIES ENCRIPTADAS)
@@ -37,49 +63,35 @@ def cargar_gafete_vip(gc_client, context):
     try:
         cipher = obtener_cipher()
         if not cipher: return False
-        
         spreadsheet = gc_client.open_by_key(GOOGLE_SHEET_ID)
         hoja_boveda = spreadsheet.worksheet('Boveda_VIP')
         registros = hoja_boveda.get_all_records()
-        
         for fila in registros:
             if fila.get('Tienda') == 'Liverpool' and fila.get('Cookies'):
-                # 🔓 Desencriptamos el texto incomprensible del Excel
-                datos_encriptados = fila['Cookies']
-                datos_desencriptados = cipher.decrypt(datos_encriptados.encode()).decode()
-                cookies_json = json.loads(datos_desencriptados)
-                
-                context.add_cookies(cookies_json)
-                logger.info("🍪 ¡Gafete VIP Encriptado cargado! Intentando saltar la aduana...")
+                datos_desencriptados = cipher.decrypt(fila['Cookies'].encode()).decode()
+                context.add_cookies(json.loads(datos_desencriptados))
+                logger.info("🍪 ¡Gafete VIP encriptado cargado exitosamente!")
                 return True
         return False
     except Exception as e:
-        logger.warning(f"⚠️ No se encontró la Bóveda VIP o la llave cambió: {e}")
+        logger.warning(f"⚠️ Aduana cerrada (Gafete caducado o sin llave): {e}")
         return False
 
 def guardar_gafete_vip(gc_client, context):
     try:
         cipher = obtener_cipher()
         if not cipher: return
-        
         spreadsheet = gc_client.open_by_key(GOOGLE_SHEET_ID)
         hoja_boveda = spreadsheet.worksheet('Boveda_VIP')
-        
-        cookies = context.cookies()
-        cookies_str = json.dumps(cookies)
-        # 🔐 Encriptamos las cookies reales antes de enviarlas al Excel
-        cookies_encriptadas = cipher.encrypt(cookies_str.encode()).decode()
-        
+        cookies_encriptadas = cipher.encrypt(json.dumps(context.cookies()).encode()).decode()
         celdas = hoja_boveda.findall('Liverpool')
         if celdas:
             hoja_boveda.update_cell(celdas[0].row, 2, cookies_encriptadas)
         else:
             hoja_boveda.append_row(['Liverpool', cookies_encriptadas])
-            
-        logger.info("🔐 ¡Éxito! Nuevo Gafete VIP blindado y guardado en la Bóveda.")
+        logger.info("🔐 ¡Nuevo Gafete VIP blindado y guardado en la Bóveda!")
     except Exception as e:
-        logger.error(f"❌ Error al guardar el Gafete VIP encriptado: {e}")
-
+        logger.error(f"❌ Error al guardar Gafete: {e}")
 
 # ==========================================
 # CONFIGURACIÓN DE LOGGING ESTRUCTURADO
@@ -88,13 +100,9 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s | %(levelname)-8s | %(funcName)-20s | %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('megazord.log', encoding='utf-8')
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
-
 # ==========================================
 # CONFIGURACIÓN DE RATE LIMITING
 # ==========================================
@@ -119,15 +127,8 @@ liverpool_rate_limiter = RateLimiter(calls_per_second=3)
 # CONFIGURACIÓN DE RETRY CON BACKOFF
 # ==========================================
 def crear_session_con_retry():
-    """Crea sesión requests con reintentos automáticos."""
     session = requests.Session()
-    retry_strategy = Retry(
-        total=3,
-        backoff_factor=2,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET", "PUT", "POST"],
-        raise_on_status=False
-    )
+    retry_strategy = Retry(total=3, backoff_factor=2, status_forcelist=[429, 500, 502, 503, 504])
     adapter = HTTPAdapter(max_retries=retry_strategy)
     session.mount("https://", adapter)
     session.mount("http://", adapter)
@@ -138,6 +139,11 @@ def crear_session_con_retry():
 # ==========================================
 SHOP_ID_INTERNO = os.getenv("SHOP_ID_INTERNO", "").strip()
 SHOP_ID_PUBLICO = os.getenv("SHOP_ID_PUBLICO", "").strip()
+GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID")
+GMAIL_USER = os.getenv("LIVERPOOL_USER")
+LIVERPOOL_PASS = os.getenv("LIVERPOOL_PASS")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_WMT = os.getenv("TELEGRAM_CHAT_WMT")
 
 # ==========================================
 # FUNCIONES DE MATEMÁTICAS (INTACTAS)
@@ -175,16 +181,6 @@ def calcular_rentabilidad(precio_venta, costo_odoo):
     except Exception as e:
         logger.warning(f"Error en calcular_rentabilidad: {e}")
         return 0.0, 0.0
-
-
-# ==========================================
-# 1. CONFIGURACIÓN Y CREDENCIALES
-# ==========================================
-GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID")
-GMAIL_USER = os.getenv("LIVERPOOL_USER")
-LIVERPOOL_PASS = os.getenv("LIVERPOOL_PASS")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_WMT = os.getenv("TELEGRAM_CHAT_WMT")
 
 # ==========================================
 # 2. MÓDULOS DE TELEGRAM Y CONEXIÓN
@@ -263,8 +259,8 @@ def obtener_token_autonomo(gc_client):
 
         # 🟢 VERIFICAR SI EL GAFETE FUNCIONÓ
         necesita_login = True
+        
         try:
-            # Esperamos 8 seg a ver si nos pide login
             page.wait_for_selector('input#username, #username, input[name="username"], input[type="email"]', timeout=8000)
             logger.info("🛑 El gafete caducó o es nuevo. Iniciando login con Modo Humano...")
         except Exception:
@@ -389,49 +385,35 @@ def obtener_token_autonomo(gc_client):
 # ==============================================================================
 # 4. MÓDULO DE CACERÍA DE OFERTAS (CON RATE LIMITER Y RETRY)
 # ==============================================================================
-
 def cazar_oferta_especifica(token, sku_interno, sku_liverpool):
-    """Obtiene detalles de una oferta específica usando API interna."""
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    sku_i_seguro = urllib.parse.quote(str(sku_interno).strip())
-    sku_l_seguro = str(sku_liverpool).strip()
+    sku_l = str(sku_liverpool).strip()
     urls = [
-        f"https://pro-api.liverpool.com.mx/api/offermanagement/offers?shop_id={SHOP_ID_INTERNO}&sku={sku_i_seguro}",
-        f"https://pro-api.liverpool.com.mx/api/offermanagement/offers?shop_id={SHOP_ID_INTERNO}&product_id={sku_l_seguro}"
+        f"https://pro-api.liverpool.com.mx/api/offermanagement/offers?shop_id={SHOP_ID_INTERNO}&sku={urllib.parse.quote(str(sku_interno).strip())}",
+        f"https://pro-api.liverpool.com.mx/api/offermanagement/offers?shop_id={SHOP_ID_INTERNO}&product_id={sku_l}"
     ]
-
     for url in urls:
         try:
             liverpool_rate_limiter.wait()
-            session = crear_session_con_retry()
-            res = session.get(url, headers=headers, timeout=30)
+            res = crear_session_con_retry().get(url, headers=headers, timeout=30)
             if res.status_code == 200:
                 for prod in res.json().get("offers", []):
-                    if str(prod.get("product_sku", "")).strip() == sku_l_seguro:
-                        logger.info(f"Oferta encontrada: {sku_l_seguro}")
+                    if str(prod.get("product_sku", "")).strip() == sku_l:
                         return prod
-        except Exception as e:
-            logger.warning(f"Error en cazar_oferta_especifica ({url}): {e}")
+        except: pass
     return None
 
 def obtener_info_rivales(liverpool_sku):
-    """Obtiene lista de rivales ordenada por precio."""
     url = f"https://shoppapp.liverpool.com.mx/appclienteservices/services/v2/marketplace/pdp/getSellersOfferDetailsPdp?skuId={liverpool_sku}"
-    headers = {"Host": "shoppapp.liverpool.com.mx", "User-Agent": "Liverpool/2.2.0"}
     try:
-        liverpool_rate_limiter.wait()
-        session = crear_session_con_retry()
-        res = session.get(url, headers=headers, timeout=30)
+        res = crear_session_con_retry().get(url, headers={"User-Agent": "Liverpool/2.2.0"}, timeout=30)
         if res.status_code == 200:
             rivales = []
             for v in res.json().get("sellersOfferDetails", []):
                 if str(v.get("sellerId")) != str(SHOP_ID_PUBLICO):
-                    precio = float(v.get("promoPrice") or v.get("salePrice"))
-                    nombre = str(v.get("sellerName") or f"Seller {v.get('sellerId')}")
-                    rivales.append({"precio": precio, "nombre": nombre})
+                    rivales.append({"precio": float(v.get("promoPrice") or v.get("salePrice")), "nombre": str(v.get("sellerName"))})
             return sorted(rivales, key=lambda x: x["precio"])
-    except Exception as e:
-        logger.warning(f"Error obteniendo rivales para {liverpool_sku}: {e}")
+    except: pass
     return []
 
 def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notificacion=""):
@@ -479,49 +461,62 @@ def calcular_posicion_buybox(precios_rivales, nuestro_precio):
     return f"#{posicion} de {total}", "¡Nosotros! 👑" if posicion == 1 else f"Rival (${todos[0]})"
 
 # ==========================================
-# 5. FUNCIÓN PRINCIPAL CON CONCURRENCIA
+# 5. CEREBRO ESTRATÉGICO (REGLAS 1 A 8)
 # ==========================================
+def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_config, session):
+    try:
+        sku_i = str(regla.get('sku') or regla.get('sku_interno') or 'Sin SKU')
+        estatus = str(regla.get('estatus', '')).strip().upper()
+        tipo_regla = str(regla.get('regla_estrategia', '1. Gladiador')).strip()
+        
+        prod = cazar_oferta_especifica(token, sku_i, sku_lp)
+        if not prod or str(prod.get("state_code", "")).upper() != "ACTIVE":
+            resultados.agregar_historial([(datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"), sku_i, sku_lp, "Oculto", 0, 0, "N/A", "N/A"])
+            return
 
-class ResultadosThreadSafe:
-    """Contenedor thread-safe para acumular resultados con Dieta de Datos."""
-    def __init__(self):
-        self._lock = threading.Lock()
-        self.historial_rows = []
-        self.archivo_negro_rows = []
-        self.alertas = []
-        self.ultimo_estado_conocido = {} 
-        self.skus_agotados_a_apagar = [] # 🟢 NUEVO: Lista negra de agotados
+        cantidad = int(prod.get("quantity", 0))
+        offer_id = prod.get("offerId"); base_p = float(prod.get("basePrice", 0))
+        precio_act = float(prod.get("discountPrice") or base_p)
 
-    # 🟢 NUEVO: Función para anotar a los caídos
-    def apagar_sku_liverpool(self, fila_excel, sku_i):
-        with self._lock:
-            self.skus_agotados_a_apagar.append((fila_excel, sku_i))
+        if cantidad == 0:
+            if estatus == 'ACTIVO': resultados.apagar_sku_liverpool(regla.get('fila_excel'), sku_i)
+            return
 
-    def agregar_historial(self, row):
-        with self._lock:
-            try:
-                # row = [hora, sku_i, sku_lp, precio_rival, nuestro_precio, stock, pos, bb]
-                sku = str(row[1])
-                precio_rival = str(row[3])
-                nuestro_precio = str(row[4])
-                stock = str(row[5])
-                buybox = str(row[7])
+        rivales = obtener_info_rivales(sku_lp)
+        precios_r = [r["precio"] for r in rivales]
+        p_min = safe_float(regla.get('precio_minimo', 0))
+        p_max = safe_float(regla.get('precio_maximo', base_p) or base_p)
 
-                # Creamos una huella digital del estado actual
-                estado_actual = f"{precio_rival}_{nuestro_precio}_{stock}_{buybox}"
-                estado_anterior = self.ultimo_estado_conocido.get(sku, "")
+        # LOG PÚBLICO SEGURO
+        logger.info(f"🔍 Escaneando {enmascarar_sku(sku_lp)} | BB: {enmascarar_vendedor(rivales[0]['nombre'] if rivales else 'N/A')}")
 
-                if estado_actual != estado_anterior:
-                    # Hubo cambios -> ¡Se guarda!
-                    self.historial_rows.append(row)
-                    # Actualizamos la memoria para evitar duplicados en vivo
-                    self.ultimo_estado_conocido[sku] = estado_actual
-                else:
-                    # Todo igual -> DIETA DE DATOS ACTIVADA (Se ignora)
-                    pass
-            except Exception as e:
-                # Si algo raro pasa con la fila, guardamos por seguridad
-                self.historial_rows.append(row)
+        if estatus == 'INACTIVO':
+            resultados.agregar_historial([(datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"), sku_i, sku_lp, precios_r[0] if precios_r else "N/A", precio_act, cantidad, "Inactivo", "Inactivo"])
+            return
+
+        # --- LÓGICA DE PELEA (MANTENIENDO TU ESTRATEGIA ORIGINAL) ---
+        if tipo_regla.startswith('2'): # Ancla Mínimo
+            nuevo_p = p_min
+        elif tipo_regla.startswith('3'): # Cosecha Máximo
+            nuevo_p = p_max
+        else: # Pelea (Gladiador y derivados)
+            if precios_r:
+                rival_bajo = precios_r[0]
+                if rival_bajo >= p_min:
+                    baja = round(random.uniform(1.50, 1.96), 2)
+                    nuevo_p = round(rival_bajo - baja, 2)
+                    if nuevo_p > p_max: nuevo_p = p_max
+                else: # Sombra
+                    viables = [p for p in precios_r if p >= p_min]
+                    nuevo_p = round(float(int(viables[0]) - 1) + 0.09, 2) if viables else p_min
+            else:
+                nuevo_p = p_max
+
+        if float(precio_act) != float(nuevo_p):
+            disparar_precio(token, offer_id, cantidad, base_p, nuevo_p, sku_i)
+
+    except Exception as e:
+        logger.error(f"Error en SKU {enmascarar_sku(sku_lp)}: {e}")
 
     def agregar_archivo_negro(self, row):
         with self._lock:
