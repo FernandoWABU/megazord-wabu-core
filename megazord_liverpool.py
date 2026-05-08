@@ -388,7 +388,7 @@ def cazar_oferta_especifica(token, sku_interno, sku_liverpool):
             if res.status_code == 200:
                 for prod in res.json().get("offers", []):
                     if str(prod.get("product_sku", "")).strip() == sku_l_seguro:
-                        logger.debug(f"Oferta encontrada: {sku_l_seguro}")
+                        logger.info(f"Oferta encontrada: {sku_l_seguro}")
                         return prod
         except Exception as e:
             logger.warning(f"Error en cazar_oferta_especifica ({url}): {e}")
