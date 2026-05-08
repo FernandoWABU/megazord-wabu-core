@@ -1,0 +1,35 @@
+name: Extraer Catalogo Walmart
+
+on:
+  # Solo se ejecutará cuando tú le des clic al botón manualmente
+  workflow_dispatch: 
+
+jobs:
+  extraer_catalogo:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Descargar Código Base
+      uses: actions/checkout@v3
+
+    # 👇 AQUÍ ES EL LUGAR CORRECTO PARA EL DRON 👇
+    - name: 🔐 Crear archivo de credenciales
+      run: echo '${{ secrets.GOOGLE_CREDENTIALS }}' > credentials.json
+
+    - name: Armar Entorno Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+
+    - name: Instalar Arsenal (Dependencias)
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Desplegar Dron Extractor
+      env:
+        GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+        WALMART_USER: ${{ secrets.WALMART_USER }}
+        WALMART_PASS: ${{ secrets.WALMART_PASS }}
+      run: python extraer_catalogo_walmart.py

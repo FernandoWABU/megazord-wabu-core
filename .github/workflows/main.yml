@@ -1,0 +1,60 @@
+name: Megazord Multi-Tienda
+
+on:
+  workflow_dispatch:
+    inputs:
+      tienda:
+        description: '¿Qué tienda quieres barrer?'
+        required: true
+        default: 'ambas'
+        type: choice
+        options:
+          - liverpool
+          - walmart
+          - ambas
+
+jobs:
+  ejecutar_barrido:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Descargar Código Base
+        uses: actions/checkout@v3
+
+      - name: 🔐 Crear archivo de credenciales
+        run: echo '${{ secrets.GOOGLE_CREDENTIALS }}' > credentials.json
+
+      - name: 🐍 Armar Entorno Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: ⚙️ Instalar Arsenal (Dependencias)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m playwright install chromium
+          python -m playwright install-deps chromium
+
+      - name: 🟣 Desplegar Megazord Liverpool
+        if: ${{ github.event.inputs.tienda == 'liverpool' || github.event.inputs.tienda == 'ambas' || github.event.inputs.tienda == '' }}
+        env:
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_WMT: ${{ secrets.TELEGRAM_CHAT_WMT }}
+          LIVERPOOL_USER: ${{ secrets.LIVERPOOL_USER }}
+          LIVERPOOL_PASS: ${{ secrets.LIVERPOOL_PASS }}
+        run: python megazord_liverpool.py
+
+      - name: Desplegar Megazord Walmart
+        if: ${{ github.event.inputs.tienda == 'walmart' || github.event.inputs.tienda == 'ambas' || github.event.inputs.tienda == '' }}
+        env:
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          WALMART_USER: ${{ secrets.WALMART_USER }}
+          WALMART_PASS: ${{ secrets.WALMART_PASS }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_WMT: ${{ secrets.TELEGRAM_CHAT_WMT }}
+          SCRAPERAPI_KEY_1: ${{ secrets.SCRAPERAPI_KEY_1 }}
+          SCRAPERAPI_KEY_2: ${{ secrets.SCRAPERAPI_KEY_2 }}
+          SCRAPERAPI_KEY_3: ${{ secrets.SCRAPERAPI_KEY_3 }}
+        run: python megazord_walmart.py
