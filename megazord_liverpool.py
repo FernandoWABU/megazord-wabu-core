@@ -362,34 +362,102 @@ def obtener_token_autonomo(gc_client):
 
                             caja_codigo = page.locator('input:not([disabled]):not([readonly]):not([type="checkbox"]):not([type="hidden"]):visible').first
                             caja_codigo.click(force=True)
-                            page.wait_for_timeout(1000) # Damos más tiempo
-                            page.keyboard.type(codigo_nuevo, delay=300) # Tecleo constante
-                            page.wait_for_timeout(2000)
+                            page.wait_for_timeout(500)
+                            
+                            page.keyboard.type(codigo_nuevo, delay=random.randint(200, 400))
+                            page.wait_for_timeout(1500)
 
-                            # Intentamos darle clic al botón de varias formas por si acaso
-                            try:
-                                # 1. Por texto
-                                page.get_by_role("button", name="Continuar").click(timeout=5000)
-                            except:
-                                # 2. Por selector genérico si el anterior falla
-                                page.locator('button[type="submit"]').click(force=True)
-                            logger.info("🚀 Código enviado. Esperando respuesta del servidor...")
-                            for _ in range(60):
+                            boton_continuar = page.locator('button:has-text("Continuar")').first
+                            boton_continuar.click(force=True)
+
+                            # ==========================================
+                            # ESPERANZA INTELIGENTE: DETECTAR ERRORES 2FA EN VIVO
+                            # ==========================================
+                            logger.info("⏳ Esperando token... (monitoreo de errores 2FA activo)")
+                            
+                            error_detectado = False
+                            tiempo_inicio_espera = time.time()
+                            timeout_token = 60
+                            
+                            while time.time() - tiempo_inicio_espera < timeout_token:
                                 time.sleep(1)
+                                
+                                # VERIFICAR SI EL TOKEN APARECIÓ
                                 if token_atrapado:
                                     logger.info("🔑 ¡TOKEN ATRAPADO CON ÉXITO!")
                                     guardar_gafete_vip(gc_client, context)
+                                    codigo_exitoso = True
                                     break
-
-                            if not token_atrapado:
-                                logger.warning("No se atrapó el token. Tomando foto de la GoPro...")
+                                
+                                # VERIFICAR SI APARECE ERROR EN LA PÁGINA
                                 try:
-                                    page.screenshot(path="debug_token.png")
-                                    enviar_foto_telegram("debug_token.png", "🚨 Jefe, metí el código pero Liverpool no me dio el Token.")
-                                except:
+                                    mensajes_error = [
+                                        "código inválido",
+                                        "código incorrecto",
+                                        "código expirado",
+                                        "código caducado",
+                                        "código erróneo",
+                                        "invalid code",
+                                        "incorrect code",
+                                        "expired code",
+                                        "intento fallido",
+                                        "no válido",
+                                        "algo salió mal",
+                                        "vuelve a intentar",
+                                        "error de verificación"
+                                    ]
+                                    
+                                    contenido_pagina = page.content().lower()
+                                    
+                                    for msg_error in mensajes_error:
+                                        if msg_error in contenido_pagina:
+                                            error_detectado = True
+                                            logger.error(f"🚨 ERROR 2FA DETECTADO: '{msg_error}'")
+                                            break
+                                    
+                                    if error_detectado:
+                                        break
+                                    
+                                except Exception as e:
                                     pass
                             
-                            codigo_exitoso = True
+                            # MANEJO DE RESULTADO
+                            if error_detectado:
+                                logger.error("❌ ERROR 2FA DETECTADO - Aborting inmediatamente...")
+                                try:
+                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    ruta_error = f"error_2fa_{timestamp}.png"
+                                    page.screenshot(path=ruta_error)
+                                    logger.error(f"📸 Captura guardada: {ruta_error}")
+                                    
+                                    mensaje_error = (
+                                        f"🚨 *ERROR 2FA LIVERPOOL*\n\n"
+                                        f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                                        f"❌ Liverpool rechazó el código\n"
+                                        f"📸 Ver captura\n\n"
+                                        f"Causas posibles:\n"
+                                        f"• Código caducado (>30 min)\n"
+                                        f"• Gmail atrasada\n"
+                                        f"• Error de Liverpool"
+                                    )
+                                    enviar_telegram(mensaje_error)
+                                    enviar_foto_telegram(ruta_error, "🚨 Error 2FA: Rechazado")
+                                except Exception as e:
+                                    logger.error(f"Error capturando: {e}")
+                                
+                                codigo_exitoso = False
+                            
+                            elif not token_atrapado:
+                                logger.error("❌ TIMEOUT: 60 segundos sin token")
+                                try:
+                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    ruta_timeout = f"timeout_2fa_{timestamp}.png"
+                                    page.screenshot(path=ruta_timeout)
+                                    enviar_foto_telegram(ruta_timeout, "⏱️ Timeout: Sin token en 60s")
+                                except:
+                                    pass
+                                codigo_exitoso = False
+                            
                             break
                     except:
                         pass
@@ -860,7 +928,7 @@ def ejecutar_bot():
 
     try:
         hoja_config = gc_connection.open_by_key(GOOGLE_SHEET_ID).worksheet("Config")
-        hoja_rivales = gc_connection.open_by_key(GOOGLE_SHEET_ID).worksheet("Rivales")
+        hoja_rivales = gc_connection.open_by_key(GOOGLE_SHEET_ID).worksheet("Archivo Negro")
     except Exception as e:
         logger.error(f"❌ No se pudo acceder a las hojas de cálculo: {e}")
         enviar_telegram("ERROR MEGAZORD: No se pudo acceder a las hojas de cálculo.")
