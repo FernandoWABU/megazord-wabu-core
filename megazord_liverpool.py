@@ -370,57 +370,84 @@ def obtener_token_autonomo(gc_client):
                             boton_continuar.click(force=True)
 
                             # ==========================================
-                            # NUEVA LÓGICA: ESPERA INTELIGENTE CON TIMEOUT
+                            # ESPERANZA INTELIGENTE V2: TIMEOUT + RELOAD + SCREENSHOT
                             # ==========================================
-                            logger.info("⏳ Esperando token... (timeout inteligente activado)")
+                            logger.info("⏳ Esperando token... (timeout inteligente + recarga + screenshot)")
                             
-                            tiempo_inicio = time.time()
-                            tiempo_espera_inicial = 15  # Esperar 15 seg antes de recargar
-                            tiempo_espera_total = 60     # Máximo total
+                            error_detectado = False
+                            tiempo_inicio_espera = time.time()
+                            timeout_token = 60
                             pagina_recargada = False
+                            botones_buscados = False
                             
-                            while time.time() - tiempo_inicio < tiempo_espera_total:
+                            while time.time() - tiempo_inicio_espera < timeout_token:
+                                tiempo_pasado = time.time() - tiempo_inicio_espera
                                 time.sleep(1)
                                 
-                                # 1. VERIFICAR SI EL TOKEN APARECIÓ
+                                # ✅ 1. VERIFICAR SI EL TOKEN APARECIÓ
                                 if token_atrapado:
                                     logger.info("🔑 ¡TOKEN ATRAPADO CON ÉXITO!")
                                     guardar_gafete_vip(gc_client, context)
                                     codigo_exitoso = True
                                     break
                                 
-                                # 2. CHEQUEAR ERRORES 2FA
+                                # ✅ 2. VERIFICAR SI APARECE ERROR EN LA PÁGINA
                                 try:
                                     mensajes_error = [
                                         "código inválido",
                                         "código incorrecto",
                                         "código expirado",
                                         "código caducado",
+                                        "código erróneo",
                                         "invalid code",
                                         "incorrect code",
                                         "expired code",
                                         "intento fallido",
-                                        "error de verificación"
+                                        "no válido",
+                                        "algo salió mal",
+                                        "vuelve a intentar",
+                                        "error de verificación",
+                                        "el código que ingresó es incorrecto"  # ← NUEVO INTEGRADO
                                     ]
                                     
-                                    contenido = page.content().lower()
+                                    contenido_pagina = page.content().lower()
                                     
-                                    for msg in mensajes_error:
-                                        if msg in contenido:
-                                            logger.error(f"🚨 ERROR 2FA: '{msg}'")
-                                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                            ruta = f"error_2fa_{timestamp}.png"
-                                            page.screenshot(path=ruta)
-                                            logger.error(f"📸 Captura: {ruta}")
-                                            enviar_telegram(f"🚨 Error 2FA: {msg}\n📸 {ruta}")
+                                    for msg_error in mensajes_error:
+                                        if msg_error in contenido_pagina:
+                                            error_detectado = True
+                                            logger.error(f"🚨 ERROR 2FA DETECTADO: '{msg_error}'")
+                                            
+                                            # CAPTURA INMEDIATA
+                                            try:
+                                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                                ruta_error = f"error_2fa_{timestamp}.png"
+                                                page.screenshot(path=ruta_error)
+                                                logger.error(f"📸 Captura error 2FA: {ruta_error}")
+                                                
+                                                mensaje_error = (
+                                                    f"🚨 *ERROR 2FA DETECTADO*\n\n"
+                                                    f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                                                    f"❌ {msg_error}\n"
+                                                    f"📸 Ver captura: {ruta_error}\n\n"
+                                                    f"Acción recomendada:\n"
+                                                    f"• Solicitar código nuevamente\n"
+                                                    f"• Revisar que Apps Script envía código FRESCO"
+                                                )
+                                                enviar_telegram(mensaje_error)
+                                            except Exception as e:
+                                                logger.error(f"Error capturando: {e}")
+                                            
                                             break
-                                except:
+                                    
+                                    if error_detectado:
+                                        break
+                                    
+                                except Exception as e:
                                     pass
                                 
-                                # 3. A LOS 15 SEG: FORZAR RECARGA SI NO HAY TOKEN
-                                tiempo_pasado = time.time() - tiempo_inicio
-                                if tiempo_pasado >= tiempo_espera_inicial and not pagina_recargada:
-                                    logger.warning(f"⏰ 15 segundos sin token - Forzando recarga...")
+                                # ✅ 3. A LOS 15 SEG: FORZAR RECARGA + BUSCAR BOTONES
+                                if tiempo_pasado >= 15 and not pagina_recargada:
+                                    logger.warning(f"⏰ 15 segundos sin token - Intentando recarga...")
                                     try:
                                         page.reload()
                                         page.wait_for_timeout(3000)
@@ -429,73 +456,93 @@ def obtener_token_autonomo(gc_client):
                                     except Exception as e:
                                         logger.warning(f"⚠️ Error recargando: {e}")
                                 
-                                # 4. A LOS 30 SEG: BUSCAR BOTÓN DE VALIDACIÓN ADICIONAL
-                                if tiempo_pasado >= 30 and not pagina_recargada:
-                                    logger.info("🔍 30 seg - Buscando botones adicionales de validación...")
+                                # ✅ 4. A LOS 25 SEG: BUSCAR BOTONES OCULTOS DE VALIDACIÓN
+                                if tiempo_pasado >= 25 and not botones_buscados:
+                                    logger.info("🔍 25 seg - Buscando botones adicionales...")
                                     try:
-                                        # Buscar botones comunes
-                                        botones_confirmacion = [
+                                        selectores_boton = [
                                             'button:has-text("Validar")',
                                             'button:has-text("Verificar")',
                                             'button:has-text("Confirmar")',
                                             'button:has-text("Enviar")',
                                             'button:has-text("Aceptar")',
-                                            'input[type="submit"]'
+                                            'button:has-text("OK")',
+                                            'button[type="submit"]',
+                                            'a:has-text("Enviar código nuevamente")',
+                                            'a:has-text("Reenviar")'
                                         ]
                                         
-                                        for selector in botones_confirmacion:
+                                        for selector in selectores_boton:
                                             try:
                                                 boton = page.locator(selector).first
                                                 if boton.is_visible():
-                                                    logger.info(f"✅ Encontré botón: {selector} - Haciendo clic...")
+                                                    logger.info(f"✅ Encontrado botón: {selector}")
                                                     boton.click(force=True)
+                                                    logger.info(f"Clickeado: {selector}")
                                                     page.wait_for_timeout(2000)
                                                     break
+                                            except:
+                                                pass
+                                        
+                                        botones_buscados = True
+                                    except Exception as e:
+                                        logger.warning(f"Error buscando botones: {e}")
+                                
+                                # ✅ 5. A LOS 40 SEG: ÚLTIMO INTENTO - BUSCAR IFRAME O CONTENEDOR OCULTO
+                                if tiempo_pasado >= 40:
+                                    logger.warning(f"⏰ 40 segundos - Última búsqueda de elementos...")
+                                    try:
+                                        frames = page.frames
+                                        logger.info(f"📌 Encontrados {len(frames)} frames")
+                                        
+                                        for frame in frames:
+                                            try:
+                                                if "Bearer " in str(frame.content()):
+                                                    logger.warning("⚠️ Token puede estar en iframe")
                                             except:
                                                 pass
                                     except:
                                         pass
                             
                             # ==========================================
-                            # TIMEOUT FINAL: CAPTURA OBLIGATORIA
+                            # TIMEOUT FINAL: SCREENSHOT OBLIGATORIO
                             # ==========================================
-                            if not token_atrapado:
-                                logger.error("❌ TIMEOUT FINAL: No se obtuvo token en 60 segundos")
+                            if not token_atrapado and not error_detectado:
+                                logger.error("❌ TIMEOUT FINAL: 60 segundos sin token ni error")
                                 
-                                # CAPTURA OBLIGATORIA - NO OMITIR
+                                captura_exitosa = False
                                 try:
                                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                                     ruta_timeout = f"timeout_final_{timestamp}.png"
-                                    logger.warning(f"📸 Capturando pantalla final: {ruta_timeout}")
+                                    logger.warning(f"📸 Tomando captura de timeout: {ruta_timeout}")
                                     page.screenshot(path=ruta_timeout)
                                     logger.error(f"✅ Captura guardada: {ruta_timeout}")
+                                    captura_exitosa = True
                                     
-                                    # Enviar a Telegram con INFO ESPECÍFICA
-                                    mensaje = (
-                                        f"🚨 *TIMEOUT FINAL - TOKEN NO ATRAPADO*\n\n"
+                                    msg_timeout = (
+                                        f"🚨 *TIMEOUT FINAL - 60 SEGUNDOS SIN TOKEN*\n\n"
                                         f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                                        f"❌ Sin token después de 60 segundos\n"
+                                        f"❌ No se atrapó Bearer token\n"
                                         f"📸 Captura: {ruta_timeout}\n\n"
-                                        f"Diagnóstico:\n"
+                                        f"*Diagnóstico:*\n"
                                         f"• Código ingresado: SÍ ✅\n"
-                                        f"• Botón Continuar: Clickeado ✅\n"
-                                        f"• Recarga forzada: {'SÍ' if pagina_recargada else 'NO'}\n"
-                                        f"• Token atrapado: NO ❌\n\n"
-                                        f"Próximas acciones:\n"
-                                        f"1. Revisar captura\n"
-                                        f"2. ¿Liverpool pide validación adicional?\n"
-                                        f"3. ¿Liverpool está caído?"
+                                        f"• Error detectado: {'SÍ' if error_detectado else 'NO'}\n"
+                                        f"• Página recargada: {'SÍ' if pagina_recargada else 'NO'}\n"
+                                        f"• Botones buscados: {'SÍ' if botones_buscados else 'NO'}\n\n"
                                     )
-                                    enviar_telegram(mensaje)
+                                    enviar_telegram(msg_timeout)
                                     
                                 except Exception as e:
-                                    logger.error(f"❌ ERROR AL CAPTURAR: {e}")
+                                    logger.error(f"❌ ERROR CAPTURANDO TIMEOUT: {e}")
                                     try:
-                                        # ÚLTIMO RECURSO: Capturar sin timestamp
-                                        page.screenshot(path="TIMEOUT_ULTIMO_RECURSO.png")
-                                        logger.error("✅ Captura de emergencia: TIMEOUT_ULTIMO_RECURSO.png")
-                                    except:
-                                        logger.error("❌ IMPOSIBLE CAPTURAR - Browser sin acceso")
+                                        page.screenshot(path="TIMEOUT_EMERGENCIA.png")
+                                        logger.error("✅ Captura de emergencia: TIMEOUT_EMERGENCIA.png")
+                                        captura_exitosa = True
+                                    except Exception as e2:
+                                        logger.error(f"❌ IMPOSIBLE CAPTURAR: {e2}")
+                                
+                                if not captura_exitosa:
+                                    enviar_telegram("🔴 *CRÍTICO*: El bot no pudo capturar la pantalla de timeout.")
                                 
                                 codigo_exitoso = False
                             
@@ -514,7 +561,6 @@ def obtener_token_autonomo(gc_client):
 
     except Exception as e:
         logger.error(f"❌ Excepción crítica: {e}")
-        # CAPTURA DE EMERGENCIA EN EXCEPCIÓN
         try:
             if 'page' in locals():
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
