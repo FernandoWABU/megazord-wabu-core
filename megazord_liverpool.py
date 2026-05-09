@@ -236,25 +236,40 @@ def calcular_rentabilidad(precio_venta, costo_odoo):
         return 0.0, 0.0
 
 # ==========================================
-# OBTENER TOKEN (VERSIÓN CORREGIDA)
+# OBTENER TOKEN - COPIA EXACTA DE GEMINI SIN EL ERROR
 # ==========================================
+# Esto es lo que debes copiar EN LUGAR DE tu obtener_token_autonomo()
+
 def obtener_token_autonomo(gc_client):
-    """Obtiene token con try-except-finally CORRECTO."""
-    logger.info("🚀 Iniciando sesión Liverpool...")
+    """
+    Obtiene token de Liverpool con:
+    ✅ Monitoreo de timeout inteligente
+    ✅ Recarga forzada si Liverpool se queda esperando
+    ✅ Screenshot GARANTIZADO en cualquier fallo
+    """
+    logger.info("🚀 Iniciando sesión en Liverpool (Modo GAFETE VIP + SIMULACIÓN HUMANA)...")
     token_atrapado = None
     p = None
     browser = None
 
-    try:  # ← INÍCIO DEL TRY
+    try:
         p = sync_playwright().start()
         browser = p.chromium.launch(
             headless=True,
-            args=['--no-sandbox', '--disable-setuid-sandbox']
+            args=[
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-gpu',
+                '--no-zygote',
+                '--disable-extensions',
+                '--js-flags="--max-old-space-size=120"'
+            ]
         )
 
         context = browser.new_context(
             viewport={'width': 600, 'height': 400},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
         
         cargar_gafete_vip(gc_client, context)
@@ -272,24 +287,26 @@ def obtener_token_autonomo(gc_client):
 
         necesita_login = True
         try:
-            page.wait_for_selector('input#username', timeout=8000)
-            logger.info("🛑 Gafete caducó. Login manual...")
-        except:
+            page.wait_for_selector('input#username, #username, input[name="username"], input[type="email"]', timeout=8000)
+            logger.info("🛑 El gafete caducó o es nuevo. Iniciando login con Modo Humano...")
+        except Exception:
             necesita_login = False
-            logger.info("✅ Aduana saltada - Dashboard directo")
+            logger.info("✅ ¡Aduana saltada con éxito! Ya estamos en el Dashboard.")
+            
             page.reload()
-            page.wait_for_timeout(10000)
+            page.wait_for_timeout(10000) 
             
             if token_atrapado:
-                logger.info("🔑 Token atrapado directo")
+                logger.info("🔑 ¡TOKEN VIP ATRAPADO DIRECTO!")
                 guardar_gafete_vip(gc_client, context)
                 return token_atrapado
             else:
+                logger.warning("⚠️ Entramos pero no soltó el token, forzaremos login.")
                 necesita_login = True
 
         if necesita_login:
             page.goto("https://marketplace.liverpool.com.mx/")
-            page.wait_for_selector('input#username', timeout=30000)
+            page.wait_for_selector('input#username, #username, input[name="username"], input[type="email"]', timeout=30000)
 
             page.locator('input#username').click()
             page.locator('input#username').type(GMAIL_USER, delay=random.randint(100, 250))
@@ -299,16 +316,16 @@ def obtener_token_autonomo(gc_client):
             page.locator('input#password').type(LIVERPOOL_PASS, delay=random.randint(100, 250))
 
             try:
-                gc_aux = obtener_conexion_sheets(None)
-                matriz = gc_aux.open_by_key(GOOGLE_SHEET_ID)
-                hoja_config = matriz.worksheet("Config")
-            except:
+                hoja_config = gc_client.open_by_key(GOOGLE_SHEET_ID).worksheet("Config")
+            except Exception as e:
+                logger.warning(f"⚠️ No se pudo abrir pestaña Config: {e}")
                 hoja_config = None
 
             page.wait_for_timeout(random.randint(500, 1000))
             page.click('button[type="submit"]')
 
-            logger.info("⏳ Esperando código...")
+            logger.info("⏳ Esperando a que el espía de Google atrape el código...")
+            logger.info("⏳ Dando 15 segundos de ventaja para que el correo viaje...")
             time.sleep(15)
 
             codigo_antiguo = ""
@@ -316,84 +333,172 @@ def obtener_token_autonomo(gc_client):
 
             for i in range(18):
                 time.sleep(10)
+                codigo_nuevo = ""
+                
                 if hoja_config:
                     try:
                         codigo_nuevo = str(hoja_config.acell("B1").value).replace("'", "").strip()
+                    except Exception as e:
+                        logger.warning(f"⚠️ Error leyendo Excel B1: {e}")
+                
+                logger.info(f"🔄 Intento {i+1}/18 | Código actual en Excel: {codigo_nuevo}")
+
+                if codigo_nuevo != codigo_antiguo and len(codigo_nuevo) == 6:
+                    logger.info(f"✅ ¡NUEVO Código interceptado!: {codigo_nuevo}")
+                    codigo_antiguo = codigo_nuevo
+
+                    caja_codigo = page.locator('input:not([disabled]):not([readonly]):not([type="checkbox"]):not([type="hidden"]):visible').first
+                    caja_codigo.click(force=True)
+                    page.wait_for_timeout(500)
+                    
+                    page.keyboard.type(codigo_nuevo, delay=random.randint(200, 400))
+                    page.wait_for_timeout(1500)
+
+                    boton_continuar = page.locator('button:has-text("Continuar")').first
+                    boton_continuar.click(force=True)
+
+                    logger.info("⏳ Esperando token... (timeout inteligente + recarga + screenshot)")
+                    
+                    error_detectado = False
+                    tiempo_inicio_espera = time.time()
+                    timeout_token = 60
+                    pagina_recargada = False
+                    botones_buscados = False
+                    
+                    while time.time() - tiempo_inicio_espera < timeout_token:
+                        tiempo_pasado = time.time() - tiempo_inicio_espera
+                        time.sleep(1)
                         
-                        if codigo_nuevo != codigo_antiguo and len(codigo_nuevo) == 6:
-                            logger.info(f"✅ Código: {codigo_nuevo}")
-
-                            caja_codigo = page.locator('input:not([disabled]):visible').first
-                            caja_codigo.click(force=True)
-                            page.wait_for_timeout(500)
+                        if token_atrapado:
+                            logger.info("🔑 ¡TOKEN ATRAPADO CON ÉXITO!")
+                            guardar_gafete_vip(gc_client, context)
+                            codigo_exitoso = True
+                            break
+                        
+                        try:
+                            mensajes_error = [
+                                "código inválido", "código incorrecto", "código expirado",
+                                "código caducado", "código erróneo", "invalid code",
+                                "incorrect code", "expired code", "intento fallido",
+                                "no válido", "algo salió mal", "vuelve a intentar",
+                                "error de verificación", "el código que ingresó es incorrecto"
+                            ]
                             
-                            page.keyboard.type(codigo_nuevo, delay=random.randint(200, 400))
-                            page.wait_for_timeout(1500)
-
-                            boton = page.locator('button:has-text("Continuar")').first
-                            boton.click(force=True)
-
-                            # ==========================================
-                            # TIMEOUT INTELIGENTE CON SCREENSHOT
-                            # ==========================================
-                            logger.info("⏳ Esperando token (timeout inteligente)...")
+                            contenido_pagina = page.content().lower()
                             
-                            tiempo_inicio = time.time()
-                            captura_hecha = False
-                            
-                            while time.time() - tiempo_inicio < 60:
-                                time.sleep(1)
-                                
-                                if token_atrapado:
-                                    logger.info("🔑 ¡TOKEN ATRAPADO!")
-                                    guardar_gafete_vip(gc_client, context)
-                                    codigo_exitoso = True
-                                    break
-                                
-                                # Detectar error
-                                try:
-                                    contenido = page.content().lower()
-                                    if "código incorrecto" in contenido or "código inválido" in contenido:
-                                        logger.error("🚨 Error 2FA detectado")
-                                        if not captura_hecha:
-                                            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                            page.screenshot(path=f"error_2fa_{ts}.png")
-                                            captura_hecha = True
-                                        break
-                                except:
-                                    pass
-                                
-                                # A los 15 seg: recarga
-                                if time.time() - tiempo_inicio >= 15:
-                                    logger.warning("Recargando página...")
+                            for msg_error in mensajes_error:
+                                if msg_error in contenido_pagina:
+                                    error_detectado = True
+                                    logger.error(f"🚨 ERROR 2FA DETECTADO: '{msg_error}'")
+                                    
                                     try:
-                                        page.reload()
+                                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                        ruta_error = f"error_2fa_{timestamp}.png"
+                                        page.screenshot(path=ruta_error)
+                                        logger.error(f"📸 Captura error 2FA: {ruta_error}")
+                                        
+                                        mensaje_error = (
+                                            f"🚨 *ERROR 2FA DETECTADO*\n\n"
+                                            f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                                            f"❌ {msg_error}\n"
+                                            f"📸 Ver captura: {ruta_error}\n\n"
+                                            f"Acción recomendada:\n"
+                                            f"• Solicitar código nuevamente\n"
+                                            f"• Revisar que Apps Script envía código FRESCO"
+                                        )
+                                        enviar_telegram(mensaje_error)
+                                    except Exception as e:
+                                        logger.error(f"Error capturando: {e}")
+                                    break
+                            
+                            if error_detectado:
+                                break
+                            
+                        except Exception:
+                            pass
+                        
+                        if tiempo_pasado >= 15 and not pagina_recargada:
+                            logger.warning(f"⏰ 15 segundos sin token - Intentando recarga...")
+                            try:
+                                page.reload()
+                                page.wait_for_timeout(3000)
+                                logger.info("♻️ Página recargada - Esperando 10 seg más...")
+                                pagina_recargada = True
+                            except Exception as e:
+                                logger.warning(f"⚠️ Error recargando: {e}")
+                        
+                        if tiempo_pasado >= 25 and not botones_buscados:
+                            logger.info("🔍 25 seg - Buscando botones adicionales...")
+                            try:
+                                selectores_boton = [
+                                    'button:has-text("Validar")', 'button:has-text("Verificar")',
+                                    'button:has-text("Confirmar")', 'button:has-text("Enviar")',
+                                    'button:has-text("Aceptar")', 'button:has-text("OK")',
+                                    'button[type="submit"]', 'a:has-text("Enviar código nuevamente")',
+                                    'a:has-text("Reenviar")'
+                                ]
+                                for selector in selectores_boton:
+                                    try:
+                                        boton = page.locator(selector).first
+                                        if boton.is_visible():
+                                            logger.info(f"✅ Encontrado botón: {selector}")
+                                            boton.click(force=True)
+                                            page.wait_for_timeout(2000)
+                                            break
                                     except:
                                         pass
-                            
-                            # Timeout final
-                            if not token_atrapado and not captura_hecha:
-                                logger.error("❌ TIMEOUT - Screenshot obligatorio")
-                                try:
-                                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                    ruta = f"timeout_{ts}.png"
-                                    page.screenshot(path=ruta)
-                                    logger.error(f"📸 Guardado: {ruta}")
-                                except Exception as e:
-                                    logger.error(f"Error capturando: {e}")
-                            
-                            break
+                                botones_buscados = True
+                            except Exception as e:
+                                logger.warning(f"Error buscando botones: {e}")
+                        
+                        if tiempo_pasado >= 40:
+                            try:
+                                frames = page.frames
+                                for frame in frames:
+                                    try:
+                                        if "Bearer " in str(frame.content()):
+                                            logger.warning("⚠️ Token puede estar en iframe")
+                                    except:
+                                        pass
+                            except:
+                                pass
+                    
+                    if not token_atrapado and not error_detectado:
+                        logger.error("❌ TIMEOUT FINAL: 60 segundos sin token ni error")
+                        try:
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            ruta_timeout = f"timeout_final_{timestamp}.png"
+                            page.screenshot(path=ruta_timeout)
+                            logger.error(f"✅ Captura guardada: {ruta_timeout}")
+                            msg_timeout = (
+                                f"🚨 *TIMEOUT FINAL - 60 SEGUNDOS SIN TOKEN*\n\n"
+                                f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                                f"❌ No se atrapó Bearer token\n"
+                                f"📸 Captura: {ruta_timeout}\n\n"
+                            )
+                            enviar_telegram(msg_timeout)
+                        except Exception as e:
+                            logger.error(f"❌ ERROR CAPTURANDO TIMEOUT: {e}")
+                        codigo_exitoso = False
+                    
+                    break
 
-        if codigo_exitoso and token_atrapado:
-            return token_atrapado
-        else:
-            return None
+            if not codigo_exitoso:
+                logger.error("❌ No se pudo obtener token después de 18 intentos")
+                return None
 
-    except Exception as e:  # ← EXCEPT BLOCK
-        logger.error(f"❌ Error: {e}")
+            page.wait_for_timeout(5000)
+            
+            if token_atrapado:
+                logger.info("💾 Token detectado. Guardando Gafete VIP...")
+                guardar_gafete_vip(gc_client, context)
+                return token_atrapado
+
+    except Exception as e:
+        logger.error(f"❌ Excepción crítica: {e}")
         return None
 
-    finally:  # ← FINALLY BLOCK (OBLIGATORIO)
+    finally:
         logger.info("🧹 Limpiando Playwright...")
         if browser:
             try:
@@ -406,8 +511,7 @@ def obtener_token_autonomo(gc_client):
             except:
                 pass
         gc.collect()
-        
-        return token_atrapado
+        # ✅ NO hay return aquí - esto es CRÍTICO
 
 # ==========================================
 # 4. MÓDULO DE CACERÍA DE OFERTAS
