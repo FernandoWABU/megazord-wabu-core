@@ -946,7 +946,7 @@ def ejecutar_bot():
 
     try:
         hoja_config = gc_connection.open_by_key(GOOGLE_SHEET_ID).worksheet("Config")
-        hoja_rivales = gc_connection.open_by_key(GOOGLE_SHEET_ID).worksheet("HISTORIAL")
+        hoja_rivales = gc_connection.open_by_key(GOOGLE_SHEET_ID).worksheet("Historial")
     except Exception as e:
         logger.error(f"❌ No se pudo acceder a las hojas de cálculo: {e}")
         enviar_telegram("ERROR MEGAZORD: No se pudo acceder a las hojas de cálculo.")
