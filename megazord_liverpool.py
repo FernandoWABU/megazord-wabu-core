@@ -53,48 +53,69 @@ def enmascarar_precio(precio_real):
 # OPERACIÓN GAFETE VIP (ENCRIPTADO CON FERNET)
 # ==========================================
 def obtener_cipher():
-    """Obtiene el cifrador Fernet desde variable de entorno."""
+    """Obtiene el cifrador Fernet desde variable de entorno.
+    Retorna None si no está configurado (modo sin encriptación)."""
     llave = os.getenv("GOOGLE_ENCRYPTION_KEY")
     if not llave:
-        logger.error("❌ FALTA GOOGLE_ENCRYPTION_KEY EN SECRETS")
+        logger.warning("⚠️ GOOGLE_ENCRYPTION_KEY no configurada - Gafete VIP funcionará sin encriptación")
         return None
-    return Fernet(llave.encode())
+    try:
+        return Fernet(llave.encode())
+    except Exception as e:
+        logger.warning(f"⚠️ Error inicializando Fernet: {e} - Continuando sin encriptación")
+        return None
 
 def cargar_gafete_vip(gc_client, context):
-    """Carga cookies DESENCRIPTADAS desde Bóveda VIP."""
+    """Carga cookies desde Bóveda VIP (desencriptadas si es posible, sin encriptación si no)."""
     try:
         cipher = obtener_cipher()
-        if not cipher: 
-            return False
         spreadsheet = gc_client.open_by_key(GOOGLE_SHEET_ID)
         hoja_boveda = spreadsheet.worksheet('Boveda_VIP')
         registros = hoja_boveda.get_all_records()
         for fila in registros:
             if fila.get('Tienda') == 'Liverpool' and fila.get('Cookies'):
-                datos_desencriptados = cipher.decrypt(fila['Cookies'].encode()).decode()
-                context.add_cookies(json.loads(datos_desencriptados))
-                logger.info("🍪 ¡Gafete VIP encriptado cargado exitosamente!")
-                return True
+                try:
+                    # Si hay cifrador, desencriptar; si no, usar directo
+                    if cipher:
+                        datos_desencriptados = cipher.decrypt(fila['Cookies'].encode()).decode()
+                        context.add_cookies(json.loads(datos_desencriptados))
+                        logger.info("🍪 ¡Gafete VIP encriptado cargado exitosamente!")
+                    else:
+                        # Sin encriptación, asumir que están en JSON plano
+                        context.add_cookies(json.loads(fila['Cookies']))
+                        logger.info("🍪 ¡Gafete VIP cargado (sin encriptación)!")
+                    return True
+                except Exception as e:
+                    logger.warning(f"⚠️ Cookies inválidas o corrupto: {e}")
+                    return False
         return False
     except Exception as e:
-        logger.warning(f"⚠️ Aduana cerrada (Gafete caducado o sin llave): {e}")
+        logger.warning(f"⚠️ No se encontró Bóveda VIP o error: {e}")
         return False
 
 def guardar_gafete_vip(gc_client, context):
-    """Guarda cookies ENCRIPTADAS en Bóveda VIP."""
+    """Guarda cookies en Bóveda VIP (encriptadas si es posible, sin encriptación si no)."""
     try:
         cipher = obtener_cipher()
-        if not cipher: 
-            return
         spreadsheet = gc_client.open_by_key(GOOGLE_SHEET_ID)
         hoja_boveda = spreadsheet.worksheet('Boveda_VIP')
-        cookies_encriptadas = cipher.encrypt(json.dumps(context.cookies()).encode()).decode()
+        
+        cookies_json = json.dumps(context.cookies())
+        
+        # Si hay cifrador, encriptar; si no, guardar en plano
+        if cipher:
+            cookies_guardados = cipher.encrypt(cookies_json.encode()).decode()
+            msg = "🔐 ¡Nuevo Gafete VIP blindado y guardado en la Bóveda!"
+        else:
+            cookies_guardados = cookies_json
+            msg = "🔐 ¡Nuevo Gafete VIP guardado en la Bóveda (sin encriptación)!"
+        
         celdas = hoja_boveda.findall('Liverpool')
         if celdas:
-            hoja_boveda.update_cell(celdas[0].row, 2, cookies_encriptadas)
+            hoja_boveda.update_cell(celdas[0].row, 2, cookies_guardados)
         else:
-            hoja_boveda.append_row(['Liverpool', cookies_encriptadas])
-        logger.info("🔐 ¡Nuevo Gafete VIP blindado y guardado en la Bóveda!")
+            hoja_boveda.append_row(['Liverpool', cookies_guardados])
+        logger.info(msg)
     except Exception as e:
         logger.error(f"❌ Error al guardar Gafete: {e}")
 
