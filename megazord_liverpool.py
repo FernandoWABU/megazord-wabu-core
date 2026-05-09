@@ -26,28 +26,22 @@ import psycopg2
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # ==========================================
-# FUNCIONES DE ENMASCARAMIENTO (LOGS PÚBLICOS)
+# FUNCIONES DE ENMASCARAMIENTO (GITHUB PÚBLICO)
 # ==========================================
 def enmascarar_sku(sku_real):
-    """Convierte SKU real en hash para logs públicos de GitHub."""
-    hash_sku = hashlib.md5(str(sku_real).encode()).hexdigest()[:6].upper()
-    return f"SKU_{hash_sku}"
+    """Hash para logs públicos."""
+    return f"SKU_{hashlib.md5(str(sku_real).encode()).hexdigest()[:6].upper()}"
 
-def enmascarar_vendedor(nombre_vendedor):
-    """Protege identidades de competidores en logs públicos."""
-    if not nombre_vendedor or nombre_vendedor == "Desconocido":
-        return "Desconocido"
-    marca_propia = os.getenv("PROPIA_BRAND_NAME", "WABU").upper()
-    if marca_propia in str(nombre_vendedor).upper():
-        return "NOSOTROS"
-    return "RIVAL"
+def enmascarar_vendedor(nombre):
+    """Anonimiza rivales en logs públicos."""
+    if not nombre or nombre == "Desconocido": return "Desconocido"
+    marca = os.getenv("PROPIA_BRAND_NAME", "WABU").upper()
+    return "NOSOTROS" if marca in str(nombre).upper() else "RIVAL"
 
-def enmascarar_precio(precio_real):
-    """Oculta precios exactos en la consola de GitHub Actions."""
-    try:
-        return f"${int(float(precio_real))}.XX"
-    except:
-        return "$X.XX"
+def enmascarar_precio(precio):
+    """Oculta precio exacto en logs."""
+    try: return f"${int(float(precio))}.XX"
+    except: return "$X.XX"
 
 # ==========================================
 # OPERACIÓN GAFETE VIP (MANEJO DE COOKIES ENCRIPTADAS)
@@ -96,12 +90,7 @@ def guardar_gafete_vip(gc_client, context):
 # ==========================================
 # CONFIGURACIÓN DE LOGGING ESTRUCTURADO
 # ==========================================
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s | %(levelname)-8s | %(funcName)-20s | %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)-8s | %(message)s')
 logger = logging.getLogger(__name__)
 # ==========================================
 # CONFIGURACIÓN DE RATE LIMITING
@@ -188,15 +177,11 @@ def calcular_rentabilidad(precio_venta, costo_odoo):
 def enviar_alerta_telegram(mensaje):
     enviar_telegram(mensaje)
 
-def enviar_telegram(mensaje):
+def enviar_telegram(msj):
     try:
-        if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_WMT:
-            logger.warning("Telegram no configurado (TOKEN o CHAT_ID faltantes)")
-            return
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, json={"chat_id": TELEGRAM_CHAT_WMT, "text": mensaje, "parse_mode": "Markdown"})
-    except Exception as e:
-        logger.error(f"Error enviando Telegram: {e}")
+        requests.post(url, json={"chat_id": TELEGRAM_CHAT_WMT, "text": msj, "parse_mode": "Markdown"})
+    except: pass
 
 def enviar_foto_telegram(ruta_foto, mensaje):
     try:
@@ -439,17 +424,18 @@ def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notifi
         liverpool_rate_limiter.wait()
         session = crear_session_con_retry()
         response = session.put(url, headers=headers, json=payload, timeout=30)
-        if response.status_code in [200, 204]:
-            logger.info(f"Precio actualizado: ${nuevo_precio}")
-            # 🟢 NUEVO: El Megáfono de Telegram
-            enviar_telegram(f"🔫 *FRANCOTIRADOR LIVERPOOL*\n🎯 Se actualizó un precio a: *${nuevo_precio}*")
+        if round(precio_actual, 2) != round(nuevo_p, 2):
+            # LOG PÚBLICO (Anónimo)
+            logger.info(f"   🔫 Ajuste ejecutado: {enmascarar_precio(nuevo_p)}")
+            # TELEGRAM (Privado - Datos Reales)
+            enviar_telegram(f"🔫 *FRANCOTIRADOR*\n🎯 SKU: `{sku_i}`\n💰 Precio: *${nuevo_p}*")
+            # (Aquí va la función disparar_precio_api...)
             return True
         else:
             logger.warning(f"Error al actualizar precio: {response.status_code}")
             return False
     except Exception as e:
-        logger.error(f"Excepción en disparar_precio: {e}")
-        return False
+        logger.error(f"❌ Error en SKU {enmascarar_sku(sku_lp)}: {e}")
 
 def calcular_posicion_buybox(precios_rivales, nuestro_precio):
     """Calcula posición en la BuyBox."""
@@ -465,9 +451,10 @@ def calcular_posicion_buybox(precios_rivales, nuestro_precio):
 # ==========================================
 def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_config, session):
     try:
-        sku_i = str(regla.get('sku') or regla.get('sku_interno') or 'Sin SKU')
-        estatus = str(regla.get('estatus', '')).strip().upper()
-        tipo_regla = str(regla.get('regla_estrategia', '1. Gladiador')).strip()
+        sku_i = str(regla.get('sku_interno', 'Sin SKU'))
+        precio_min = float(regla.get('precio_minimo', 0))
+        precio_max = float(regla.get('precio_maximo', 0))
+        tipo_regla = str(regla.get('regla_estrategia', '1. Gladiador'))
         
         prod = cazar_oferta_especifica(token, sku_i, sku_lp)
         if not prod or str(prod.get("state_code", "")).upper() != "ACTIVE":
@@ -495,10 +482,20 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
             return
 
         # --- LÓGICA DE PELEA (MANTENIENDO TU ESTRATEGIA ORIGINAL) ---
-        if tipo_regla.startswith('2'): # Ancla Mínimo
-            nuevo_p = p_min
+        if tipo_regla.startswith('1'): # Gladiador
+            if rivales:
+                r_bajo = rivales[0]['precio']
+                if r_bajo >= precio_min:
+                    nuevo_p = round(r_bajo - 1.0, 2)
+                else:
+                    nuevo_p = precio_min
+            else: nuevo_p = precio_max
+
+        elif tipo_regla.startswith('2'): # Ancla Mínimo
+            nuevo_p = precio_min
+            
         elif tipo_regla.startswith('3'): # Cosecha Máximo
-            nuevo_p = p_max
+            nuevo_p = precio_max
         else: # Pelea (Gladiador y derivados)
             if precios_r:
                 rival_bajo = precios_r[0]
