@@ -44,6 +44,7 @@ jobs:
           TELEGRAM_CHAT_WMT: ${{ secrets.TELEGRAM_CHAT_WMT }}
           LIVERPOOL_USER: ${{ secrets.LIVERPOOL_USER }}
           LIVERPOOL_PASS: ${{ secrets.LIVERPOOL_PASS }}
+          GOOGLE_ENCRYPTION_KEY: ${{ secrets.GOOGLE_ENCRYPTION_KEY }}
         run: python megazord_liverpool.py
 
       - name: Desplegar Megazord Walmart
