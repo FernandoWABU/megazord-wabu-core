@@ -362,15 +362,18 @@ def obtener_token_autonomo(gc_client):
 
                             caja_codigo = page.locator('input:not([disabled]):not([readonly]):not([type="checkbox"]):not([type="hidden"]):visible').first
                             caja_codigo.click(force=True)
-                            page.wait_for_timeout(500)
-                            
-                            page.keyboard.type(codigo_nuevo, delay=random.randint(200, 400))
-                            page.wait_for_timeout(1500)
+                            page.wait_for_timeout(1000) # Damos más tiempo
+                            page.keyboard.type(codigo_nuevo, delay=300) # Tecleo constante
+                            page.wait_for_timeout(2000)
 
-                            boton_continuar = page.locator('button:has-text("Continuar")').first
-                            boton_continuar.click(force=True)
-
-                            logger.info("⏳ Esperando que el token aparezca en la red...")
+                            # Intentamos darle clic al botón de varias formas por si acaso
+                            try:
+                                # 1. Por texto
+                                page.get_by_role("button", name="Continuar").click(timeout=5000)
+                            except:
+                                # 2. Por selector genérico si el anterior falla
+                                page.locator('button[type="submit"]').click(force=True)
+                            logger.info("🚀 Código enviado. Esperando respuesta del servidor...")
                             for _ in range(60):
                                 time.sleep(1)
                                 if token_atrapado:
