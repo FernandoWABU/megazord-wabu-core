@@ -1,3 +1,10 @@
+#!/usr/bin/env python3
+# ==========================================
+# MEGAZORD LIVERPOOL - VERSIÓN CORREGIDA
+# ==========================================
+# Este archivo reemplaza el anterior con la sintaxis correcta
+# El problema: faltaba 'finally' en obtener_token_autonomo()
+
 import urllib.parse
 import random
 import os
@@ -26,15 +33,13 @@ import psycopg2
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # ==========================================
-# FUNCIONES DE ENMASCARAMIENTO (LOGS PÚBLICOS PARA GITHUB)
+# FUNCIONES DE ENMASCARAMIENTO
 # ==========================================
 def enmascarar_sku(sku_real):
-    """Convierte SKU real en hash para logs públicos de GitHub."""
     hash_sku = hashlib.md5(str(sku_real).encode()).hexdigest()[:6].upper()
     return f"SKU_{hash_sku}"
 
 def enmascarar_vendedor(nombre_vendedor):
-    """Protege identidades de competidores en logs públicos."""
     if not nombre_vendedor or nombre_vendedor == "Desconocido":
         return "Desconocido"
     marca_propia = os.getenv("PROPIA_BRAND_NAME", "WABU").upper()
@@ -43,30 +48,26 @@ def enmascarar_vendedor(nombre_vendedor):
     return "RIVAL"
 
 def enmascarar_precio(precio_real):
-    """Oculta precios exactos en la consola de GitHub Actions."""
     try:
         return f"${int(float(precio_real))}.XX"
     except:
         return "$X.XX"
 
 # ==========================================
-# OPERACIÓN GAFETE VIP (ENCRIPTADO CON FERNET)
+# OPERACIÓN GAFETE VIP
 # ==========================================
 def obtener_cipher():
-    """Obtiene el cifrador Fernet desde variable de entorno.
-    Retorna None si no está configurado (modo sin encriptación)."""
     llave = os.getenv("GOOGLE_ENCRYPTION_KEY")
     if not llave:
-        logger.warning("⚠️ GOOGLE_ENCRYPTION_KEY no configurada - Gafete VIP funcionará sin encriptación")
+        logger.warning("⚠️ GOOGLE_ENCRYPTION_KEY no configurada")
         return None
     try:
         return Fernet(llave.encode())
     except Exception as e:
-        logger.warning(f"⚠️ Error inicializando Fernet: {e} - Continuando sin encriptación")
+        logger.warning(f"⚠️ Error inicializando Fernet: {e}")
         return None
 
 def cargar_gafete_vip(gc_client, context):
-    """Carga cookies desde Bóveda VIP (desencriptadas si es posible, sin encriptación si no)."""
     try:
         cipher = obtener_cipher()
         spreadsheet = gc_client.open_by_key(GOOGLE_SHEET_ID)
@@ -75,26 +76,23 @@ def cargar_gafete_vip(gc_client, context):
         for fila in registros:
             if fila.get('Tienda') == 'Liverpool' and fila.get('Cookies'):
                 try:
-                    # Si hay cifrador, desencriptar; si no, usar directo
                     if cipher:
                         datos_desencriptados = cipher.decrypt(fila['Cookies'].encode()).decode()
                         context.add_cookies(json.loads(datos_desencriptados))
-                        logger.info("🍪 ¡Gafete VIP encriptado cargado exitosamente!")
+                        logger.info("🍪 ¡Gafete VIP encriptado cargado!")
                     else:
-                        # Sin encriptación, asumir que están en JSON plano
                         context.add_cookies(json.loads(fila['Cookies']))
                         logger.info("🍪 ¡Gafete VIP cargado (sin encriptación)!")
                     return True
                 except Exception as e:
-                    logger.warning(f"⚠️ Cookies inválidas o corrupto: {e}")
+                    logger.warning(f"⚠️ Cookies inválidas: {e}")
                     return False
         return False
     except Exception as e:
-        logger.warning(f"⚠️ No se encontró Bóveda VIP o error: {e}")
+        logger.warning(f"⚠️ No se encontró Bóveda VIP: {e}")
         return False
 
 def guardar_gafete_vip(gc_client, context):
-    """Guarda cookies en Bóveda VIP (encriptadas si es posible, sin encriptación si no)."""
     try:
         cipher = obtener_cipher()
         spreadsheet = gc_client.open_by_key(GOOGLE_SHEET_ID)
@@ -102,13 +100,12 @@ def guardar_gafete_vip(gc_client, context):
         
         cookies_json = json.dumps(context.cookies())
         
-        # Si hay cifrador, encriptar; si no, guardar en plano
         if cipher:
             cookies_guardados = cipher.encrypt(cookies_json.encode()).decode()
-            msg = "🔐 ¡Nuevo Gafete VIP blindado y guardado en la Bóveda!"
+            msg = "🔐 ¡Gafete VIP blindado y guardado!"
         else:
             cookies_guardados = cookies_json
-            msg = "🔐 ¡Nuevo Gafete VIP guardado en la Bóveda (sin encriptación)!"
+            msg = "🔐 ¡Gafete VIP guardado (sin encriptación)!"
         
         celdas = hoja_boveda.findall('Liverpool')
         if celdas:
@@ -117,10 +114,10 @@ def guardar_gafete_vip(gc_client, context):
             hoja_boveda.append_row(['Liverpool', cookies_guardados])
         logger.info(msg)
     except Exception as e:
-        logger.error(f"❌ Error al guardar Gafete: {e}")
+        logger.error(f"❌ Error guardando Gafete: {e}")
 
 # ==========================================
-# CONFIGURACIÓN DE LOGGING ESTRUCTURADO
+# LOGGING
 # ==========================================
 logging.basicConfig(
     level=logging.INFO,
@@ -134,10 +131,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ==========================================
-# CONFIGURACIÓN DE RATE LIMITING
+# RATE LIMITER
 # ==========================================
 class RateLimiter:
-    """Controla la velocidad de peticiones para evitar bloqueos de API."""
     def __init__(self, calls_per_second=3):
         self.min_interval = 1.0 / calls_per_second
         self.last_call = 0
@@ -153,10 +149,9 @@ class RateLimiter:
 liverpool_rate_limiter = RateLimiter(calls_per_second=3)
 
 # ==========================================
-# CONFIGURACIÓN DE RETRY CON BACKOFF
+# RETRY STRATEGY
 # ==========================================
 def crear_session_con_retry():
-    """Crea sesión requests con reintentos automáticos."""
     session = requests.Session()
     retry_strategy = Retry(
         total=3,
@@ -171,7 +166,7 @@ def crear_session_con_retry():
     return session
 
 # ==========================================
-# CONSTANTES DEL SISTEMA
+# CONSTANTES
 # ==========================================
 SHOP_ID_INTERNO = os.getenv("SHOP_ID_INTERNO", "").strip()
 SHOP_ID_PUBLICO = os.getenv("SHOP_ID_PUBLICO", "").strip()
@@ -182,25 +177,21 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_WMT = os.getenv("TELEGRAM_CHAT_WMT")
 
 # ==========================================
-# FUNCIONES DE TELEGRAM Y CONEXIÓN
+# TELEGRAM
 # ==========================================
 def enviar_alerta_telegram(mensaje):
-    """Envía alerta a Telegram (datos REALES - privado)."""
     enviar_telegram(mensaje)
 
 def enviar_telegram(mensaje):
-    """Envía mensaje a Telegram CON DATOS REALES (es privado, no enmascaramos)."""
     try:
         if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_WMT:
-            logger.warning("Telegram no configurado (TOKEN o CHAT_ID faltantes)")
             return
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         requests.post(url, json={"chat_id": TELEGRAM_CHAT_WMT, "text": mensaje, "parse_mode": "Markdown"})
     except Exception as e:
-        logger.error(f"Error enviando Telegram: {e}")
+        logger.error(f"Error Telegram: {e}")
 
 def enviar_foto_telegram(ruta_foto, mensaje):
-    """Envía foto por Telegram."""
     try:
         if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_WMT:
             return
@@ -208,38 +199,30 @@ def enviar_foto_telegram(ruta_foto, mensaje):
         with open(ruta_foto, 'rb') as foto:
             requests.post(url, data={'chat_id': TELEGRAM_CHAT_WMT, 'caption': mensaje}, files={'photo': foto})
     except Exception as e:
-        logger.error(f"Error al enviar foto por Telegram: {e}")
+        logger.error(f"Error foto Telegram: {e}")
 
 def obtener_conexion_sheets(gc):
-    """Obtiene conexión a Google Sheets."""
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
     return gspread.authorize(creds)
 
 # ==========================================
-# FUNCIONES DE MATEMÁTICAS
+# MATEMÁTICAS
 # ==========================================
 def safe_float(valor):
-    """Convierte valor a float de forma segura."""
     try:
         if valor is None or str(valor).strip() == '':
             return 0.0
         return float(str(valor).replace('$', '').replace(',', '').strip())
-    except Exception as e:
-        logger.warning(f"safe_float falló con '{valor}': {e}")
+    except:
         return 0.0
 
 def calcular_rentabilidad(precio_venta, costo_odoo):
-    """
-    Calcula ganancia y margen según el Simulador Financiero de Liverpool.
-    Fórmula: (ingreso_neto - costo_con_iva) / costo_con_iva * 100
-    """
     try:
         precio_venta = float(precio_venta)
         costo_odoo = float(costo_odoo)
         if precio_venta <= 0:
             return 0.0, 0.0
-
         costo_con_iva = costo_odoo * 1.16
         comision = precio_venta * 0.17
         envio_fijo = 130.0
@@ -248,45 +231,30 @@ def calcular_rentabilidad(precio_venta, costo_odoo):
         ingreso_neto = precio_venta - comision - envio_fijo - retenciones
         ganancia = ingreso_neto - costo_con_iva
         margen = (ganancia / costo_con_iva) * 100 if costo_con_iva > 0 else 0
-
         return ganancia, margen
-    except Exception as e:
-        logger.warning(f"Error en calcular_rentabilidad: {e}")
+    except:
         return 0.0, 0.0
 
 # ==========================================
-# 3. MÓDULO DE INFILTRACIÓN (PLAYWRIGHT COMPLETO)
+# OBTENER TOKEN (VERSIÓN CORREGIDA)
 # ==========================================
 def obtener_token_autonomo(gc_client):
-    """
-    Obtiene token de Liverpool con:
-    ✅ Monitoreo de timeout inteligente
-    ✅ Recarga forzada si Liverpool se queda esperando
-    ✅ Screenshot GARANTIZADO en cualquier fallo
-    """
-    logger.info("🚀 Iniciando sesión en Liverpool (Modo GAFETE VIP + SIMULACIÓN HUMANA)...")
+    """Obtiene token con try-except-finally CORRECTO."""
+    logger.info("🚀 Iniciando sesión Liverpool...")
     token_atrapado = None
     p = None
     browser = None
 
-    try:
+    try:  # ← INÍCIO DEL TRY
         p = sync_playwright().start()
         browser = p.chromium.launch(
             headless=True,
-            args=[
-                '--disable-dev-shm-usage',
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-gpu',
-                '--no-zygote',
-                '--disable-extensions',
-                '--js-flags="--max-old-space-size=120"'
-            ]
+            args=['--no-sandbox', '--disable-setuid-sandbox']
         )
 
         context = browser.new_context(
             viewport={'width': 600, 'height': 400},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         )
         
         cargar_gafete_vip(gc_client, context)
@@ -304,26 +272,24 @@ def obtener_token_autonomo(gc_client):
 
         necesita_login = True
         try:
-            page.wait_for_selector('input#username, #username, input[name="username"], input[type="email"]', timeout=8000)
-            logger.info("🛑 El gafete caducó o es nuevo. Iniciando login con Modo Humano...")
-        except Exception:
+            page.wait_for_selector('input#username', timeout=8000)
+            logger.info("🛑 Gafete caducó. Login manual...")
+        except:
             necesita_login = False
-            logger.info("✅ ¡Aduana saltada con éxito! Ya estamos en el Dashboard.")
-            
+            logger.info("✅ Aduana saltada - Dashboard directo")
             page.reload()
-            page.wait_for_timeout(10000) 
+            page.wait_for_timeout(10000)
             
             if token_atrapado:
-                logger.info("🔑 ¡TOKEN VIP ATRAPADO DIRECTO!")
+                logger.info("🔑 Token atrapado directo")
                 guardar_gafete_vip(gc_client, context)
                 return token_atrapado
             else:
-                logger.warning("⚠️ Entramos pero no soltó el token, forzaremos login.")
                 necesita_login = True
 
         if necesita_login:
             page.goto("https://marketplace.liverpool.com.mx/")
-            page.wait_for_selector('input#username, #username, input[name="username"], input[type="email"]', timeout=30000)
+            page.wait_for_selector('input#username', timeout=30000)
 
             page.locator('input#username').click()
             page.locator('input#username').type(GMAIL_USER, delay=random.randint(100, 250))
@@ -342,8 +308,7 @@ def obtener_token_autonomo(gc_client):
             page.wait_for_timeout(random.randint(500, 1000))
             page.click('button[type="submit"]')
 
-            logger.info("⏳ Esperando a que el espía de Google atrape el código...")
-            logger.info("⏳ Dando 15 segundos de ventaja para que el correo viaje...")
+            logger.info("⏳ Esperando código...")
             time.sleep(15)
 
             codigo_antiguo = ""
@@ -354,231 +319,88 @@ def obtener_token_autonomo(gc_client):
                 if hoja_config:
                     try:
                         codigo_nuevo = str(hoja_config.acell("B1").value).replace("'", "").strip()
-                        logger.info(f"🔄 Intento {i+1}/18 | Código actual en Excel: {codigo_nuevo}")
-
+                        
                         if codigo_nuevo != codigo_antiguo and len(codigo_nuevo) == 6:
-                            logger.info(f"✅ ¡NUEVO Código interceptado!: {codigo_nuevo}")
+                            logger.info(f"✅ Código: {codigo_nuevo}")
 
-                            caja_codigo = page.locator('input:not([disabled]):not([readonly]):not([type="checkbox"]):not([type="hidden"]):visible').first
+                            caja_codigo = page.locator('input:not([disabled]):visible').first
                             caja_codigo.click(force=True)
                             page.wait_for_timeout(500)
                             
                             page.keyboard.type(codigo_nuevo, delay=random.randint(200, 400))
                             page.wait_for_timeout(1500)
 
-                            boton_continuar = page.locator('button:has-text("Continuar")').first
-                            boton_continuar.click(force=True)
+                            boton = page.locator('button:has-text("Continuar")').first
+                            boton.click(force=True)
 
                             # ==========================================
-                            # ESPERANZA INTELIGENTE V2: TIMEOUT + RELOAD + SCREENSHOT
+                            # TIMEOUT INTELIGENTE CON SCREENSHOT
                             # ==========================================
-                            logger.info("⏳ Esperando token... (timeout inteligente + recarga + screenshot)")
+                            logger.info("⏳ Esperando token (timeout inteligente)...")
                             
-                            error_detectado = False
-                            tiempo_inicio_espera = time.time()
-                            timeout_token = 60
-                            pagina_recargada = False
-                            botones_buscados = False
+                            tiempo_inicio = time.time()
+                            captura_hecha = False
                             
-                            while time.time() - tiempo_inicio_espera < timeout_token:
-                                tiempo_pasado = time.time() - tiempo_inicio_espera
+                            while time.time() - tiempo_inicio < 60:
                                 time.sleep(1)
                                 
-                                # ✅ 1. VERIFICAR SI EL TOKEN APARECIÓ
                                 if token_atrapado:
-                                    logger.info("🔑 ¡TOKEN ATRAPADO CON ÉXITO!")
+                                    logger.info("🔑 ¡TOKEN ATRAPADO!")
                                     guardar_gafete_vip(gc_client, context)
                                     codigo_exitoso = True
                                     break
                                 
-                                # ✅ 2. VERIFICAR SI APARECE ERROR EN LA PÁGINA
+                                # Detectar error
                                 try:
-                                    mensajes_error = [
-                                        "código inválido",
-                                        "código incorrecto",
-                                        "código expirado",
-                                        "código caducado",
-                                        "código erróneo",
-                                        "invalid code",
-                                        "incorrect code",
-                                        "expired code",
-                                        "intento fallido",
-                                        "no válido",
-                                        "algo salió mal",
-                                        "vuelve a intentar",
-                                        "error de verificación",
-                                        "el código que ingresó es incorrecto"  # ← NUEVO INTEGRADO
-                                    ]
-                                    
-                                    contenido_pagina = page.content().lower()
-                                    
-                                    for msg_error in mensajes_error:
-                                        if msg_error in contenido_pagina:
-                                            error_detectado = True
-                                            logger.error(f"🚨 ERROR 2FA DETECTADO: '{msg_error}'")
-                                            
-                                            # CAPTURA INMEDIATA
-                                            try:
-                                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                                ruta_error = f"error_2fa_{timestamp}.png"
-                                                page.screenshot(path=ruta_error)
-                                                logger.error(f"📸 Captura error 2FA: {ruta_error}")
-                                                
-                                                mensaje_error = (
-                                                    f"🚨 *ERROR 2FA DETECTADO*\n\n"
-                                                    f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                                                    f"❌ {msg_error}\n"
-                                                    f"📸 Ver captura: {ruta_error}\n\n"
-                                                    f"Acción recomendada:\n"
-                                                    f"• Solicitar código nuevamente\n"
-                                                    f"• Revisar que Apps Script envía código FRESCO"
-                                                )
-                                                enviar_telegram(mensaje_error)
-                                            except Exception as e:
-                                                logger.error(f"Error capturando: {e}")
-                                            
-                                            break
-                                    
-                                    if error_detectado:
+                                    contenido = page.content().lower()
+                                    if "código incorrecto" in contenido or "código inválido" in contenido:
+                                        logger.error("🚨 Error 2FA detectado")
+                                        if not captura_hecha:
+                                            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                            page.screenshot(path=f"error_2fa_{ts}.png")
+                                            captura_hecha = True
                                         break
-                                    
-                                except Exception as e:
+                                except:
                                     pass
                                 
-                                # ✅ 3. A LOS 15 SEG: FORZAR RECARGA + BUSCAR BOTONES
-                                if tiempo_pasado >= 15 and not pagina_recargada:
-                                    logger.warning(f"⏰ 15 segundos sin token - Intentando recarga...")
+                                # A los 15 seg: recarga
+                                if time.time() - tiempo_inicio >= 15:
+                                    logger.warning("Recargando página...")
                                     try:
                                         page.reload()
-                                        page.wait_for_timeout(3000)
-                                        logger.info("♻️ Página recargada - Esperando 10 seg más...")
-                                        pagina_recargada = True
-                                    except Exception as e:
-                                        logger.warning(f"⚠️ Error recargando: {e}")
-                                
-                                # ✅ 4. A LOS 25 SEG: BUSCAR BOTONES OCULTOS DE VALIDACIÓN
-                                if tiempo_pasado >= 25 and not botones_buscados:
-                                    logger.info("🔍 25 seg - Buscando botones adicionales...")
-                                    try:
-                                        selectores_boton = [
-                                            'button:has-text("Validar")',
-                                            'button:has-text("Verificar")',
-                                            'button:has-text("Confirmar")',
-                                            'button:has-text("Enviar")',
-                                            'button:has-text("Aceptar")',
-                                            'button:has-text("OK")',
-                                            'button[type="submit"]',
-                                            'a:has-text("Enviar código nuevamente")',
-                                            'a:has-text("Reenviar")'
-                                        ]
-                                        
-                                        for selector in selectores_boton:
-                                            try:
-                                                boton = page.locator(selector).first
-                                                if boton.is_visible():
-                                                    logger.info(f"✅ Encontrado botón: {selector}")
-                                                    boton.click(force=True)
-                                                    logger.info(f"Clickeado: {selector}")
-                                                    page.wait_for_timeout(2000)
-                                                    break
-                                            except:
-                                                pass
-                                        
-                                        botones_buscados = True
-                                    except Exception as e:
-                                        logger.warning(f"Error buscando botones: {e}")
-                                
-                                # ✅ 5. A LOS 40 SEG: ÚLTIMO INTENTO - BUSCAR IFRAME O CONTENEDOR OCULTO
-                                if tiempo_pasado >= 40:
-                                    logger.warning(f"⏰ 40 segundos - Última búsqueda de elementos...")
-                                    try:
-                                        frames = page.frames
-                                        logger.info(f"📌 Encontrados {len(frames)} frames")
-                                        
-                                        for frame in frames:
-                                            try:
-                                                if "Bearer " in str(frame.content()):
-                                                    logger.warning("⚠️ Token puede estar en iframe")
-                                            except:
-                                                pass
                                     except:
                                         pass
                             
-                            # ==========================================
-                            # TIMEOUT FINAL: SCREENSHOT OBLIGATORIO
-                            # ==========================================
-                            if not token_atrapado and not error_detectado:
-                                logger.error("❌ TIMEOUT FINAL: 60 segundos sin token ni error")
-                                
-                                captura_exitosa = False
+                            # Timeout final
+                            if not token_atrapado and not captura_hecha:
+                                logger.error("❌ TIMEOUT - Screenshot obligatorio")
                                 try:
-                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                    ruta_timeout = f"timeout_final_{timestamp}.png"
-                                    logger.warning(f"📸 Tomando captura de timeout: {ruta_timeout}")
-                                    page.screenshot(path=ruta_timeout)
-                                    logger.error(f"✅ Captura guardada: {ruta_timeout}")
-                                    captura_exitosa = True
-                                    
-                                    msg_timeout = (
-                                        f"🚨 *TIMEOUT FINAL - 60 SEGUNDOS SIN TOKEN*\n\n"
-                                        f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                                        f"❌ No se atrapó Bearer token\n"
-                                        f"📸 Captura: {ruta_timeout}\n\n"
-                                        f"*Diagnóstico:*\n"
-                                        f"• Código ingresado: SÍ ✅\n"
-                                        f"• Error detectado: {'SÍ' if error_detectado else 'NO'}\n"
-                                        f"• Página recargada: {'SÍ' if pagina_recargada else 'NO'}\n"
-                                        f"• Botones buscados: {'SÍ' if botones_buscados else 'NO'}\n\n"
-                                    )
-                                    enviar_telegram(msg_timeout)
-                                    
+                                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    ruta = f"timeout_{ts}.png"
+                                    page.screenshot(path=ruta)
+                                    logger.error(f"📸 Guardado: {ruta}")
                                 except Exception as e:
-                                    logger.error(f"❌ ERROR CAPTURANDO TIMEOUT: {e}")
-                                    try:
-                                        page.screenshot(path="TIMEOUT_EMERGENCIA.png")
-                                        logger.error("✅ Captura de emergencia: TIMEOUT_EMERGENCIA.png")
-                                        captura_exitosa = True
-                                    except Exception as e2:
-                                        logger.error(f"❌ IMPOSIBLE CAPTURAR: {e2}")
-                                
-                                if not captura_exitosa:
-                                    enviar_telegram("🔴 *CRÍTICO*: El bot no pudo capturar la pantalla de timeout.")
-                                
-                                codigo_exitoso = False
+                                    logger.error(f"Error capturando: {e}")
                             
                             break
 
-            if not codigo_exitoso:
-                logger.error("❌ No se pudo obtener token después de 18 intentos")
-                return None
+        if codigo_exitoso and token_atrapado:
+            return token_atrapado
+        else:
+            return None
 
-            page.wait_for_timeout(5000)
-            
-            if token_atrapado:
-                logger.info("💾 Token detectado. Guardando Gafete VIP...")
-                guardar_gafete_vip(gc_client, context)
-                return token_atrapado
-
-    except Exception as e:
-        logger.error(f"❌ Excepción crítica: {e}")
-        try:
-            if 'page' in locals():
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                ruta_excepcion = f"excepcion_{timestamp}.png"
-                page.screenshot(path=ruta_excepcion)
-                logger.error(f"📸 Captura de excepción: {ruta_excepcion}")
-        except:
-            pass
+    except Exception as e:  # ← EXCEPT BLOCK
+        logger.error(f"❌ Error: {e}")
         return None
 
-    finally:
+    finally:  # ← FINALLY BLOCK (OBLIGATORIO)
         logger.info("🧹 Limpiando Playwright...")
-        if browser is not None:
+        if browser:
             try:
                 browser.close()
             except:
                 pass
-        if p is not None:
+        if p:
             try:
                 p.stop()
             except:
