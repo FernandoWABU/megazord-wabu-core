@@ -619,8 +619,11 @@ class ResultadosThreadSafe:
 # ==========================================
 def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notificacion=""):
     """
-    Actualiza precio en Liverpool y notifica.
-    DUAL LOGS: Enmascarado en GitHub, REAL en Telegram.
+    Actualiza precio en Liverpool.
+    ❌ ELIMINADO: envío de Telegram genérico
+    ✅ SOLO: logger.info
+    
+    Las alertas se manejan desde procesar_sku_threadsafe
     """
     url = "https://pro-api.liverpool.com.mx/api/offermanagement/offers/price-quantity"
     headers = {
@@ -644,9 +647,8 @@ def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notifi
         session = crear_session_con_retry()
         response = session.put(url, headers=headers, json=payload, timeout=30)
         if response.status_code in [200, 204]:
-            # ✅ DUAL LOGS: GitHub enmascarado, Telegram REAL
-            logger.info(f"✅ Ajuste táctico ejecutado: {enmascarar_precio(nuevo_precio)}")
-            enviar_telegram(f"🔫 *FRANCOTIRADOR LIVERPOOL*\n🎯 Producto: `{sku_notificacion}`\n💰 Nuevo Precio: *${nuevo_precio:,.2f}*")
+            # ✅ SOLO LOGS ENMASCARADOS - SIN TELEGRAM
+            logger.info(f"✅ Ajuste ejecutado: {enmascarar_precio(nuevo_precio)}")
             return True
         else:
             logger.warning(f"⚠️ Error al actualizar precio: HTTP {response.status_code}")
@@ -661,7 +663,10 @@ def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notifi
 def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_config, session):
     """
     Procesa un SKU con TODA la lógica de combate.
-    PROHIBIDO MUTILAR: Aquí van las 8 reglas COMPLETAS.
+    ✅ ALERTAS TELEGRAM UNIFICADAS Y LIMPIAS:
+       - 🚨 ALERTA TÁCTICA: Sombra Activada
+       - 🛑 ALERTA ROJA: Has perdido la BuyBox
+       - 🧠 ANALISTA HISTÓRICO
     """
     try:
         sku_i = str(regla.get('sku') or regla.get('sku_interno') or regla.get('SKU_Interno') or regla.get('SKU') or 'Sin SKU')
@@ -748,6 +753,10 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                 pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
                 if float(precio_actual) != float(nuevo_precio):
                     if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
+                        # ✅ ALERTA: Límite Mínimo activado (si hay cambio)
+                        msg_alerta = f"📌 *LÍMITE MÍNIMO ACTIVADO*\n\n📦 *{sku_i}*\nPrecio fijado en mínimo: `${nuevo_precio}`"
+                        resultados.agregar_alerta(msg_alerta)
+                        enviar_telegram(msg_alerta)
                         resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, precios_rivales[0] if precios_rivales else "SIN RIVAL", nuevo_precio, cantidad, pos, bb])
                 else:
                     resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, precios_rivales[0] if precios_rivales else "SIN RIVAL", precio_actual, cantidad, pos, bb])
@@ -772,15 +781,16 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                         mejor_historico = resultados.max_precio_buybox_historico.get(sku_i, 0) if hasattr(resultados, 'max_precio_buybox_historico') else 0
                         if mejor_historico > 0:
                             nuevo_precio = mejor_historico
-                            msg_alerta = f"🧠 *ANALISTA HISTÓRICO*\nRivales muy caros en *{sku_i}*. Ajustando a tu mejor precio histórico ganador: `${nuevo_precio}`."
+                            msg_alerta = f"🧠 *ANALISTA HISTÓRICO*\n\n📦 *{sku_i}*\nRivales muy caros. Usando mejor precio histórico: `${nuevo_precio}`"
                         else:
                             nuevo_precio = precio_maximo_regla
-                            msg_alerta = f"🧠 *ANALISTA HISTÓRICO*\nRivales muy caros en *{sku_i}*. Sin historial previo, ajustando a tu máximo: `${nuevo_precio}`."
+                            msg_alerta = f"🧠 *ANALISTA HISTÓRICO*\n\n📦 *{sku_i}*\nRivales muy caros. Ajustando a máximo: `${nuevo_precio}`"
 
                         pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
                         if float(precio_actual) != float(nuevo_precio):
                             if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
                                 resultados.agregar_alerta(msg_alerta)
+                                enviar_telegram(msg_alerta)
                                 resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, nuevo_precio, cantidad, pos, bb])
                         else:
                             resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb])
@@ -816,29 +826,26 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                                     nuevo_precio = precio_minimo_regla
 
                                 pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
-                                msg_alerta = (f"🛡️ *ALERTA TÁCTICA: Sombra Activada*\n\n"
-                                              f"📦 *{sku_i}*\n"
-                                              f"👑 *Precio de la BuyBox:* `${rival_mas_bajo}`\n"
-                                              f"⚠️ _Haciendo Sombra a `${nuevo_precio}`..._")
+                                
+                                # ✅ ALERTA SOMBRA - FORMATO EXACTO SOLICITADO
+                                msg_alerta = f"🚨 ALERTA TÁCTICA: Sombra Activada {sku_i} Precio de la BuyBox: ${rival_mas_bajo} Haciendo Sombra a `${nuevo_precio}`..."
                                 if costo_odoo_sheet > 0:
                                     gan, mar = calcular_rentabilidad(rival_mas_bajo, costo_odoo_sheet)
-                                    msg_alerta += f"\n💡 *Proyección para 1er lugar (a `${rival_mas_bajo}`):*\nGanancia: `${gan:.2f}` | Margen: `{mar:.1f}%`"
+                                    msg_alerta += f" Proyección para 1er lugar (a `${rival_mas_bajo}`): Ganancia: ${gan:.2f} | Margen: {mar:.1f}%"
 
                                 resultados.agregar_alerta(msg_alerta)
+                                enviar_telegram(msg_alerta)
                                 if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
                                     resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, nuevo_precio, cantidad, pos, bb])
                             else:
                                 # DERROTA: CONGELARSE EN MÍNIMO
                                 pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
-                                msg_alerta = (f"🛑 *ALERTA ROJA: Has perdido la BuyBox*\n\n"
-                                              f"📦 *{sku_i}*\n"
-                                              f"👑 *Precio de la BuyBox:* `${rival_mas_bajo}`\n"
-                                              f"🥶 _Me quedo congelado en `${precio_actual}` (Mínimo: `${precio_minimo_regla}`)._")
-                                if costo_odoo_sheet > 0:
-                                    gan, mar = calcular_rentabilidad(rival_mas_bajo, costo_odoo_sheet)
-                                    msg_alerta += f"\n💡 *Para poder salir (igualando a `${rival_mas_bajo}`):*\nGanancia: `${gan:.2f}` | Margen: `{mar:.1f}%`"
+                                
+                                # ✅ ALERTA ROJA - FORMATO EXACTO SOLICITADO
+                                msg_alerta = f"🛑 ALERTA ROJA: Has perdido la BuyBox {sku_i} Precio de la BuyBox: ${rival_mas_bajo} Me quedo congelado en `${precio_actual}` (Mínimo: `${precio_minimo_regla}`). Para poder salir (igualando a `${rival_mas_bajo}`): Ganancia: ${calcular_rentabilidad(rival_mas_bajo, costo_odoo_sheet)[0]:.2f} | Margen: {calcular_rentabilidad(rival_mas_bajo, costo_odoo_sheet)[1]:.1f}%"
 
                                 resultados.agregar_alerta(msg_alerta)
+                                enviar_telegram(msg_alerta)
                                 resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb])
                 else:
                     # SIN RIVALES: SOLO NOSOTROS
@@ -848,10 +855,12 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                         if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
                             resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, "SIN RIVAL", nuevo_precio, cantidad, "1 de 1", "¡Nosotros! 👑"])
                     else:
-                        resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, "SIN RIVAL", precio_actual, cantidad, "1 de 1", "¡Nosotros! 👑"])
+                        nuevo_precio = precio_maximo_regla
+                        if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
+                            resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, "SIN RIVAL", nuevo_precio, cantidad, "1 de 1", "¡Nosotros! 👑"])
 
     except Exception as e:
-        logger.error(f"❌ Error procesando SKU {enmascarar_sku(sku_lp)}: {e}")
+        logger.error(f"❌ Error en procesar_sku_threadsafe: {e}")
         resultados.agregar_historial([
             (datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
             str(sku_i) if 'sku_i' in locals() else sku_lp, sku_lp, "ERROR", 0, 0, "ERROR", str(e)
