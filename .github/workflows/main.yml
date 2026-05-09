@@ -47,7 +47,7 @@ jobs:
           GOOGLE_ENCRYPTION_KEY: ${{ secrets.GOOGLE_ENCRYPTION_KEY }}
         run: python megazord_liverpool.py
 
-      - name: Desplegar Megazord Walmart
+      - name: 🔵 Desplegar Megazord Walmart
         if: ${{ github.event.inputs.tienda == 'walmart' || github.event.inputs.tienda == 'ambas' || github.event.inputs.tienda == '' }}
         env:
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
@@ -59,3 +59,10 @@ jobs:
           SCRAPERAPI_KEY_2: ${{ secrets.SCRAPERAPI_KEY_2 }}
           SCRAPERAPI_KEY_3: ${{ secrets.SCRAPERAPI_KEY_3 }}
         run: python megazord_walmart.py
+
+      - name: 📸 Subir evidencia de la GoPro
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidencia-login
+          path: debug_token.png
