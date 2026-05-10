@@ -605,7 +605,7 @@ class ResultadosThreadSafe:
                 self.historial_rows.append(fila)
 
     def agregar_archivo_negro(self, fila):
-        """Agrega registro de rival al archivo negro de forma thread-safe."""
+        """Agrega registro de rival al HISTORIAL de forma thread-safe."""
         with self._lock:
             self.archivo_negro_rows.append(fila)
 
@@ -741,7 +741,7 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
         sku_display = enmascarar_sku(sku_lp)
         logger.info(f"🔍 Escaneando {sku_display} | BB: {enmascarar_vendedor(info_rivales[0]['nombre'] if info_rivales else 'N/A')}")
 
-        # Registro de rivales (Archivo Negro)
+        # Registro de rivales (HISTORIAL)
         hora_actual_str = (datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
         for r in info_rivales[:5]:
             resultados.agregar_archivo_negro([hora_actual_str, sku_i, r["nombre"], r["precio"]])
@@ -783,7 +783,6 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                         # ✅ ALERTA: Límite Mínimo activado (si hay cambio)
                         msg_alerta = f"📌 *LÍMITE MÍNIMO ACTIVADO*\n\n📦 *{sku_i}*\nPrecio fijado en mínimo: `${nuevo_precio}`"
                         resultados.agregar_alerta(msg_alerta)
-                        enviar_telegram(msg_alerta)
                         resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, precios_rivales[0] if precios_rivales else "SIN RIVAL", nuevo_precio, cantidad, pos, bb])
                 else:
                     resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, precios_rivales[0] if precios_rivales else "SIN RIVAL", precio_actual, cantidad, pos, bb])
@@ -817,7 +816,6 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                         if float(precio_actual) != float(nuevo_precio):
                             if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
                                 resultados.agregar_alerta(msg_alerta)
-                                enviar_telegram(msg_alerta)
                                 resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, nuevo_precio, cantidad, pos, bb])
                         else:
                             resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb])
@@ -861,7 +859,6 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                                     msg_alerta += f" Proyección para 1er lugar (a `${rival_mas_bajo}`): Ganancia: ${gan:.2f} | Margen: {mar:.1f}%"
 
                                 resultados.agregar_alerta(msg_alerta)
-                                enviar_telegram(msg_alerta)
                                 if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
                                     resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, nuevo_precio, cantidad, pos, bb])
                             else:
@@ -872,7 +869,6 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                                 msg_alerta = f"🛑 ALERTA ROJA: Has perdido la BuyBox {sku_i} Precio de la BuyBox: ${rival_mas_bajo} Me quedo congelado en `${precio_actual}` (Mínimo: `${precio_minimo_regla}`). Para poder salir (igualando a `${rival_mas_bajo}`): Ganancia: ${calcular_rentabilidad(rival_mas_bajo, costo_odoo_sheet)[0]:.2f} | Margen: {calcular_rentabilidad(rival_mas_bajo, costo_odoo_sheet)[1]:.1f}%"
 
                                 resultados.agregar_alerta(msg_alerta)
-                                enviar_telegram(msg_alerta)
                                 resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb])
                 else:
                     # SIN RIVALES: SOLO NOSOTROS
@@ -1026,13 +1022,13 @@ def ejecutar_bot():
     if historial_rows:
         guardar_en_sql(historial_rows)
 
-    # Guardar Archivo Negro
+    # Guardar HISTORIAL
     if archivo_negro_rows:
         try:
             hoja_rivales.append_rows(archivo_negro_rows)
             logger.info(f"📝 Guardados {len(archivo_negro_rows)} registros en Historial")
         except Exception as e:
-            logger.error(f"Error guardando Archivo Negro: {e}")
+            logger.error(f"Error guardando HISTORIAL: {e}")
 
     # Actualizar contador de corridas
     try:
