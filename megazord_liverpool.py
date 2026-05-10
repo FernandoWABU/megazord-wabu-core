@@ -30,7 +30,21 @@ from cryptography.fernet import Fernet
 import json
 import psycopg2
 
+load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+# ==========================================
+# 🧪 MODO SIMULACRO (DRY-RUN)
+# ==========================================
+MODO_SIMULACION = False  
+
+SIMULACION_BANNER = "🧪 [SIMULACIÓN] "
+SIMULACION_COLOR = "\033[94m"
+RESET_COLOR = "\033[0m"
+
+def imprimir_simulacion(mensaje):
+    print(f"{SIMULACION_COLOR}{SIMULACION_BANNER}{mensaje}{RESET_COLOR}")
+    logger.info(f"{SIMULACION_BANNER}{mensaje}")
 
 # ==========================================
 # FUNCIONES DE ENMASCARAMIENTO
@@ -643,7 +657,12 @@ def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notifi
     }]
     
     try:
-        logger.info(f"📤 ENVIANDO ACTUALIZACIÓN DE PRECIO")
+        if MODO_SIMULACION:
+            imprimir_simulacion(f"DISPARAR_PRECIO | SKU: {sku_notificacion} | Bajaría a: ${nuevo_precio}")
+            return True
+            
+        # ========== AUDITORÍA: FORMATO LIMPIO PARA GITHUB ==========
+        logger.info(f"🎯 DISPARAR_PRECIO REAL | SKU: {sku_notificacion} | Bajando a: ${nuevo_precio}")
         logger.info(f"   SKU: {sku_notificacion}")
         logger.info(f"   Precio Nuevo: ${nuevo_precio}")
         logger.debug(f"   📦 PAYLOAD ENVIADO: {json.dumps(payload, indent=2, default=str)}")
@@ -879,6 +898,10 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
 # ==========================================
 def guardar_en_sql(filas):
     """Guarda historial en PostgreSQL (Render)."""
+    if MODO_SIMULACION:
+        imprimir_simulacion(f"SQL OMITIDO | Se guardarían {len(filas)} registros en la Nube.")
+        return
+        
     if not filas:
         return
 
@@ -1007,7 +1030,7 @@ def ejecutar_bot():
     if archivo_negro_rows:
         try:
             hoja_rivales.append_rows(archivo_negro_rows)
-            logger.info(f"📝 Guardados {len(archivo_negro_rows)} registros en Archivo Negro")
+            logger.info(f"📝 Guardados {len(archivo_negro_rows)} registros en Historial")
         except Exception as e:
             logger.error(f"Error guardando Archivo Negro: {e}")
 
