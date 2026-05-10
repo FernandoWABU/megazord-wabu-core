@@ -39,11 +39,14 @@ jobs:
       - name: 🟣 Desplegar Megazord Liverpool
         if: ${{ github.event.inputs.tienda == 'liverpool' || github.event.inputs.tienda == 'ambas' || github.event.inputs.tienda == '' }}
         env:
+          SHOP_ID_INTERNO: ${{ secrets.SHOP_ID_INTERNO }}
+          SHOP_ID_PUBLICO: ${{ secrets.SHOP_ID_PUBLICO }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_WMT: ${{ secrets.TELEGRAM_CHAT_WMT }}
           LIVERPOOL_USER: ${{ secrets.LIVERPOOL_USER }}
           LIVERPOOL_PASS: ${{ secrets.LIVERPOOL_PASS }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GOOGLE_ENCRYPTION_KEY: ${{ secrets.GOOGLE_ENCRYPTION_KEY }}
         run: python megazord_liverpool.py
 
