@@ -605,7 +605,7 @@ class ResultadosThreadSafe:
                 self.historial_rows.append(fila)
 
     def agregar_archivo_negro(self, fila):
-        """Agrega registro de rival al HISTORIAL de forma thread-safe."""
+        """Agrega registro de rival al Historial de forma thread-safe."""
         with self._lock:
             self.archivo_negro_rows.append(fila)
 
@@ -741,7 +741,7 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
         sku_display = enmascarar_sku(sku_lp)
         logger.info(f"🔍 Escaneando {sku_display} | BB: {enmascarar_vendedor(info_rivales[0]['nombre'] if info_rivales else 'N/A')}")
 
-        # Registro de rivales (HISTORIAL)
+        # Registro de rivales (Historial)
         hora_actual_str = (datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
         for r in info_rivales[:5]:
             resultados.agregar_archivo_negro([hora_actual_str, sku_i, r["nombre"], r["precio"]])
@@ -1022,13 +1022,13 @@ def ejecutar_bot():
     if historial_rows:
         guardar_en_sql(historial_rows)
 
-    # Guardar HISTORIAL
+    # Guardar Historial
     if archivo_negro_rows:
         try:
             hoja_rivales.append_rows(archivo_negro_rows)
             logger.info(f"📝 Guardados {len(archivo_negro_rows)} registros en Historial")
         except Exception as e:
-            logger.error(f"Error guardando HISTORIAL: {e}")
+            logger.error(f"Error guardando Historial: {e}")
 
     # Actualizar contador de corridas
     try:
