@@ -617,13 +617,12 @@ class ResultadosThreadSafe:
 # ==========================================
 # 5. DISPARAR PRECIO (SOLO ACTUALIZACIÓN + NOTIFICACIÓN)
 # ==========================================
+# ==========================================
+# 5. DISPARAR PRECIO (SOLO ACTUALIZACIÓN + NOTIFICACIÓN)
+# ==========================================
 def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notificacion=""):
     """
-    Actualiza precio en Liverpool.
-    ❌ ELIMINADO: envío de Telegram genérico
-    ✅ SOLO: logger.info
-    
-    Las alertas se manejan desde procesar_sku_threadsafe
+    Actualiza precio en Liverpool CON AUDITORÍA COMPLETA.
     """
     url = "https://pro-api.liverpool.com.mx/api/offermanagement/offers/price-quantity"
     headers = {
@@ -638,21 +637,30 @@ def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notifi
         "offerPriceManagement": [{
             "discountPrice": float(nuevo_precio),
             "updatedAt": datetime.now(timezone.utc).isoformat(),
-            "userModified": os.getenv("LIVERPOOL_USER", "Bot"),
+            "userModified": GMAIL_USER,
             "index": 0
         }]
     }]
+    
     try:
+        logger.info(f"📤 ENVIANDO ACTUALIZACIÓN DE PRECIO")
+        logger.info(f"   SKU: {sku_notificacion}")
+        logger.info(f"   Precio Nuevo: ${nuevo_precio}")
+        logger.debug(f"   📦 PAYLOAD ENVIADO: {json.dumps(payload, indent=2, default=str)}")
+        
         liverpool_rate_limiter.wait()
         session = crear_session_con_retry()
+        
         response = session.put(url, headers=headers, json=payload, timeout=30)
+        
         if response.status_code in [200, 204]:
-            # ✅ SOLO LOGS ENMASCARADOS - SIN TELEGRAM
             logger.info(f"✅ Ajuste ejecutado: {enmascarar_precio(nuevo_precio)}")
             return True
         else:
-            logger.warning(f"⚠️ Error al actualizar precio: HTTP {response.status_code}")
+            logger.error(f"❌ ERROR HTTP {response.status_code}")
+            logger.error(f"❌ RESPUESTA COMPLETA DEL SERVIDOR: {response.text}")
             return False
+            
     except Exception as e:
         logger.error(f"❌ Excepción en disparar_precio: {e}")
         return False
