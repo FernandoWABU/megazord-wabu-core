@@ -270,35 +270,31 @@ class MiraklCoppel:
             logger.error(f"❌ Error en request: {e}")
             return None
     
-    def obtener_ofertas_por_sku(self, sku_producto: str) -> List[Dict]:
-        """Obtiene ofertas competidoras para un SKU de producto."""
-        # Endpoint típico de Mirakl para buscar ofertas
-        endpoint = f"/offers"
+    def obtener_mi_oferta(self, sku_oferta: str) -> Optional[Dict]:
+        """Paso 1: Obtiene NUESTRA oferta usando nuestro SKU interno de Excel."""
+        endpoint = "/offers"
         params = {
             "shop_id": self.shop_id,
-            "product_sku": sku_producto,
+            "sku": sku_oferta,  # Mirakl usa 'sku' para buscar el SKU del vendedor
             "states": "ACTIVE"
         }
-        
         result = self._request("GET", endpoint, params=params)
-        
+        if result and "offers" in result and len(result["offers"]) > 0:
+            return result["offers"][0]
+        return None
+
+    def obtener_ofertas_por_producto(self, product_id: str) -> List[Dict]:
+        """Paso 2: Obtiene TODAS las ofertas de la competencia usando el ID de Producto."""
+        endpoint = "/offers"
+        params = {
+            "product_ids": product_id,  # Buscar por ID global de Coppel
+            "states": "ACTIVE"
+        }
+        result = self._request("GET", endpoint, params=params)
         if result and "offers" in result:
             return result["offers"]
-        else:
-            logger.warning(f"⚠️ No se encontraron ofertas para SKU {sku_producto}")
-            return []
-    
-    def obtener_mi_oferta(self, sku_producto: str) -> Optional[Dict]:
-        """Obtiene NUESTRA oferta actual para un SKU."""
-        ofertas = self.obtener_ofertas_por_sku(sku_producto)
+        return []
         
-        for oferta in ofertas:
-            nombre_tienda = oferta.get("shop", {}).get("name", "")
-            if TIENDA_DETECTABLE in nombre_tienda.upper():
-                return oferta
-        
-        return None
-    
     def actualizar_precio_oferta(self, oferta_id: str, nuevo_precio: float) -> bool:
         """Actualiza el precio de una oferta en Mirakl."""
         endpoint = f"/offers/{oferta_id}"
@@ -403,11 +399,28 @@ class MegazordCoppel:
         
         logger.info(f"\n🔍 Procesando: {enmascarar_sku(sku_coppel)}")
         
-        # Obtener ofertas del producto
-        ofertas = self.mirakl.obtener_ofertas_por_sku(sku_coppel)
+        # 1. OBTENER NUESTRA OFERTA (Para extraer el Product ID global)
+        mi_oferta = self.mirakl.obtener_mi_oferta(sku_coppel)
+        
+        if not mi_oferta:
+            logger.warning(f"⚠️ No se encontró oferta ACTIVA para nuestro SKU: {sku_coppel}")
+            return False
+
+        mi_oferta_id = mi_oferta.get("offer_id") or mi_oferta.get("id")
+        mi_precio_actual = float(mi_oferta.get("price", 0))
+        
+        # Mirakl puede devolver el ID del producto como 'product_id' o 'product_sku'
+        product_id = mi_oferta.get("product_id") or mi_oferta.get("product_sku")
+        
+        if not product_id:
+            logger.warning(f"⚠️ No se pudo extraer el Product ID de Coppel.")
+            return False
+
+        # 2. OBTENER TODAS LAS OFERTAS DE LA COMPETENCIA
+        ofertas = self.mirakl.obtener_ofertas_por_producto(product_id)
         
         if not ofertas:
-            logger.warning(f"⚠️ Sin ofertas disponibles para {sku_limpio}")
+            logger.warning(f"⚠️ Sin ofertas disponibles para el producto {product_id}")
             return False
         
         # Ordenar por precio (BuyBox es la primera)
@@ -425,15 +438,6 @@ class MegazordCoppel:
             nombre = oferta.get("shop", {}).get("name", "Desconocido")
             precio = float(oferta.get("price", 0))
             self.sheets.guardar_rival(sku_limpio, nombre, precio)
-        
-        # Obtener nuestra oferta actual
-        mi_oferta = self.mirakl.obtener_mi_oferta(sku_coppel)
-        mi_precio_actual = float(mi_oferta.get("price", 0)) if mi_oferta else 0
-        mi_oferta_id = mi_oferta.get("id") if mi_oferta else None
-        
-        if not mi_oferta_id:
-            logger.warning(f"⚠️ No tenemos oferta en este SKU")
-            return False
         
         # ==========================================
         # LÓGICA DE COMBATE: GUERRILLA
