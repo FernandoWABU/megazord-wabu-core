@@ -295,21 +295,28 @@ class MiraklCoppel:
             return result["offers"]
         return []
         
-    def actualizar_precio_oferta(self, oferta_id: str, nuevo_precio: float) -> bool:
-        """Actualiza el precio de una oferta en Mirakl."""
-        endpoint = f"/offers/{oferta_id}"
+    def actualizar_precio_oferta(self, sku_vendedor: str, nuevo_precio: float) -> bool:
+        """Actualiza el precio de una oferta en Mirakl usando el método POST."""
+        endpoint = "/offers"
         
+        # Mirakl exige que las actualizaciones se envíen como una lista de ofertas
         payload = {
-            "price": round(nuevo_precio, 2)
+            "offers": [
+                {
+                    "sku": sku_vendedor,  # Usamos tu SKU interno de Excel
+                    "price": round(nuevo_precio, 2)
+                }
+            ]
         }
         
-        result = self._request("PUT", endpoint, json=payload)
+        # Cambiamos PUT por POST, que es el método permitido (405 solucionado)
+        result = self._request("POST", endpoint, json=payload)
         
-        if result:
-            logger.info(f"✅ Precio actualizado: ${nuevo_precio}")
+        if result is not None:
+            logger.info(f"✅ Precio actualizado en Mirakl a: ${nuevo_precio}")
             return True
         else:
-            logger.error(f"❌ Fallo al actualizar precio")
+            logger.error(f"❌ Fallo al actualizar precio en la API")
             return False
 
 # ==========================================
@@ -472,7 +479,7 @@ class MegazordCoppel:
             # Validar rentabilidad
             if nuevo_precio >= minimo and es_precio_rentable(nuevo_precio, costo_odoo, minimo):
                 # EJECUTAR ATAQUE
-                if self.mirakl.actualizar_precio_oferta(mi_oferta_id, nuevo_precio):
+                if self.mirakl.actualizar_precio_oferta(sku_coppel, nuevo_precio):
                     ganancia, margen = calcular_rentabilidad_coppel(nuevo_precio, costo_odoo)
                     
                     mensaje = (
@@ -506,7 +513,7 @@ class MegazordCoppel:
                     
                     if nuevo_precio > precio_bb:
                         # EJECUTAR OPTIMIZACIÓN
-                        if self.mirakl.actualizar_precio_oferta(mi_oferta_id, nuevo_precio):
+                        if self.mirakl.actualizar_precio_oferta(sku_coppel, nuevo_precio):
                             ganancia, margen = calcular_rentabilidad_coppel(nuevo_precio, costo_odoo)
                             
                             mensaje = (
