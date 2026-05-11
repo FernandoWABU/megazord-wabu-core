@@ -853,7 +853,7 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                                 pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
                                 
                                 # ✅ ALERTA SOMBRA - FORMATO ELEGANTE
-                                vendedor_ganador = bb.get("sellerName", "Desconocido")
+                                vendedor_ganador = info_rivales[0]["nombre"] if info_rivales else "Desconocido"
                                 msg_alerta = (
                                     f"🚨 *ALERTA TÁCTICA: Sombra Activada*\n\n"
                                     f"📦 *{sku_i}*\n"
@@ -873,7 +873,7 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                                 pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
                                 
                                 # ✅ ALERTA ROJA - FORMATO ELEGANTE
-                                vendedor_ganador = bb.get("sellerName", "Desconocido")
+                                vendedor_ganador = info_rivales[0]["nombre"] if info_rivales else "Desconocido"
                                 gan_roja, mar_roja = calcular_rentabilidad(rival_mas_bajo, costo_odoo_sheet)
                                 msg_alerta = (
                                     f"🛑 *ALERTA ROJA: Has perdido la BuyBox*\n\n"
