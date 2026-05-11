@@ -282,6 +282,32 @@ def espiar_ofertas_walmart(url_producto):
         return 0.0, [], "Error"
 
 # ==========================================
+# 🛡️ FRENO DE SEGURIDAD: PROTECCIÓN 8%
+# ==========================================
+def aplicar_freno_8_porciento(nuestro_precio_actual, nuevo_precio_propuesto):
+    # Validación: si no tenemos precio válido, permitir
+    if nuestro_precio_actual <= 0:
+        return nuevo_precio_propuesto, False
+    
+    # Calcular límite seguro (8% de incremento máximo)
+    limite_seguro = round(nuestro_precio_actual * 1.08, 2)
+    
+    # Verificar si excede límite
+    if nuevo_precio_propuesto > limite_seguro:
+        # 🚨 FRENO ACTIVADO
+        logger.warning(
+            f"🛡️ FRENO 8%: Incremento demasiado brusco detectado\n"
+            f"   Precio actual: ${nuestro_precio_actual:.2f}\n"
+            f"   Precio propuesto: ${nuevo_precio_propuesto:.2f}\n"
+            f"   Límite seguro (8%): ${limite_seguro:.2f}\n"
+            f"   ACCIÓN: Limitado a ${limite_seguro:.2f}"
+        )
+        return limite_seguro, True  # Fue limitado
+    else:
+        # ✅ Incremento dentro de límites seguros
+        return nuevo_precio_propuesto, False  # No fue limitado
+
+# ==========================================
 # CEREBRO PRINCIPAL DE WALMART
 # ==========================================
 def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
@@ -429,14 +455,33 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
                         nuevo_precio = max_wmt
                         
                     if nuevo_precio > precio_bb:
-                        logger.info(f"   🚀 Optimización de margen ejecutada")
+                        # ========== 🛡️ FRENO DEL 8% ==========
+                        nuestro_precio_actual = precio_bb  # Estamos en el BuyBox
+                        
+                        # Aplicar freno: limitar incremento a máximo 8%
+                        nuevo_precio, fue_limitado = aplicar_freno_8_porciento(
+                            nuestro_precio_actual,
+                            nuevo_precio
+                        )
+                        
+                        if fue_limitado:
+                            logger.info(f"   🚀 Optimización de margen ejecutada (FRENO aplicado)")
+                        else:
+                            logger.info(f"   🚀 Optimización de margen ejecutada")
+                        
                         actualizar_precio_walmart(token, creds_b64, sku_wmt, nuevo_precio)
-                        enviar_mensaje_telegram(
+                        
+                        mensaje = (
                             f"🚀 *Optimización de Margen*\n"
                             f"SKU: {sku_wmt}\n"
                             f"Precio Anterior: ${precio_bb}\n"
                             f"Nuevo Precio: ${nuevo_precio}"
                         )
+                        
+                        if fue_limitado:
+                            mensaje += f"\n\n🛡️ (Freno 8% aplicado para proteger cuenta)"
+                        
+                        enviar_mensaje_telegram(mensaje)
                     else:
                         logger.info("   ✅ Margen ya optimizado")
                 else:
