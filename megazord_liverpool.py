@@ -853,10 +853,12 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                                 pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
                                 
                                 # ✅ ALERTA SOMBRA - FORMATO ELEGANTE
+                                vendedor_ganador = bb.get("sellerName", "Desconocido")
                                 msg_alerta = (
                                     f"🚨 *ALERTA TÁCTICA: Sombra Activada*\n\n"
                                     f"📦 *{sku_i}*\n"
-                                    f"👑 Precio de la BuyBox: `${rival_mas_bajo}`\n"
+                                    f"👑 Ganador actual: *{vendedor_ganador}*\n"
+                                    f"💰 Precio de la BuyBox: `${rival_mas_bajo}`\n"
                                     f"🎯 Haciendo Sombra a: `${nuevo_precio}`...\n"
                                 )
                                 if costo_odoo_sheet > 0:
@@ -871,11 +873,13 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                                 pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
                                 
                                 # ✅ ALERTA ROJA - FORMATO ELEGANTE
+                                vendedor_ganador = bb.get("sellerName", "Desconocido")
                                 gan_roja, mar_roja = calcular_rentabilidad(rival_mas_bajo, costo_odoo_sheet)
                                 msg_alerta = (
                                     f"🛑 *ALERTA ROJA: Has perdido la BuyBox*\n\n"
                                     f"📦 *{sku_i}*\n"
-                                    f"👑 Precio de la BuyBox: `${rival_mas_bajo}`\n"
+                                    f"👑 Ganador actual: *{vendedor_ganador}*\n"
+                                    f"💰 Precio de la BuyBox: `${rival_mas_bajo}`\n"
                                     f"🥶 Me quedo congelado en `${precio_actual}` (Mínimo: `${precio_minimo_regla}`).\n"
                                     f"💡 Para poder salir (igualando a `${rival_mas_bajo}`):\n"
                                     f"Ganancia: `${gan_roja:.2f}` | Margen: `{mar_roja:.1f}%`"
