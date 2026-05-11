@@ -353,64 +353,68 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
             ganador_enmascarado = enmascarar_vendedor(ganador)
             logger.info(f"   👑 BuyBox: ${precio_bb} (Vendedor: {ganador_enmascarado})")
             
-            # --- 3. TÁCTICAS DE COMBATE ---
+# --- 3. TÁCTICAS DE COMBATE: INTELIGENCIA GUERRILLA ---
             if "NOSOTROS" not in ganador_enmascarado and precio_bb > 0:
-                # Táctica 1: Ataque de precio
-                if precio_bb >= min_wmt:
-                    rebaja_random = random.randint(4, 6)
-                    nuevo_precio = round(precio_bb - rebaja_random, 2)
-                    
-                    if nuevo_precio >= min_wmt:
-                        logger.info(f"   ⚔️ Ajuste de precio ejecutado")
-                        actualizar_precio_walmart(token, creds_b64, sku_wmt, nuevo_precio)
-                        # ✅ TELEGRAM CON DATOS REALES
-                        enviar_mensaje_telegram(
-                            f"⚔️ *Ataque de Precio*\n"
-                            f"SKU: {sku_wmt}\n"
-                            f"Precio BuyBox: ${precio_bb}\n"
-                            f"Nuevo Precio: ${nuevo_precio}\n"
-                            f"Vendedor: {ganador}"
-                        )
-                    else:
-                        logger.info(f"   ⚠️ Aterrizando en límite mínimo")
-                        actualizar_precio_walmart(token, creds_b64, sku_wmt, min_wmt)
-                        enviar_mensaje_telegram(
-                            f"⚠️ *Límite Mínimo*\n"
-                            f"SKU: {sku_wmt}\n"
-                            f"Precio: ${min_wmt}"
-                        )
+                
+                # ==========================================
+                # TÁCTICA GLADIADOR - VERSIÓN GUERRILLA
+                # ==========================================
+                
+                # Paso 1: Validar si BuyBox es defendible
+                buybox_defendible = precio_bb >= min_wmt
+                
+                # Paso 2: Encontrar "Rival Válido"
+                rival_objetivo = None
+                tipo_ataque = "NONE"
+                
+                if buybox_defendible:
+                    # BuyBox está en nuestro rango: atacar directo
+                    rival_objetivo = precio_bb
+                    tipo_ataque = "DIRECTO"
                 else:
-                    # Táctica 2: Emboscada
-                    precio_emboscada = None
-                    for rival in rivales:
-                        p_rival = rival.get("precio", 0)
-                        if p_rival >= min_wmt and "NOSOTROS" not in enmascarar_vendedor(rival.get("nombre", "")):
-                            precio_emboscada = p_rival
-                            break 
-                            
-                    if precio_emboscada:
-                        nuevo_precio = float(int(precio_emboscada)) + 0.09
-                        if max_wmt > 0 and nuevo_precio > max_wmt:
-                            nuevo_precio = float(int(max_wmt)) + 0.09
-                            
-                        logger.info(f"   🥷 Ajuste estratégico ejecutado")
+                    # BuyBox está muy bajo: buscar rival secundario
+                    rivales_viables = [r for r in rivales if r.get("precio", 0) >= min_wmt]
+                    
+                    if rivales_viables:
+                        # Tomar el más barato de los viables
+                        rival_objetivo = min(rivales_viables, key=lambda x: x["precio"])["precio"]
+                        tipo_ataque = "GUERRILLA"
+                
+                # Paso 3: Aplicar undercut aleatorio
+                if rival_objetivo and rival_objetivo > 0:
+                    undercut_random = random.randint(3, 6)
+                    nuevo_precio = round(rival_objetivo - undercut_random, 2)
+                    
+                    # Protección: nunca bajar del mínimo
+                    if nuevo_precio >= min_wmt:
+                        logger.info(f"   ⚔️ Ataque {tipo_ataque}: Rival ${rival_objetivo} - ${undercut_random} = ${nuevo_precio}")
                         actualizar_precio_walmart(token, creds_b64, sku_wmt, nuevo_precio)
-                        enviar_mensaje_telegram(
-                            f"🥷 *Emboscada*\n"
+                        
+                        mensaje_telegram = (
+                            f"⚔️ *Gladiador {tipo_ataque.title()}*\n"
                             f"SKU: {sku_wmt}\n"
-                            f"Precio Rival: ${precio_emboscada}\n"
-                            f"Nuevo Precio: ${nuevo_precio}"
-                        )
-                    else:
-                        nuevo_precio = float(int(max_wmt)) + 0.09 if max_wmt > 0 else float(int(min_wmt)) + 0.09
-                        logger.info(f"   🛡️ Ajuste defensivo ejecutado")
-                        actualizar_precio_walmart(token, creds_b64, sku_wmt, nuevo_precio)
-                        enviar_mensaje_telegram(
-                            f"🛡️ *Espera Alta*\n"
-                            f"SKU: {sku_wmt}\n"
-                            f"Nuevo Precio: ${nuevo_precio}"
+                            f"Rival Objetivo: ${rival_objetivo}\n"
+                            f"Undercut: ${undercut_random}\n"
+                            f"Tu Nuevo Precio: ${nuevo_precio}\n"
+                            f"Margen de Ganancia: ${nuevo_precio - min_wmt:.2f}"
                         )
                         
+                        if tipo_ataque == "GUERRILLA":
+                            mensaje_telegram += f"\n\n🎯 Atacando al 2do rival porque el BuyBox (${precio_bb}) es muy bajo."
+                        
+                        enviar_mensaje_telegram(mensaje_telegram)
+                    else:
+                        logger.info(f"   ⚠️ Margen insuficiente. No atacando.")
+                        enviar_mensaje_telegram(
+                            f"⚠️ *Sin Margen*\n"
+                            f"SKU: {sku_wmt}\n"
+                            f"Rival más viable: ${rival_objetivo}\n"
+                            f"Tu mínimo: ${min_wmt}\n"
+                            f"No hay margen suficiente para atacar."
+                        )
+                else:
+                    logger.info(f"   🛡️ Posición defensiva: sin rivales viables en nuestro rango.")
+                    
             elif "NOSOTROS" in ganador_enmascarado:
                 # Táctica 3: Optimización (ya ganamos)
                 precio_segundo = 0.0
