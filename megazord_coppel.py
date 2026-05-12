@@ -359,17 +359,75 @@ class GoogleSheetsHandler:
             sys.exit(1)
     
     def obtener_skus_activos(self) -> List[Dict]:
-        """Obtiene todos los SKUs ACTIVOS de Coppel."""
+        """
+        Obtiene SKUs ACTIVOS de Coppel CON STOCK DISPONIBLE.
+        
+        FILTROS (ambos deben cumplirse):
+        1. estatus_coppel == 'ACTIVO'
+        2. stock_coppel > 0 (con manejo robusto de vacíos/inválidos)
+        
+        RETORNA:
+            Lista de diccionarios con SKUs válidos
+            Lista vacía si hay error o ninguno cumple
+        
+        MANEJO DE ERRORES:
+        - stock_coppel vacío → Ignorar SKU
+        - stock_coppel = "0" → Ignorar SKU
+        - stock_coppel = "ABC" (texto) → Ignorar SKU
+        - stock_coppel = "-5" (negativo) → Ignorar SKU
+        - stock_coppel = "10.5" (decimal) → Aceptar si > 0
+        """
         try:
+            # Leer todos los registros
             registros = self.hoja_principal.get_all_records()
             
-            activos = [
-                r for r in registros
-                if r.get('estatus_coppel', '').upper() == 'ACTIVO'
-            ]
+            if not registros:
+                logger.warning("⚠️ Google Sheets vacío o sin registros")
+                return []
             
-            logger.info(f"📋 {len(activos)} SKUs activos encontrados")
-            return activos
+            # Aplicar filtros
+            skus_validos = []
+            skus_rechazados = 0
+            
+            for registro in registros:
+                # FILTRO 1: Validar estatus
+                estatus = str(registro.get('estatus_coppel', '')).strip().upper()
+                
+                if estatus != 'ACTIVO':
+                    skus_rechazados += 1
+                    continue
+                
+                # FILTRO 2: Validar stock > 0
+                stock_raw = registro.get('stock_coppel', '')
+                stock_valido = False
+                
+                try:
+                    # Intentar convertir a float
+                    if stock_raw == '' or stock_raw is None:
+                        # Celda vacía
+                        stock_valido = False
+                    else:
+                        stock_valor = float(stock_raw)
+                        stock_valido = stock_valor > 0
+                
+                except (ValueError, TypeError):
+                    # Celda tiene texto no convertible o tipo inválido
+                    stock_valido = False
+                
+                if not stock_valido:
+                    skus_rechazados += 1
+                    continue
+                
+                # SKU pasa AMBOS filtros
+                skus_validos.append(registro)
+            
+            # Logging
+            logger.info(
+                f"📋 Filtrado: {len(skus_validos)} ACTIVOS con stock "
+                f"({skus_rechazados} rechazados sin stock/inactivos)"
+            )
+            
+            return skus_validos
         
         except Exception as e:
             logger.error(f"❌ Error obteniendo SKUs: {e}")
