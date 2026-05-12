@@ -499,25 +499,22 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
 if __name__ == "__main__":
     load_dotenv()
 
-    hora_actual = datetime.now().hour
+    logger.info(f"⏰ Ejecutando ciclo de patrullaje manual o por CRON...")
 
-    if hora_actual % 2 == 0:
-        logger.info(f"⏰ Ejecutando ciclo de patrullaje...")
+    try:
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+        cliente_gspread = gspread.authorize(creds)
+    except Exception as e:
+        logger.error(f"❌ Error al conectar Google Sheets")
+        exit(1)
 
-        try:
-            scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-            creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-            cliente_gspread = gspread.authorize(creds)
-        except Exception as e:
-            logger.error(f"❌ Error al conectar Google Sheets")
-            exit(1)
+    token_wmt, creds_b64 = obtener_token_walmart()
 
-        token_wmt, creds_b64 = obtener_token_walmart()
-
-        if token_wmt:
-            ejecutar_bot_walmart(token_wmt, creds_b64, cliente_gspread)
-        else:
-            logger.error("❌ No se pudo autenticar")
+    if token_wmt:
+        ejecutar_bot_walmart(token_wmt, creds_b64, cliente_gspread)
+    else:
+        logger.error("❌ No se pudo autenticar")
 
     else:
         logger.info(f"💤 Sistema en modo reposo. Próximo ciclo en 1 hora.")
