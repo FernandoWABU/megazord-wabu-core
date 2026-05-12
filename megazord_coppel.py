@@ -500,7 +500,11 @@ class MegazordCoppel:
             actualizados = 0
             errores = 0
             
-            for row_index, registro in enumerate(registros, start=2):  # Comienza en fila 2 (después de headers)
+            for row_index, registro in enumerate(registros, start=2):  # Comienza en fila 2
+                # 🚀 MAGIA: Saltar inmediatamente si no está ACTIVO
+                if str(registro.get('estatus_coppel', '')).strip().upper() != 'ACTIVO':
+                    continue
+
                 sku_coppel = registro.get('sku_coppel', '')
                 sku_limpio = registro.get('sku_limpio', '')
                 
