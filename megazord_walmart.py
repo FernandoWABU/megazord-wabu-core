@@ -452,11 +452,10 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
                         # Si es "Segundo" y su precio es exactamente nuestro Max o termina en .09 dentro de nuestro rango, somos nosotros
                         es_nuestro_precio = (precio_r == max_wmt) or (precio_r >= min_wmt and str(precio_r).endswith('.09'))
                         
-                        if es_segundo and es_nuestro_precio:
+                        if es_segundo:
                             logger.warning(
-                                f"   🛡️ SEGURO ANTI-SUICIDIO (EXCEL) ACTIVADO:"
-                                f"\n      El 'Segundo' en ${precio_r} concuerda con nuestra firma."
-                                f"\n      Rechazando para evitar auto-ataque."
+                                f"   🛡️ SEGURO BLINDADO ACTIVADO:"
+                                f"\n      Ignorando a 'Segundo' (${precio_r}) porque es ciego y podríamos ser NOSOTROS."
                             )
                             continue
                         
