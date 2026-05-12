@@ -660,10 +660,10 @@ class MegazordCoppel:
                 nuevo_precio = float(int(precio_bb - undercut)) + 0.09
                 tipo_ataque = "DIRECTO"
             else:
-                # BuyBox es indefendible: buscar rival viable
+                # 🛡️ Filtrar rivales viables: Que sean rentables Y QUE NO SEAMOS NOSOTROS
                 rivales_viables = [
-                    o for o in ofertas
-                    if float(o.get("price", 0)) >= minimo
+                    r for r in ofertas 
+                    if float(r.get("price", 0)) >= minimo and "NUARE" not in r.get("shop", {}).get("name", "").upper()
                 ]
                 
                 if rivales_viables:
