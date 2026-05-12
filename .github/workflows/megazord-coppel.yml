@@ -2,8 +2,8 @@ name: Megazord Coppel (Horas Impares)
 
 on:
   schedule:
-    # Se ejecuta en el minuto 0 de TODAS las horas impares (1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23)
-    - cron: '0 1,3,5,7,9,11,13,15,17,19,21,23 * * *'
+    # Se ejecuta en el minuto 17 para evitar la saturación de los servidores de GitHub
+    - cron: '17 1,3,5,7,9,11,13,15,17,19,21,23 * * *'
   workflow_dispatch: # Botón manual por si quieres dispararlo a demanda
 
 jobs:
