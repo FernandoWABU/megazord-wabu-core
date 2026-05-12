@@ -449,13 +449,14 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
                         es_enemigo_por_precio = abs(precio_r - mi_precio_actual) > 1.0
                         
                         es_segundo = "Segundo" in nombre_original
+                        # Si es "Segundo" y su precio es exactamente nuestro Max o termina en .09 dentro de nuestro rango, somos nosotros
+                        es_nuestro_precio = (precio_r == max_wmt) or (precio_r >= min_wmt and str(precio_r).endswith('.09'))
                         
-                        if es_segundo and not mi_precio_actual_valido:
+                        if es_segundo and es_nuestro_precio:
                             logger.warning(
-                                f"   🛡️ SEGURO ANTI-SUICIDIO ACTIVADO:"
-                                f"\n      Rival '{nombre_original}' es potencialmente NOSOTROS"
-                                f"\n      (mi_precio_actual = 0.0, espejo falló)"
-                                f"\n      Rechazando para evitar auto-ataque"
+                                f"   🛡️ SEGURO ANTI-SUICIDIO (EXCEL) ACTIVADO:"
+                                f"\n      El 'Segundo' en ${precio_r} concuerda con nuestra firma."
+                                f"\n      Rechazando para evitar auto-ataque."
                             )
                             continue
                         
