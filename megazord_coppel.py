@@ -473,104 +473,103 @@ class MegazordCoppel:
     def sincronizar_inventario(self) -> Tuple[int, int]:
         """
         Sincroniza el inventario (stock) desde Mirakl a Google Sheets.
-        ...
         """
         logger.info("\n" + "="*80)
         logger.info("🔄 SINCRONIZACIÓN DE INVENTARIO DESDE MIRAKL")
         logger.info("="*80)
-    
-    try:
-        # PASO 1: Leer TODOS los registros (no solo activos)
-        registros = self.sheets.hoja_principal.get_all_records()
-        
-        if not registros:
-            logger.warning("⚠️ Google Sheets vacío")
-            return 0, 0
-        
-        # PASO 2: Obtener encabezados para localizar columna stock_coppel
-        headers = self.sheets.hoja_principal.row_values(1)
         
         try:
-            stock_column_index = headers.index('stock_coppel') + 1  # +1 porque gspread usa 1-indexing
-        except ValueError:
-            logger.error("❌ Columna 'stock_coppel' no encontrada en headers")
+            # PASO 1: Leer TODOS los registros (no solo activos)
+            registros = self.sheets.hoja_principal.get_all_records()
+            
+            if not registros:
+                logger.warning("⚠️ Google Sheets vacío")
+                return 0, 0
+            
+            # PASO 2: Obtener encabezados para localizar columna stock_coppel
+            headers = self.sheets.hoja_principal.row_values(1)
+            
+            try:
+                stock_column_index = headers.index('stock_coppel') + 1  # +1 porque gspread usa 1-indexing
+            except ValueError:
+                logger.error("❌ Columna 'stock_coppel' no encontrada en headers")
+                return 0, len(registros)
+            
+            # PASO 3: Preparar batch de actualizaciones
+            batch_updates = []  # Lista de (row_number, stock_value)
+            actualizados = 0
+            errores = 0
+            
+            for row_index, registro in enumerate(registros, start=2):  # Comienza en fila 2 (después de headers)
+                sku_coppel = registro.get('sku_coppel', '')
+                sku_limpio = registro.get('sku_limpio', '')
+                
+                if not sku_coppel:
+                    logger.debug(f"⏭️  Fila {row_index}: Sin SKU Coppel")
+                    errores += 1
+                    continue
+                
+                try:
+                    # Consultar Mirakl
+                    mi_oferta = self.mirakl.obtener_mi_oferta(sku_coppel)
+                    
+                    # Extraer quantity con fallback a 0
+                    if mi_oferta:
+                        stock_mirakl = mi_oferta.get('quantity', 0)
+                    else:
+                        stock_mirakl = 0
+                    
+                    # Agregar al batch
+                    batch_updates.append((row_index, stock_column_index, stock_mirakl))
+                    actualizados += 1
+                    
+                    logger.debug(f"   ✅ {enmascarar_sku(sku_coppel)}: {stock_mirakl} unidades")
+                
+                except Exception as e:
+                    logger.warning(f"⚠️ Error sincronizando {sku_coppel}: {e}")
+                    errores += 1
+                    continue
+            
+            # PASO 4: Ejecutar batch update
+            if batch_updates:
+                logger.info(f"\n📤 Aplicando {len(batch_updates)} actualizaciones en bloque...")
+                
+                try:
+                    # Preparar celdas para actualizar (formato gspread)
+                    cell_list = []
+                    
+                    for row_num, col_num, valor in batch_updates:
+                        cell = self.sheets.hoja_principal.cell(row_num, col_num)
+                        cell.value = valor
+                        cell_list.append(cell)
+                    
+                    # Actualizar todas las celdas de una vez
+                    self.sheets.hoja_principal.update_cells(cell_list)
+                    
+                    logger.info(f"✅ {len(batch_updates)} celdas actualizadas exitosamente")
+                
+                except Exception as e:
+                    logger.error(f"❌ Error en batch update: {e}")
+                    # Fallback: Intentar actualizaciones individuales
+                    logger.warning("⚠️ Intentando actualización individual como fallback...")
+                    
+                    for row_num, col_num, valor in batch_updates:
+                        try:
+                            self.sheets.hoja_principal.update_cell(row_num, col_num, valor)
+                        except:
+                            pass
+            
+            # PASO 5: Logging final
+            logger.info("\n📊 RESULTADO DE SINCRONIZACIÓN")
+            logger.info(f"   ✅ Actualizados: {actualizados}")
+            logger.info(f"   ❌ Errores: {errores}")
+            logger.info(f"   Total procesados: {actualizados + errores}")
+            
+            return actualizados, errores
+        
+        except Exception as e:
+            logger.error(f"❌ Error fatal en sincronización: {e}")
             return 0, len(registros)
-        
-        # PASO 3: Preparar batch de actualizaciones
-        batch_updates = []  # Lista de (row_number, stock_value)
-        actualizados = 0
-        errores = 0
-        
-        for row_index, registro in enumerate(registros, start=2):  # Comienza en fila 2 (después de headers)
-            sku_coppel = registro.get('sku_coppel', '')
-            sku_limpio = registro.get('sku_limpio', '')
-            
-            if not sku_coppel:
-                logger.debug(f"⏭️  Fila {row_index}: Sin SKU Coppel")
-                errores += 1
-                continue
-            
-            try:
-                # Consultar Mirakl
-                mi_oferta = self.mirakl.obtener_mi_oferta(sku_coppel)
-                
-                # Extraer quantity con fallback a 0
-                if mi_oferta:
-                    stock_mirakl = mi_oferta.get('quantity', 0)
-                else:
-                    stock_mirakl = 0
-                
-                # Agregar al batch
-                batch_updates.append((row_index, stock_column_index, stock_mirakl))
-                actualizados += 1
-                
-                logger.debug(f"   ✅ {enmascarar_sku(sku_coppel)}: {stock_mirakl} unidades")
-            
-            except Exception as e:
-                logger.warning(f"⚠️ Error sincronizando {sku_coppel}: {e}")
-                errores += 1
-                continue
-        
-        # PASO 4: Ejecutar batch update (mucho más eficiente que append_row individual)
-        if batch_updates:
-            logger.info(f"\n📤 Aplicando {len(batch_updates)} actualizaciones en bloque...")
-            
-            try:
-                # Preparar celdas para actualizar (formato gspread)
-                cell_list = []
-                
-                for row_num, col_num, valor in batch_updates:
-                    cell = self.sheets.hoja_principal.cell(row_num, col_num)
-                    cell.value = valor
-                    cell_list.append(cell)
-                
-                # Actualizar todas las celdas de una vez
-                self.sheets.hoja_principal.update_cells(cell_list)
-                
-                logger.info(f"✅ {len(batch_updates)} celdas actualizadas exitosamente")
-            
-            except Exception as e:
-                logger.error(f"❌ Error en batch update: {e}")
-                # Fallback: Intentar actualizaciones individuales (más lento)
-                logger.warning("⚠️ Intentando actualización individual como fallback...")
-                
-                for row_num, col_num, valor in batch_updates:
-                    try:
-                        self.sheets.hoja_principal.update_cell(row_num, col_num, valor)
-                    except:
-                        pass  # Continuar con el siguiente
-        
-        # PASO 5: Logging final
-        logger.info("\n📊 RESULTADO DE SINCRONIZACIÓN")
-        logger.info(f"   ✅ Actualizados: {actualizados}")
-        logger.info(f"   ❌ Errores: {errores}")
-        logger.info(f"   Total procesados: {actualizados + errores}")
-        
-        return actualizados, errores
-    
-    except Exception as e:
-        logger.error(f"❌ Error fatal en sincronización: {e}")
-        return 0, len(registros)
     
     def procesar_sku(self, sku_dict: Dict) -> bool:
         """Procesa UN SKU según estrategia de Guerrilla."""
