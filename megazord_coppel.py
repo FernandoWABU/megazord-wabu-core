@@ -284,15 +284,18 @@ class MiraklCoppel:
         return None
 
     def obtener_ofertas_por_producto(self, product_id: str) -> List[Dict]:
-        """Paso 2: Obtiene TODAS las ofertas de la competencia usando el ID de Producto."""
-        endpoint = "/offers"
+        """Paso 2: Obtiene TODAS las ofertas (competencia + nuestra) usando el radar global."""
+        # Cambiamos /offers por /products/offers (El radar de competencia)
+        endpoint = "/products/offers"
         params = {
-            "product_ids": product_id,  # Buscar por ID global de Coppel
-            "states": "ACTIVE"
+            "product_ids": product_id
         }
         result = self._request("GET", endpoint, params=params)
-        if result and "offers" in result:
-            return result["offers"]
+        
+        # El radar devuelve los datos agrupados por producto
+        if result and "products" in result and len(result["products"]) > 0:
+            return result["products"][0].get("offers", [])
+            
         return []
         
     def actualizar_precio_oferta(self, sku_vendedor: str, nuevo_precio: float) -> bool:
@@ -423,30 +426,25 @@ class MegazordCoppel:
             logger.warning(f"⚠️ No se pudo extraer el Product ID de Coppel.")
             return False
 
-        # 2. OBTENER TODAS LAS OFERTAS DE LA COMPETENCIA
+        # 2. OBTENER TODAS LAS OFERTAS DE LA COMPETENCIA (RADAR GLOBAL)
         ofertas_crudas = self.mirakl.obtener_ofertas_por_producto(product_id)
         
-        # 🕵️‍♂️ LOG DE DEPURACIÓN: Ver qué está viendo el bot realmente
-        logger.info(f"   📡 Mirakl devolvió {len(ofertas_crudas)} ofertas totales.")
+        logger.info(f"   📡 Radar Global devolvió {len(ofertas_crudas)} ofertas totales.")
         
-        # 🧹 CAZAFANTASMAS V2: Filtrado inteligente
+        # 🧹 CAZAFANTASMAS V3: Traductor Universal
         ofertas = []
         for o in ofertas_crudas:
-            nombre_rival = o.get("shop", {}).get("name", "Desconocido")
+            # En el Radar, el nombre a veces viene directo o adentro de 'shop'
+            nombre_rival = o.get("shop_name") or o.get("shop", {}).get("name", "Desconocido")
             precio_rival = float(o.get("price", 0))
             
-            # Verificamos stock y actividad (usando get con valores por defecto seguros)
             stock = int(o.get("quantity") or o.get("total_quantity") or 0)
             es_activa = str(o.get("active", "true")).lower() == "true"
             
-            # 📢 Imprimimos en consola para auditar al fantasma
             logger.info(f"      - Rival: {nombre_rival} | Precio: ${precio_rival} | Stock: {stock} | Activo: {es_activa}")
 
-            # Solo aceptamos si tiene precio y no es un error de sistema
             if precio_rival > 10 and es_activa:
-                # Si el stock es 0 pero es NUESTRA oferta, la incluimos. 
-                # Si es de un rival y tiene stock 0, lo ignoramos.
-                if stock > 0 or "NUARE" in nombre_rival.upper():
+                if stock > 0 or "NUARE" in str(nombre_rival).upper():
                     ofertas.append(o)
         
         if not ofertas:
