@@ -424,10 +424,18 @@ class MegazordCoppel:
             return False
 
         # 2. OBTENER TODAS LAS OFERTAS DE LA COMPETENCIA
-        ofertas = self.mirakl.obtener_ofertas_por_producto(product_id)
+        ofertas_crudas = self.mirakl.obtener_ofertas_por_producto(product_id)
+        
+        # 🧹 CAZAFANTASMAS: Filtrar ofertas sin stock o inactivas
+        ofertas = []
+        for o in ofertas_crudas:
+            tiene_stock = int(o.get("quantity", 0)) > 0
+            es_activa = o.get("active", True)
+            if tiene_stock and es_activa:
+                ofertas.append(o)
         
         if not ofertas:
-            logger.warning(f"⚠️ Sin ofertas disponibles para el producto {product_id}")
+            logger.warning(f"⚠️ Sin ofertas válidas con stock para el producto {product_id}")
             return False
         
         # Ordenar por precio (BuyBox es la primera)
