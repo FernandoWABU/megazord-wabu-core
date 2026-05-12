@@ -38,23 +38,17 @@ def enmascarar_sku(sku_real):
     return f"SKU_{hash_sku}"
 
 def enmascarar_vendedor(nombre_vendedor):
-    """
-    Enmascarar nombres de vendedores en logs públicos.
-    
-    NOTA: Esto se usa SOLO en logger.info() para GitHub Actions.
-    Para Telegram (privado), usamos el nombre real.
-    """
+    """Enmascara vendedor - detecta si somos nosotros."""
     if not nombre_vendedor or nombre_vendedor == "Desconocido":
         return "Desconocido"
+        
+    nombre_upper = str(nombre_vendedor).upper()
     
-    marca_propia = os.getenv("PROPIA_BRAND_NAME", "WABU").upper()
-    
-    if marca_propia in str(nombre_vendedor).upper():
+    # ¡AQUÍ ESTÁ LA CLAVE! Agregar todas las identidades de tu empresa
+    if "AROMANDOTE" in nombre_upper or "WABU" in nombre_upper or "NUARE" in nombre_upper:
         return "NOSOTROS"
-    elif "WALMART" in str(nombre_vendedor).upper():
-        return "WALMART"
-    else:
-        return "RIVAL"
+        
+    return "RIVAL"
 
 # ==========================================
 # ARMERÍA DE MERCENARIOS
