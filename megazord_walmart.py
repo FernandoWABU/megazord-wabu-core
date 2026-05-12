@@ -392,8 +392,11 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
                     rival_objetivo = precio_bb
                     tipo_ataque = "DIRECTO"
                 else:
-                    # BuyBox está muy bajo: buscar rival secundario
-                    rivales_viables = [r for r in rivales if r.get("precio", 0) >= min_wmt]
+                    # 🛡️ Filtrar rivales que tengan stock, sean rentables Y QUE NO SEAMOS NOSOTROS
+                    rivales_viables = [
+                        r for r in rivales 
+                        if r.get("precio", 0) >= min_wmt and enmascarar_vendedor(r.get("nombre", "")) != "NOSOTROS"
+                    ]
                     
                     if rivales_viables:
                         # Tomar el más barato de los viables
