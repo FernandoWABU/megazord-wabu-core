@@ -809,7 +809,12 @@ def main():
     logger.info("\n🔄 Iniciando sincronización de inventario...")
     actualizados, errores = megazord.sincronizar_inventario()
     
-    # Obtener SKUs activos (AHORA SÍ, con stock fresco)
+    if actualizados == 0 and errores > 0:
+        logger.warning("⚠️ Sincronización completada con errores")
+    
+    # ========== FIN SINCRONIZACIÓN ==========
+    
+    # Obtener SKUs activos (DESPUÉS de sincronizar)
     skus_activos = sheets.obtener_skus_activos()
     
     if not skus_activos:
