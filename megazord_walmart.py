@@ -515,6 +515,3 @@ if __name__ == "__main__":
         ejecutar_bot_walmart(token_wmt, creds_b64, cliente_gspread)
     else:
         logger.error("❌ No se pudo autenticar")
-
-    else:
-        logger.info(f"💤 Sistema en modo reposo. Próximo ciclo en 1 hora.")
