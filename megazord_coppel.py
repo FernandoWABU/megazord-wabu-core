@@ -471,32 +471,13 @@ class MegazordCoppel:
         self.alertas = []
 
     def sincronizar_inventario(self) -> Tuple[int, int]:
-    """
-    Sincroniza el inventario (stock) desde Mirakl a Google Sheets.
-    
-    PROCESO:
-    1. Lee TODOS los SKUs de la Hoja 1 (incluyendo INACTIVOS)
-    2. Consulta Mirakl para obtener quantity de cada uno
-    3. Prepara un batch update (eficiente)
-    4. Actualiza la columna stock_coppel en la hoja
-    
-    RETORNA:
-        (actualizados, errores) - Tupla con contador de éxitos y fallos
-    
-    OPTIMIZACIÓN:
-    - Usa batch_update de gspread (1 request por lote, no 100+)
-    - Manejo de errores robusto
-    - Logging detallado
-    
-    CASOS:
-    - Si Mirakl no retorna quantity → Stock = 0
-    - Si no hay oferta en Mirakl → Stock = 0
-    - Si error en API → Se registra, se continúa
-    """
-    
-    logger.info("\n" + "="*80)
-    logger.info("🔄 SINCRONIZACIÓN DE INVENTARIO DESDE MIRAKL")
-    logger.info("="*80)
+        """
+        Sincroniza el inventario (stock) desde Mirakl a Google Sheets.
+        ...
+        """
+        logger.info("\n" + "="*80)
+        logger.info("🔄 SINCRONIZACIÓN DE INVENTARIO DESDE MIRAKL")
+        logger.info("="*80)
     
     try:
         # PASO 1: Leer TODOS los registros (no solo activos)
