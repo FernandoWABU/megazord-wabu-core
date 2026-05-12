@@ -161,8 +161,25 @@ def obtener_mi_precio_walmart(token, credenciales_b64, sku_wmt):
     }
     try:
         res = requests.get(url, headers=headers, timeout=10)
+        
+        # ========== NUEVO: DEBUG LOG ==========
         if res.status_code == 200:
-            return float(res.json().get("pricing", [{}])[0].get("currentPrice", {}).get("amount", 0.0))
+            logger.info(f"🔍 DEBUG API WALMART - Respuesta completa:")
+            logger.info(f"   Status Code: {res.status_code}")
+            logger.info(f"   Raw Response: {res.text}")
+            
+            try:
+                json_response = res.json()
+                logger.info(f"   Parsed JSON: {json.dumps(json_response, indent=2)}")
+            except:
+                logger.warning(f"   ⚠️ No se pudo parsear como JSON")
+        # ========== FIN DEBUG LOG ==========
+        
+        if res.status_code == 200:
+            precio = float(res.json().get("pricing", [{}])[0].get("currentPrice", {}).get("amount", 0.0))
+            if precio == 0.0:
+                logger.warning(f"   ⚠️ API retornó estructura pero precio = 0.0 (ajusta la extracción de JSON)")
+            return precio
     except:
         pass
     return 0.0
@@ -414,21 +431,38 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
                     rival_objetivo = precio_bb
                     tipo_ataque = "DIRECTO"
                 else:
-                    # 🛡️ Filtrar rivales que tengan stock, sean rentables Y QUE NO SEAMOS NOSOTROS (por nombre o por espejo)
+                    # 🛡️ BLOQUE ANTI-SUICIDIO
                     rivales_viables = []
+                    mi_precio_actual_valido = mi_precio_actual > 0.0
+                    
+                    logger.debug(f"   🛡️ Validación anti-suicidio:")
+                    logger.debug(f"      mi_precio_actual: ${mi_precio_actual}")
+                    logger.debug(f"      es_válido: {mi_precio_actual_valido}")
+                    
                     for r in rivales:
                         precio_r = r.get("precio", 0)
                         nombre_r = enmascarar_vendedor(r.get("nombre", ""))
+                        nombre_original = r.get("nombre", "")
                         
                         es_rentable = precio_r >= min_wmt
                         es_enemigo_por_nombre = nombre_r != "NOSOTROS"
-                        es_enemigo_por_precio = abs(precio_r - mi_precio_actual) > 1.0  # Si la diferencia es menor a 1 peso, somos nosotros
+                        es_enemigo_por_precio = abs(precio_r - mi_precio_actual) > 1.0
+                        
+                        es_segundo = "Segundo" in nombre_original
+                        
+                        if es_segundo and not mi_precio_actual_valido:
+                            logger.warning(
+                                f"   🛡️ SEGURO ANTI-SUICIDIO ACTIVADO:"
+                                f"\n      Rival '{nombre_original}' es potencialmente NOSOTROS"
+                                f"\n      (mi_precio_actual = 0.0, espejo falló)"
+                                f"\n      Rechazando para evitar auto-ataque"
+                            )
+                            continue
                         
                         if es_rentable and es_enemigo_por_nombre and es_enemigo_por_precio:
                             rivales_viables.append(r)
                             
                     if rivales_viables:
-                        # Tomar el más barato de los viables
                         rival_objetivo = min(rivales_viables, key=lambda x: x["precio"])["precio"]
                         tipo_ataque = "GUERRILLA"
                 
