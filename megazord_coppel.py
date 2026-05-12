@@ -426,16 +426,31 @@ class MegazordCoppel:
         # 2. OBTENER TODAS LAS OFERTAS DE LA COMPETENCIA
         ofertas_crudas = self.mirakl.obtener_ofertas_por_producto(product_id)
         
-        # 🧹 CAZAFANTASMAS: Filtrar ofertas sin stock o inactivas
+        # 🕵️‍♂️ LOG DE DEPURACIÓN: Ver qué está viendo el bot realmente
+        logger.info(f"   📡 Mirakl devolvió {len(ofertas_crudas)} ofertas totales.")
+        
+        # 🧹 CAZAFANTASMAS V2: Filtrado inteligente
         ofertas = []
         for o in ofertas_crudas:
-            tiene_stock = int(o.get("quantity", 0)) > 0
-            es_activa = o.get("active", True)
-            if tiene_stock and es_activa:
-                ofertas.append(o)
+            nombre_rival = o.get("shop", {}).get("name", "Desconocido")
+            precio_rival = float(o.get("price", 0))
+            
+            # Verificamos stock y actividad (usando get con valores por defecto seguros)
+            stock = int(o.get("quantity") or o.get("total_quantity") or 0)
+            es_activa = str(o.get("active", "true")).lower() == "true"
+            
+            # 📢 Imprimimos en consola para auditar al fantasma
+            logger.info(f"      - Rival: {nombre_rival} | Precio: ${precio_rival} | Stock: {stock} | Activo: {es_activa}")
+
+            # Solo aceptamos si tiene precio y no es un error de sistema
+            if precio_rival > 10 and es_activa:
+                # Si el stock es 0 pero es NUESTRA oferta, la incluimos. 
+                # Si es de un rival y tiene stock 0, lo ignoramos.
+                if stock > 0 or "NUARE" in nombre_rival.upper():
+                    ofertas.append(o)
         
         if not ofertas:
-            logger.warning(f"⚠️ Sin ofertas válidas con stock para el producto {product_id}")
+            logger.warning(f"⚠️ No se encontraron ofertas válidas para procesar en el producto {product_id}")
             return False
         
         # Ordenar por precio (BuyBox es la primera)
