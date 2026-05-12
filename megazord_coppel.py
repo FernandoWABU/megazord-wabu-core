@@ -302,17 +302,17 @@ class MiraklCoppel:
         """Actualiza el precio de una oferta en Mirakl usando el método POST."""
         endpoint = "/offers"
         
-        # Mirakl exige que las actualizaciones se envíen como una lista de ofertas
+        # Mirakl exige 'shop_sku' y la orden explícita de 'update'
         payload = {
             "offers": [
                 {
-                    "sku": sku_vendedor,  # Usamos tu SKU interno de Excel
-                    "price": round(nuevo_precio, 2)
+                    "shop_sku": sku_vendedor,
+                    "price": float(nuevo_precio),
+                    "update_delete": "update"
                 }
             ]
         }
         
-        # Cambiamos PUT por POST, que es el método permitido (405 solucionado)
         result = self._request("POST", endpoint, json=payload)
         
         if result is not None:
@@ -478,7 +478,8 @@ class MegazordCoppel:
             if precio_bb >= minimo:
                 # BuyBox es defendible: atacar directo
                 undercut = random.uniform(MIN_UNDERCUT, MAX_UNDERCUT)
-                nuevo_precio = round(precio_bb - undercut, 2)
+                # ✨ Magia de los .09
+                nuevo_precio = float(int(precio_bb - undercut)) + 0.09
                 tipo_ataque = "DIRECTO"
             else:
                 # BuyBox es indefendible: buscar rival viable
@@ -491,7 +492,8 @@ class MegazordCoppel:
                     objetivo = min(rivales_viables, key=lambda x: float(x.get("price", 0)))
                     precio_objetivo = float(objetivo.get("price", 0))
                     undercut = random.uniform(MIN_UNDERCUT, MAX_UNDERCUT)
-                    nuevo_precio = round(precio_objetivo - undercut, 2)
+                    # ✨ Magia de los .09
+                    nuevo_precio = float(int(precio_objetivo - undercut)) + 0.09
                     tipo_ataque = "GUERRILLA"
                 else:
                     logger.info(f"   🛡️ Sin rivales viables")
@@ -524,7 +526,8 @@ class MegazordCoppel:
                 precio_segundo = float(ofertas[1].get("price", 0))
                 
                 if precio_segundo > precio_bb:
-                    nuevo_precio = round(precio_segundo - 5, 2)  # -$5 del 2do
+                    # ✨ Magia de los .09 para la subida
+                    nuevo_precio = float(int(precio_segundo - 5)) + 0.09
                     
                     # APLICAR FRENO 15%
                     nuevo_precio, fue_limitado = aplicar_freno_15_porciento(
