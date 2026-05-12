@@ -148,6 +148,25 @@ def obtener_inventario_walmart(token, credenciales_b64, sku_wmt):
         logger.warning(f"⚠️ Error consultando inventario")
     return 0
 
+def obtener_mi_precio_walmart(token, credenciales_b64, sku_wmt):
+    """Consulta a la API oficial por nuestro precio exacto publicado"""
+    url = f"https://marketplace.walmartapis.com/v3/price?sku={sku_wmt}"
+    headers = {
+        "Authorization": f"Basic {credenciales_b64}",
+        "WM_SEC.ACCESS_TOKEN": token,
+        "WM_SVC.NAME": "Walmart Marketplace",
+        "WM_QOS.CORRELATION_ID": str(uuid.uuid4()),
+        "Accept": "application/json",
+        "WM_MARKET": "mx"
+    }
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
+        if res.status_code == 200:
+            return float(res.json().get("pricing", [{}])[0].get("currentPrice", {}).get("amount", 0.0))
+    except:
+        pass
+    return 0.0
+
 def actualizar_precio_walmart(token, credenciales_b64, sku_wmt, nuevo_precio):
     """Actualiza el precio de un producto en Walmart"""
     url = f"https://marketplace.walmartapis.com/v3/price?sku={sku_wmt}"
@@ -350,6 +369,9 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
             # --- 1. REVISIÓN DE INVENTARIO ---
             stock_actual = obtener_inventario_walmart(token, creds_b64, sku_wmt)
             
+            # 🪞 NUEVO: OBTENER NUESTRO PRECIO EXACTO COMO ESPEJO
+            mi_precio_actual = obtener_mi_precio_walmart(token, creds_b64, sku_wmt)
+            
             try:
                 hoja_walmart.update_cell(index + 2, 15, stock_actual)
             except Exception as e:
@@ -392,15 +414,18 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
                     rival_objetivo = precio_bb
                     tipo_ataque = "DIRECTO"
                 else:
-                    # 🛡️ Filtrar rivales que tengan stock, sean rentables Y QUE NO SEAMOS NOSOTROS
-                    rivales_viables = [
-                        r for r in rivales 
-                        if r.get("precio", 0) >= min_wmt and enmascarar_vendedor(r.get("nombre", "")) != "NOSOTROS"
-                    ]
-                    
-                    if rivales_viables:
-                        # Tomar el más barato de los viables
-                        rival_objetivo = min(rivales_viables, key=lambda x: x["precio"])["precio"]
+                    # 🛡️ Filtrar rivales que tengan stock, sean rentables Y QUE NO SEAMOS NOSOTROS (por nombre o por espejo)
+                    rivales_viables = []
+                    for r in rivales:
+                        precio_r = r.get("precio", 0)
+                        nombre_r = enmascarar_vendedor(r.get("nombre", ""))
+                        
+                        es_rentable = precio_r >= min_wmt
+                        es_enemigo_por_nombre = nombre_r != "NOSOTROS"
+                        es_enemigo_por_precio = abs(precio_r - mi_precio_actual) > 1.0  # Si la diferencia es menor a 1 peso, somos nosotros
+                        
+                        if es_rentable and es_enemigo_por_nombre and es_enemigo_por_precio:
+                            rivales_viables.append(r)s_viables, key=lambda x: x["precio"])["precio"]
                         tipo_ataque = "GUERRILLA"
                 
                 # Paso 3: Aplicar undercut aleatorio
