@@ -425,7 +425,11 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
                         es_enemigo_por_precio = abs(precio_r - mi_precio_actual) > 1.0  # Si la diferencia es menor a 1 peso, somos nosotros
                         
                         if es_rentable and es_enemigo_por_nombre and es_enemigo_por_precio:
-                            rivales_viables.append(r)s_viables, key=lambda x: x["precio"])["precio"]
+                            rivales_viables.append(r)
+                            
+                    if rivales_viables:
+                        # Tomar el más barato de los viables
+                        rival_objetivo = min(rivales_viables, key=lambda x: x["precio"])["precio"]
                         tipo_ataque = "GUERRILLA"
                 
                 # Paso 3: Aplicar undercut aleatorio
