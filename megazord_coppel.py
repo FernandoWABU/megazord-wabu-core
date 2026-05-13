@@ -621,7 +621,7 @@ class MegazordCoppel:
             logger.info(f"      - Rival: {nombre_rival} | Precio: ${precio_rival} | Stock: {stock} | Activo: {es_activa}")
 
             if precio_rival > 10 and es_activa:
-                es_nosotros = str(o.get("shop_id", "")) == str(COPPEL_SHOP_ID)
+                es_nosotros = str(o.get("shop", {}).get("shop_id", "")) == str(COPPEL_SHOP_ID)
                 if stock > 0 or es_nosotros:
                     ofertas.append(o)
         
@@ -664,7 +664,7 @@ class MegazordCoppel:
                 rivales_viables = [
                     r for r in ofertas 
                     if float(r.get("price", 0)) >= minimo 
-                    and str(r.get("shop_id", "")) != str(COPPEL_SHOP_ID)
+                    and str(r.get("shop", {}).get("shop_id", "")) != str(COPPEL_SHOP_ID)
                 ]
                 
                 if rivales_viables:
