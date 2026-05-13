@@ -719,8 +719,14 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
         # 🟢 INICIALIZAR NUEVO_PRECIO COMO SEGURO
         nuevo_precio = precio_actual
 
-        # Verificar quiebre de inventario
+        # 🟢 VALIDACIÓN DE INVENTARIO (Circuit Breaker mejorado)
+        if cantidad is None:
+            # ERROR DE API: No hacemos nada, solo informamos
+            logger.warning(f"⚠️ Error de API al leer stock de {sku_i}. Reintentando en siguiente ciclo.")
+            return
+        
         if cantidad == 0:
+            # STOCK REAL EN CERO: Aquí sí disparamos el apagado
             resultados.agregar_historial([
                 (datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
                 str(sku_i), str(sku_lp), "Agotado", precio_actual, 0, "N/A", "N/A"
