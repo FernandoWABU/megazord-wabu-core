@@ -441,25 +441,28 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
                     
                     for r in rivales:
                         precio_r = r.get("precio", 0)
-                        nombre_r = enmascarar_vendedor(r.get("nombre", ""))
                         nombre_original = r.get("nombre", "")
+                        nombre_r = enmascarar_vendedor(nombre_original)
                         
                         es_rentable = precio_r >= min_wmt
-                        es_enemigo_por_nombre = nombre_r != "NOSOTROS"
-                        es_enemigo_por_precio = abs(precio_r - mi_precio_actual) > 1.0
-                        
                         es_segundo = "Segundo" in nombre_original
-                        # Si es "Segundo" y su precio es exactamente nuestro Max o termina en .09 dentro de nuestro rango, somos nosotros
-                        es_nuestro_precio = (precio_r == max_wmt) or (precio_r >= min_wmt and str(precio_r).endswith('.09'))
                         
-                        if es_segundo:
+                        # 🔍 El Radar de Identidad (La firma blindada)
+                        # Forzamos el formato a 2 decimales para que el ".09" nunca falle
+                        es_nuestra_firma = (precio_r == max_wmt) or (precio_r >= min_wmt and f"{precio_r:.2f}".endswith('.09'))
+                        
+                        # Escudo: Solo nos ignoramos si es "Segundo" Y ADEMÁS tiene nuestra firma
+                        if es_segundo and es_nuestra_firma:
                             logger.warning(
                                 f"   🛡️ SEGURO BLINDADO ACTIVADO:"
-                                f"\n      Ignorando a 'Segundo' (${precio_r}) porque es ciego y podríamos ser NOSOTROS."
+                                f"\n      Ignorando a 'Segundo' (${precio_r}) porque detecté nuestra firma (.09 / MAX)."
                             )
                             continue
+                            
+                        # Si llega aquí, es un enemigo (el ganador principal, o un 'Segundo' que NO somos nosotros)
+                        es_enemigo_por_nombre = (nombre_r != "NOSOTROS")
                         
-                        if es_rentable and es_enemigo_por_nombre and es_enemigo_por_precio:
+                        if es_rentable and es_enemigo_por_nombre:
                             rivales_viables.append(r)
                             
                     if rivales_viables:
