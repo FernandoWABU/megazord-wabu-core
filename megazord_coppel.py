@@ -298,22 +298,21 @@ class MiraklCoppel:
             
         return []
         
-    def actualizar_precio_oferta(self, sku_vendedor: str, nuevo_precio: float) -> bool:
-        """Actualiza el precio de una oferta en Mirakl usando el método POST."""
+    def actualizar_precio_oferta(self, sku_vendedor: str, nuevo_precio: float, stock_actual: int) -> bool:
+        """Actualiza precio y mantiene stock para evitar que Mirakl lo ponga en 0."""
         endpoint = "/offers"
-        
-        # Mirakl exige 'shop_sku' y la orden explícita de 'update'
         payload = {
             "offers": [
                 {
                     "shop_sku": sku_vendedor,
                     "price": float(nuevo_precio),
+                    "quantity": int(stock_actual), # Enviamos el stock para proteger la publicación
                     "update_delete": "update"
                 }
             ]
         }
-        
         result = self._request("POST", endpoint, json=payload)
+        return result is not None
         
         if result is not None:
             logger.info(f"✅ Precio actualizado en Mirakl a: ${nuevo_precio}")
@@ -622,7 +621,8 @@ class MegazordCoppel:
             logger.info(f"      - Rival: {nombre_rival} | Precio: ${precio_rival} | Stock: {stock} | Activo: {es_activa}")
 
             if precio_rival > 10 and es_activa:
-                if stock > 0 or "NUARE" in str(nombre_rival).upper():
+                es_nosotros = str(o.get("shop_id", "")) == str(COPPEL_SHOP_ID)
+                if stock > 0 or es_nosotros:
                     ofertas.append(o)
         
         if not ofertas:
@@ -663,7 +663,8 @@ class MegazordCoppel:
                 # 🛡️ Filtrar rivales viables: Que sean rentables Y QUE NO SEAMOS NOSOTROS
                 rivales_viables = [
                     r for r in ofertas 
-                    if float(r.get("price", 0)) >= minimo and "NUARE" not in r.get("shop", {}).get("name", "").upper()
+                    if float(r.get("price", 0)) >= minimo 
+                    and str(r.get("shop_id", "")) != str(COPPEL_SHOP_ID)
                 ]
                 
                 if rivales_viables:
