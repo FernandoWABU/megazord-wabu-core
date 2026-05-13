@@ -621,7 +621,8 @@ class MegazordCoppel:
             logger.info(f"      - Rival: {nombre_rival} | Precio: ${precio_rival} | Stock: {stock} | Activo: {es_activa}")
 
             if precio_rival > 10 and es_activa:
-                es_nosotros = str(o.get("shop", {}).get("shop_id", "")) == str(COPPEL_SHOP_ID)
+                nombre_rival_upper = str(o.get("shop_name", "")).upper()
+                es_nosotros = (str(COPPEL_SHOP_ID) in str(o.get("shop_id", ""))) or ("NUARE" in nombre_rival_upper)
                 if stock > 0 or es_nosotros:
                     ofertas.append(o)
         
@@ -639,10 +640,16 @@ class MegazordCoppel:
         
         logger.info(f"   👑 BuyBox: ${precio_bb} ({ganador_enmascarado})")
         
-        # Guardar rivales en sheets
+       # Guardar rivales en sheets
         for oferta in ofertas[:5]:  # Primeros 5
-            nombre = oferta.get("shop", {}).get("name", "Desconocido")
+            nombre = oferta.get("shop_name")
+            if not nombre or nombre == "Desconocido":
+                nombre = oferta.get("shop", {}).get("name", "Desconocido")
+            
+            # Limpiar nombre para que Excel no se vuelva loco
+            nombre = str(nombre).replace("=", "").strip()
             precio = float(oferta.get("price", 0))
+            
             self.sheets.guardar_rival(sku_limpio, nombre, precio)
         
         # ==========================================
@@ -660,12 +667,15 @@ class MegazordCoppel:
                 nuevo_precio = float(int(precio_bb - undercut)) + 0.09
                 tipo_ataque = "DIRECTO"
             else:
-                # 🛡️ Filtrar rivales viables: Que sean rentables Y QUE NO SEAMOS NOSOTROS
-                rivales_viables = [
-                    r for r in ofertas 
-                    if float(r.get("price", 0)) >= minimo 
-                    and str(r.get("shop", {}).get("shop_id", "")) != str(COPPEL_SHOP_ID)
-                ]
+                # 🛡️ Filtrar rivales viables: Que sean rentables Y QUE NO SEAMOS NOSOTROS (Por ID o Nombre)
+                rivales_viables = []
+                for r in ofertas:
+                    precio_r = float(r.get("price", 0))
+                    nombre_r = str(r.get("shop_name", "")).upper()
+                    es_enemigo = ("NUARE" not in nombre_r) and (str(COPPEL_SHOP_ID) not in str(r.get("shop_id", "")))
+                    
+                    if (precio_r >= minimo) and es_enemigo:
+                        rivales_viables.append(r)
                 
                 if rivales_viables:
                     objetivo = min(rivales_viables, key=lambda x: float(x.get("price", 0)))
