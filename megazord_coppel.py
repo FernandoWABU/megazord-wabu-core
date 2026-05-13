@@ -312,7 +312,6 @@ class MiraklCoppel:
             ]
         }
         result = self._request("POST", endpoint, json=payload)
-        return result is not None
         
         if result is not None:
             logger.info(f"✅ Precio actualizado en Mirakl a: ${nuevo_precio}")
@@ -727,7 +726,9 @@ class MegazordCoppel:
                     
                     if nuevo_precio > precio_bb:
                         # EJECUTAR OPTIMIZACIÓN
-                        if self.mirakl.actualizar_precio_oferta(sku_coppel, nuevo_precio):
+                        # Extraemos el stock antes de mandar a actualizar
+                        mi_stock_actual = mi_oferta.get("quantity", 0)
+                        if self.mirakl.actualizar_precio_oferta(sku_coppel, nuevo_precio, stock_actual=mi_stock_actual):
                             ganancia, margen = calcular_rentabilidad_coppel(nuevo_precio, costo_odoo)
                             
                             mensaje = (
