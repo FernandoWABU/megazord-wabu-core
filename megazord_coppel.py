@@ -681,7 +681,8 @@ class MegazordCoppel:
             # Validar rentabilidad
             if nuevo_precio >= minimo and es_precio_rentable(nuevo_precio, costo_odoo, minimo):
                 # EJECUTAR ATAQUE
-                if self.mirakl.actualizar_precio_oferta(sku_coppel, nuevo_precio):
+                stock_mirakl = mi_oferta.get("quantity", 0)
+                if self.mirakl.actualizar_precio_oferta(sku_coppel, nuevo_precio, stock_actual=stock_mirakl):
                     ganancia, margen = calcular_rentabilidad_coppel(nuevo_precio, costo_odoo)
                     
                     mensaje = (
