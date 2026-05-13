@@ -466,8 +466,38 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
                             rivales_viables.append(r)
                             
                     if rivales_viables:
-                        rival_objetivo = min(rivales_viables, key=lambda x: x["precio"])["precio"]
-                        tipo_ataque = "GUERRILLA"
+                    # 🎯 AQUÍ ESTÁ LA CURA DE CLAUDE: Encontrar al enemigo intermedio más barato
+                    rival_objetivo = min([float(r.get("precio", 0)) for r in rivales_viables])
+                    
+                    undercut_random = random.uniform(MIN_UNDERCUT, MAX_UNDERCUT)
+                    nuevo_precio = float(int(rival_objetivo - undercut_random)) + 0.09
+                    tipo_ataque = "GUERRILLA"
+                    
+                    # Candado de seguridad por si el undercut nos baja del mínimo
+                    if nuevo_precio < min_wmt:
+                        nuevo_precio = float(int(min_wmt)) + 0.09
+                        
+                    # Candado por si nos pasamos del máximo
+                    if nuevo_precio > max_wmt:
+                        nuevo_precio = float(int(max_wmt)) + 0.09
+
+                    # EJECUTAR ATAQUE
+                    if nuevo_precio >= min_wmt:
+                        logger.info(f"   🎯 Objetivo de Guerrilla: ${rival_objetivo} | Undercut: -${undercut_random:.2f} = ${nuevo_precio}")
+                        actualizar_precio_walmart(token_wmt, creds_b64, sku_wmt, nuevo_precio)
+                        
+                        mensaje_telegram = (
+                            f"⚔️ *Gladiador {tipo_ataque.title()}*\\n"
+                            f"SKU: {sku_wmt}\\n"
+                            f"Rival Objetivo: ${rival_objetivo}\\n"
+                            f"Tu Nuevo Precio: ${nuevo_precio}\\n"
+                            f"Margen de Ganancia: ${nuevo_precio - min_wmt:.2f}"
+                        )
+                        enviar_mensaje_telegram(mensaje_telegram)
+                    else:
+                        logger.info(f"   ⚠️ Margen insuficiente tras cálculo. No atacando.")
+                else:
+                    logger.info(f"   🛡️ Posición defensiva: sin rivales viables en nuestro rango.")
                 
                 # Paso 3: Aplicar undercut aleatorio
                 if rival_objetivo and rival_objetivo > 0:
