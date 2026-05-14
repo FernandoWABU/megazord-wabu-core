@@ -340,7 +340,7 @@ def aplicar_freno_8_porciento(nuestro_precio_actual, nuevo_precio_propuesto):
 # ==========================================
 # CEREBRO PRINCIPAL DE WALMART
 # ==========================================
-def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
+def ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoja_historial):
     logger.info("🚀 INICIANDO MEGAZORD WALMART")
     enviar_mensaje_telegram("🤖 *Megazord Walmart* despertando. Iniciando patrullaje...")
     
@@ -486,6 +486,12 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
                         logger.info(f"   🎯 Objetivo de Guerrilla: ${rival_objetivo} | Undercut: -${undercut_random:.2f} = ${nuevo_precio}")
                         actualizar_precio_walmart(token_wmt, creds_b64, sku_wmt, nuevo_precio)
                         
+                        # 📝 NUEVO: Guardar en el Historial
+                        try:
+                            guardar_historial_walmart(hoja_historial, sku_wmt, mi_precio_actual, nuevo_precio, round(nuevo_precio - min_wmt, 2), bb_vendedor)
+                        except Exception as e:
+                            logger.error(f"Error guardando historial: {e}")
+                        
                         mensaje_telegram = (
                             f"⚔️ *Gladiador {tipo_ataque.title()}*\\n"
                             f"SKU: {sku_wmt}\\n"
@@ -507,7 +513,13 @@ def ejecutar_bot_walmart(token, creds_b64, cliente_gspread):
                     # Protección: nunca bajar del mínimo
                     if nuevo_precio >= min_wmt:
                         logger.info(f"   ⚔️ Ataque {tipo_ataque}: Rival ${rival_objetivo} - ${undercut_random} = ${nuevo_precio}")
-                        actualizar_precio_walmart(token, creds_b64, sku_wmt, nuevo_precio)
+                        actualizar_precio_walmart(token_wmt, creds_b64, sku_wmt, nuevo_precio)
+                        
+                        # 📝 NUEVO: Guardar en el Historial
+                        try:
+                            guardar_historial_walmart(hoja_historial, sku_wmt, mi_precio_actual, nuevo_precio, round(nuevo_precio - min_wmt, 2), bb_vendedor)
+                        except Exception as e:
+                            logger.error(f"Error guardando historial: {e}")
                         
                         mensaje_telegram = (
                             f"⚔️ *Gladiador {tipo_ataque.title()}*\n"
@@ -608,6 +620,6 @@ if __name__ == "__main__":
     token_wmt, creds_b64 = obtener_token_walmart()
 
     if token_wmt:
-        ejecutar_bot_walmart(token_wmt, creds_b64, cliente_gspread)
+        ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoja_historial)
     else:
         logger.error("❌ No se pudo autenticar")
