@@ -613,6 +613,14 @@ if __name__ == "__main__":
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
         cliente_gspread = gspread.authorize(creds)
+        
+        # 👇 AQUÍ ESTÁ EL CORTE 1 INTEGRADO 👇
+        GOOGLE_SHEETS_ID = os.getenv("GOOGLE_SHEETS_ID") # Asegúrate de que así se llame en tu archivo .env
+        hoja_principal = cliente_gspread.open_by_key(GOOGLE_SHEETS_ID).worksheet("Walmart")
+        hoja_rivales = cliente_gspread.open_by_key(GOOGLE_SHEETS_ID).worksheet("Rivales WMT")
+        hoja_historial = cliente_gspread.open_by_key(GOOGLE_SHEETS_ID).worksheet("Historial_WMT")
+        # 👆 FIN DEL CORTE 1 👆
+        
     except Exception as e:
         logger.error(f"❌ Error al conectar Google Sheets")
         exit(1)
@@ -620,6 +628,7 @@ if __name__ == "__main__":
     token_wmt, creds_b64 = obtener_token_walmart()
 
     if token_wmt:
+        # 👇 AQUÍ ESTÁ EL CORTE 2 INTEGRADO (Pasándole la hoja de historial a la función) 👇
         ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoja_historial)
     else:
-        logger.error("❌ No se pudo autenticar")
+        logger.error("❌ No se pudo obtener el token de Walmart.")
