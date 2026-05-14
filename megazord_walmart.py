@@ -276,8 +276,10 @@ def aplicar_freno_8_porciento(nuestro_precio_actual, nuevo_precio_propuesto):
     limite_seguro = round(nuestro_precio_actual * 1.08, 2)
     
     if nuevo_precio_propuesto > limite_seguro:
-        logger.warning(f"🛡️ FRENO 8%: Limitado a ${limite_seguro:.2f}")
-        return limite_seguro, True
+        # 🛡️ Aplicar el freno, pero RESTAURANDO la firma .09 para no perder la identidad
+        limite_con_firma = float(int(limite_seguro - 1)) + 0.09
+        logger.warning(f"🛡️ FRENO 8%: Limitado a ${limite_con_firma:.2f} (Firma restaurada)")
+        return limite_con_firma, True
     else:
         return nuevo_precio_propuesto, False
 
@@ -411,11 +413,14 @@ def ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoj
                     undercut_random = random.uniform(5, 10) # Mayor undercut para despegarse
                     nuevo_precio = float(int(rival_objetivo - undercut_random)) + 0.09
                     
-                    # Candados de seguridad
+                    # Candados de seguridad con protección de decimales
                     if nuevo_precio < min_wmt:
-                        nuevo_precio = float(int(min_wmt)) + 0.09
+                        # Sumamos 1 al entero para asegurar que el .09 rebase tu mínimo con decimales
+                        nuevo_precio = float(int(min_wmt) + 1) + 0.09
+                        
                     if max_wmt > 0 and nuevo_precio > max_wmt:
-                        nuevo_precio = float(int(max_wmt)) + 0.09
+                        # Restamos 1 al entero para asegurar que el .09 no perfore tu máximo
+                        nuevo_precio = float(int(max_wmt) - 1) + 0.09
 
                     if nuevo_precio >= min_wmt:
                         logger.info(f"   🎯 Objetivo {tipo_ataque}: ${rival_objetivo} | Undercut | Nuevo: ${nuevo_precio}")
