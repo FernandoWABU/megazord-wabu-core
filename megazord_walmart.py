@@ -505,7 +505,12 @@ if __name__ == "__main__":
         creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
         cliente_gspread = gspread.authorize(creds)
         
-        GOOGLE_SHEETS_ID = os.getenv("GOOGLE_SHEETS_ID") 
+        # Buscamos la variable en plural o en singular para evitar errores de GitHub
+        GOOGLE_SHEETS_ID = os.getenv("GOOGLE_SHEETS_ID") or os.getenv("GOOGLE_SHEET_ID")
+        
+        if not GOOGLE_SHEETS_ID:
+            logger.error("❌ El ID de Google Sheets está vacío. Revisa tus GitHub Secrets o archivo .env")
+            exit(1)
         hoja_principal = cliente_gspread.open_by_key(GOOGLE_SHEETS_ID).worksheet("Walmart")
         hoja_rivales = cliente_gspread.open_by_key(GOOGLE_SHEETS_ID).worksheet("Rivales WMT")
         hoja_historial = cliente_gspread.open_by_key(GOOGLE_SHEETS_ID).worksheet("Historial_WMT")
