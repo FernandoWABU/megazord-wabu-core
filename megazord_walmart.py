@@ -453,7 +453,8 @@ def ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoj
                     nuevo_precio = float(int(precio_segundo - distancia_random)) + 0.09
                     
                     if max_wmt > 0 and nuevo_precio > max_wmt:
-                        nuevo_precio = float(int(max_wmt)) + 0.09
+                        # Restamos 1 al entero para asegurar que el .09 no perfore tu máximo
+                        nuevo_precio = float(int(max_wmt) - 1) + 0.09
                         
                     if nuevo_precio > precio_bb:
                         nuestro_precio_actual = precio_bb  
