@@ -511,8 +511,8 @@ if __name__ == "__main__":
         if not GOOGLE_SHEETS_ID:
             logger.error("❌ El ID de Google Sheets está vacío. Revisa tus GitHub Secrets o archivo .env")
             exit(1)
-        hoja_principal = cliente_gspread.open_by_key(GOOGLE_SHEETS_ID).worksheet("Walmart")
-        hoja_rivales = cliente_gspread.open_by_key(GOOGLE_SHEETS_ID).worksheet("Rivales WMT")
+        hoja_principal = cliente_gspread.open_by_key(GOOGLE_SHEETS_ID).worksheet("Hoja 1")
+        hoja_rivales = cliente_gspread.open_by_key(GOOGLE_SHEETS_ID).worksheet("Rivales_WMT")
         hoja_historial = cliente_gspread.open_by_key(GOOGLE_SHEETS_ID).worksheet("Historial_WMT")
         
     except Exception as e:
