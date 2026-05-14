@@ -190,11 +190,11 @@ def actualizar_precio_walmart(token_wmt, credenciales_b64, sku_wmt, nuevo_precio
 # EL ESCÁNER DE PRECIOS (Visión de Rayos X - JSON)
 # ==========================================
 def espiar_ofertas_walmart(url_producto):
-    global CREDENTIAL_ROTATION_INDEX
+    # ELIMINAMOS la variable global CREDENTIAL_ROTATION_INDEX que causaba el bloqueo
     
     try:
-        while CREDENTIAL_ROTATION_INDEX < len(EXTERNAL_API_CREDENTIALS):
-            credencial = EXTERNAL_API_CREDENTIALS[CREDENTIAL_ROTATION_INDEX]
+        # El bot intentará con cada llave de tu armería para cada producto
+        for credencial in EXTERNAL_API_CREDENTIALS:
             logger.info(f"🥷 Iniciando escaneo de precios (Rayos X)...")
             
             payload = {
@@ -208,9 +208,8 @@ def espiar_ofertas_walmart(url_producto):
                 res = requests.get('https://api.scraperapi.com/', params=payload, timeout=60)
                 
                 if res.status_code == 429 or res.status_code == 403:
-                    logger.warning(f"⚠️ Credencial rechazada o límite de tasa. Rotando...")
-                    CREDENTIAL_ROTATION_INDEX += 1 
-                    continue
+                    logger.warning(f"⚠️ Credencial rechazada o límite de tasa. Intentando con la siguiente llave...")
+                    continue # Falla esta llave, intenta con la siguiente del "for"
                 
                 if res.status_code != 200 or not res.text or len(res.text) < 100:
                     logger.warning(f"⚠️ Error de escaneo o respuesta vacía")
@@ -226,7 +225,6 @@ def espiar_ofertas_walmart(url_producto):
                 if match_json:
                     try:
                         datos_json = json.loads(match_json.group(1))
-                        # Navegar por el laberinto del JSON de Walmart
                         queries = datos_json.get("props", {}).get("pageProps", {}).get("dehydratedState", {}).get("queries", [])
                         ofertas_json = []
                         
@@ -238,15 +236,12 @@ def espiar_ofertas_walmart(url_producto):
                         
                         if ofertas_json:
                             logger.info(f"   ✅ JSON decodificado: Encontrados {len(ofertas_json)} competidores.")
-                            # Ordenar por precio de menor a mayor
                             ofertas_json = sorted(ofertas_json, key=lambda x: float(x.get("price", 0)))
                             
-                            # El primero es el ganador de la BuyBox
                             primer_lugar = ofertas_json[0]
                             precio_actual = float(primer_lugar.get("price", 0))
                             ganador = primer_lugar.get("sellerName", primer_lugar.get("sellerId", "WALMART"))
                             
-                            # Guardar a TODOS como rivales
                             for oferta in ofertas_json:
                                 precio_r = float(oferta.get("price", 0))
                                 nombre_r = oferta.get("sellerName", oferta.get("sellerId", "Desconocido"))
@@ -257,7 +252,7 @@ def espiar_ofertas_walmart(url_producto):
                     except json.JSONDecodeError:
                         logger.warning("   ⚠️ Error decodificando el JSON. Usando Fallback.")
                 
-                # 🛡️ FALLBACK: Si no hay JSON, usamos el escáner ciego tradicional (Regex)
+                # 🛡️ FALLBACK TRADICIONAL
                 logger.warning("   ⚠️ No se encontró JSON. Activando escáner tradicional...")
                 match_precio = re.search(r'"price":\s*([0-9.]+)', res.text) or \
                                re.search(r'"priceAmount":\s*([0-9.]+)', res.text) or \
@@ -284,12 +279,12 @@ def espiar_ofertas_walmart(url_producto):
 
             except requests.Timeout:
                 logger.warning(f"⚠️ Timeout en escaneo. Reintentando...")
-                time.sleep(2)
                 continue
             except Exception as e:
                 logger.warning(f"⚠️ Error en escaneo: {str(e)[:50]}")
-                return 0.0, [], "Error"
+                continue
         
+        # Si termina el ciclo 'for' y ninguna de las 3 llaves funcionó:
         return 0.0, [], "Bloqueado"
         
     except Exception as e:
