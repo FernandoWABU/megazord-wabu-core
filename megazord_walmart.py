@@ -202,9 +202,8 @@ def espiar_ofertas_walmart(url_producto):
                 'api_key': credencial, 
                 'url': url_producto,
                 'country_code': 'mx',
-                'render': 'true',          # 👈 Enciende el motor de JavaScript
-                'premium': 'true',         # 👈 Usa IPs residenciales de alta calidad
-                'device_type': 'desktop'   # 👈 Finge ser una computadora normal
+                'render': 'false'  # 👈 Apagamos el renderizado caro
+                # Eliminamos premium y device_type para volver al costo de 1 crédito
             }
             
             try:
