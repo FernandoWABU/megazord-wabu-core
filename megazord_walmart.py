@@ -27,24 +27,14 @@ logger = logging.getLogger(__name__)
 # FUNCIONES DE ENMASCARAMIENTO (LOGS PÚBLICOS SOLO)
 # ==========================================
 def enmascarar_sku(sku_real):
-    """
-    Convierte SKU real en hash para logs públicos.
-    Ejemplo: SKU12345 -> SKU_a1b2c3
-    
-    NOTA: Esto se usa SOLO en logger.info() para GitHub Actions.
-    Para Telegram (privado), usamos el SKU real.
-    """
     hash_sku = hashlib.md5(sku_real.encode()).hexdigest()[:6].upper()
     return f"SKU_{hash_sku}"
 
 def enmascarar_vendedor(nombre_vendedor):
-    """Enmascara vendedor - detecta si somos nosotros."""
     if not nombre_vendedor or nombre_vendedor == "Desconocido":
         return "Desconocido"
         
     nombre_upper = str(nombre_vendedor).upper()
-    
-    # ¡AQUÍ ESTÁ LA CLAVE! Agregar todas las identidades de tu empresa
     if "AROMANDOTE" in nombre_upper or "WABU" in nombre_upper or "NUARE" in nombre_upper:
         return "NOSOTROS"
         
@@ -66,7 +56,6 @@ CREDENTIAL_ROTATION_INDEX = 0
 # RADIO TELEGRAM (DATOS REALES)
 # ==========================================
 def enviar_mensaje_telegram(mensaje):
-    """Envía un reporte a tu celular vía Telegram CON DATOS REALES"""
     token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_WMT") 
     
@@ -90,7 +79,6 @@ def enviar_mensaje_telegram(mensaje):
 # FUNCIONES DE WALMART API
 # ==========================================
 def obtener_token_walmart():
-    """Obtiene token de acceso a API de Walmart"""
     client_id = os.getenv("WALMART_USER", "").strip(" \n\r\t\"'")
     client_secret = os.getenv("WALMART_PASS", "").strip(" \n\r\t\"'")
     
@@ -127,12 +115,11 @@ def obtener_token_walmart():
         logger.error(f"❌ Error de conexión: {str(e)[:100]}")
         return None, None
 
-def obtener_inventario_walmart(token, credenciales_b64, sku_wmt):
-    """Consulta el stock real de un SKU específico"""
+def obtener_inventario_walmart(token_wmt, credenciales_b64, sku_wmt):
     url = f"https://marketplace.walmartapis.com/v3/inventory?sku={sku_wmt}"
     headers = {
         "Authorization": f"Basic {credenciales_b64}",
-        "WM_SEC.ACCESS_TOKEN": token,
+        "WM_SEC.ACCESS_TOKEN": token_wmt,
         "WM_SVC.NAME": "Walmart Marketplace",
         "WM_QOS.CORRELATION_ID": str(uuid.uuid4()),
         "Accept": "application/json",
@@ -148,12 +135,11 @@ def obtener_inventario_walmart(token, credenciales_b64, sku_wmt):
         logger.warning(f"⚠️ Error consultando inventario")
     return 0
 
-def obtener_mi_precio_walmart(token, credenciales_b64, sku_wmt):
-    """Consulta a la API oficial por nuestro precio exacto publicado"""
+def obtener_mi_precio_walmart(token_wmt, credenciales_b64, sku_wmt):
     url = f"https://marketplace.walmartapis.com/v3/price?sku={sku_wmt}"
     headers = {
         "Authorization": f"Basic {credenciales_b64}",
-        "WM_SEC.ACCESS_TOKEN": token,
+        "WM_SEC.ACCESS_TOKEN": token_wmt,
         "WM_SVC.NAME": "Walmart Marketplace",
         "WM_QOS.CORRELATION_ID": str(uuid.uuid4()),
         "Accept": "application/json",
@@ -162,34 +148,20 @@ def obtener_mi_precio_walmart(token, credenciales_b64, sku_wmt):
     try:
         res = requests.get(url, headers=headers, timeout=10)
         
-        # ========== NUEVO: DEBUG LOG ==========
-        if res.status_code == 200:
-            logger.info(f"🔍 DEBUG API WALMART - Respuesta completa:")
-            logger.info(f"   Status Code: {res.status_code}")
-            logger.info(f"   Raw Response: {res.text}")
-            
-            try:
-                json_response = res.json()
-                logger.info(f"   Parsed JSON: {json.dumps(json_response, indent=2)}")
-            except:
-                logger.warning(f"   ⚠️ No se pudo parsear como JSON")
-        # ========== FIN DEBUG LOG ==========
-        
         if res.status_code == 200:
             precio = float(res.json().get("pricing", [{}])[0].get("currentPrice", {}).get("amount", 0.0))
             if precio == 0.0:
-                logger.warning(f"   ⚠️ API retornó estructura pero precio = 0.0 (ajusta la extracción de JSON)")
+                logger.warning(f"   ⚠️ API retornó estructura pero precio = 0.0")
             return precio
     except:
         pass
     return 0.0
 
-def actualizar_precio_walmart(token, credenciales_b64, sku_wmt, nuevo_precio):
-    """Actualiza el precio de un producto en Walmart"""
+def actualizar_precio_walmart(token_wmt, credenciales_b64, sku_wmt, nuevo_precio):
     url = f"https://marketplace.walmartapis.com/v3/price?sku={sku_wmt}"
     headers = {
         "Authorization": f"Basic {credenciales_b64}",
-        "WM_SEC.ACCESS_TOKEN": token,
+        "WM_SEC.ACCESS_TOKEN": token_wmt,
         "WM_SVC.NAME": "Walmart Marketplace",
         "WM_QOS.CORRELATION_ID": str(uuid.uuid4()),
         "Accept": "application/json",
@@ -218,10 +190,6 @@ def actualizar_precio_walmart(token, credenciales_b64, sku_wmt, nuevo_precio):
 # EL ESCÁNER DE PRECIOS (Secure)
 # ==========================================
 def espiar_ofertas_walmart(url_producto):
-    """
-    Escanea precios de competencia usando ScraperAPI.
-    Versión segura: HTTPS, credencial rotación, validación robusta.
-    """
     global CREDENTIAL_ROTATION_INDEX
     
     try:
@@ -237,20 +205,14 @@ def espiar_ofertas_walmart(url_producto):
             }
             
             try:
-                # ✅ HTTPS en lugar de HTTP
-                res = requests.get(
-                    'https://api.scraperapi.com/',
-                    params=payload, 
-                    timeout=60
-                )
+                res = requests.get('https://api.scraperapi.com/', params=payload, timeout=60)
                 
-                # Validación robusta de respuesta
-                if res.status_code == 429:  # Rate limit
+                if res.status_code == 429:
                     logger.warning(f"⚠️ Límite de tasa alcanzado. Rotando credencial...")
                     CREDENTIAL_ROTATION_INDEX += 1 
                     continue
                 
-                if res.status_code == 403:  # Unauthorized
+                if res.status_code == 403:
                     logger.warning(f"⚠️ Credencial rechazada. Rotando...")
                     CREDENTIAL_ROTATION_INDEX += 1 
                     continue
@@ -259,26 +221,20 @@ def espiar_ofertas_walmart(url_producto):
                     logger.warning(f"⚠️ Error de escaneo")
                     return 0.0, [], "Indisponible"
                 
-                # Validar que haya contenido
                 if not res.text or len(res.text) < 100:
                     logger.warning("⚠️ Respuesta vacía o corrupta")
                     return 0.0, [], "Corrupto"
                 
-                # ==========================================
-                # PARSEO DE PRECIOS
-                # ==========================================
                 precio_actual = 0.0
                 ganador = "Desconocido"
                 precio_rival_secundario = 0.0
                 
-                # Buscar precio principal
                 match_precio = re.search(r'"price":\s*([0-9.]+)', res.text) or \
                                re.search(r'"priceAmount":\s*([0-9.]+)', res.text) or \
                                re.search(r'itemprop="price"[^>]*content="([0-9.]+)"', res.text)
                 if match_precio:
                     precio_actual = float(match_precio.group(1))
 
-                # Buscar vendedor (nombre real para Telegram)
                 match_vendedor = re.search(r'"sellerName":\s*"([^"]+)"', res.text) or \
                                  re.search(r'Vendido y enviado por\s*([^<]+)', res.text)
                 if match_vendedor:
@@ -286,7 +242,6 @@ def espiar_ofertas_walmart(url_producto):
                 elif precio_actual > 0:
                     ganador = "WALMART"
 
-                # Buscar precio rival
                 match_rival = re.search(r'Desde \$([0-9,]+(?:\.[0-9]+)?)', res.text)
                 if match_rival:
                     precio_rival_secundario = float(match_rival.group(1).replace(',', ''))
@@ -312,30 +267,38 @@ def espiar_ofertas_walmart(url_producto):
         return 0.0, [], "Error"
 
 # ==========================================
-# 🛡️ FRENO DE SEGURIDAD: PROTECCIÓN 8%
+# 🛡️ FUNCIONES DE SEGURIDAD E HISTORIAL
 # ==========================================
 def aplicar_freno_8_porciento(nuestro_precio_actual, nuevo_precio_propuesto):
-    # Validación: si no tenemos precio válido, permitir
     if nuestro_precio_actual <= 0:
         return nuevo_precio_propuesto, False
     
-    # Calcular límite seguro (8% de incremento máximo)
     limite_seguro = round(nuestro_precio_actual * 1.08, 2)
     
-    # Verificar si excede límite
     if nuevo_precio_propuesto > limite_seguro:
-        # 🚨 FRENO ACTIVADO
-        logger.warning(
-            f"🛡️ FRENO 8%: Incremento demasiado brusco detectado\n"
-            f"   Precio actual: ${nuestro_precio_actual:.2f}\n"
-            f"   Precio propuesto: ${nuevo_precio_propuesto:.2f}\n"
-            f"   Límite seguro (8%): ${limite_seguro:.2f}\n"
-            f"   ACCIÓN: Limitado a ${limite_seguro:.2f}"
-        )
-        return limite_seguro, True  # Fue limitado
+        logger.warning(f"🛡️ FRENO 8%: Limitado a ${limite_seguro:.2f}")
+        return limite_seguro, True
     else:
-        # ✅ Incremento dentro de límites seguros
-        return nuevo_precio_propuesto, False  # No fue limitado
+        return nuevo_precio_propuesto, False
+
+def guardar_historial_walmart(hoja_historial, sku_wmt, mi_precio_anterior, nuevo_precio, ganancia, ganador_bb):
+    """Guarda los movimientos en la pestaña Historial_WMT"""
+    try:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        fila = [
+            timestamp, 
+            "Sin SKU",           # B: SKU_Interno
+            "Sin SKU",           # C: SKU_Limpio
+            sku_wmt,             # D: SKU_Walmart
+            mi_precio_anterior,  # E: Nuestro_Precio Anterior
+            "Guerrilla/Opt",     # F: Regla_Aplicada
+            nuevo_precio,        # G: Resultado (Nuevo Precio)
+            "N/A",               # H: Stock
+            ganador_bb           # I: Observaciones / Ganador
+        ]
+        hoja_historial.append_row(fila)
+    except Exception as e:
+        logger.error(f"⚠️ Error guardando historial en Sheets: {e}")
 
 # ==========================================
 # CEREBRO PRINCIPAL DE WALMART
@@ -351,6 +314,9 @@ def ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoj
             logger.error("❌ GOOGLE_SHEET_ID no configurado")
             return
             
+        # Reutilizamos el cliente ya autenticado que pasaremos por parámetro (ver gatillo)
+        cliente_gspread = gspread.authorize(ServiceAccountCredentials.from_json_keyfile_name("credentials.json", ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]))
+        
         if "http" in identificador_hoja:
             matriz = cliente_gspread.open_by_url(identificador_hoja)
         else:
@@ -360,12 +326,10 @@ def ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoj
         datos = hoja_walmart.get_all_records()
         df = pd.DataFrame(datos)
         
-        # Limpieza de datos
         df.columns = df.columns.str.strip()
         df_activos = df[df['estatus_wmt'].astype(str).str.upper() == 'ACTIVO']
         logger.info(f"📋 Procesando {len(df_activos)} productos activos")
         
-        # Función auxiliar
         def limpiar_precio(valor):
             try:
                 if pd.isna(valor): return 0.0
@@ -379,15 +343,12 @@ def ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoj
             min_wmt = limpiar_precio(row.get('minimo_wmt', 0))
             max_wmt = limpiar_precio(row.get('maximo_wmt', 0))
             
-            # ✅ PARA LOGS: usar SKU enmascarado
             sku_display = enmascarar_sku(sku_wmt)
             logger.info(f"🔍 Evaluando: {sku_display}")
             
             # --- 1. REVISIÓN DE INVENTARIO ---
-            stock_actual = obtener_inventario_walmart(token, creds_b64, sku_wmt)
-            
-            # 🪞 NUEVO: OBTENER NUESTRO PRECIO EXACTO COMO ESPEJO
-            mi_precio_actual = obtener_mi_precio_walmart(token, creds_b64, sku_wmt)
+            stock_actual = obtener_inventario_walmart(token_wmt, creds_b64, sku_wmt)
+            mi_precio_actual = obtener_mi_precio_walmart(token_wmt, creds_b64, sku_wmt)
             
             try:
                 hoja_walmart.update_cell(index + 2, 15, stock_actual)
@@ -399,7 +360,6 @@ def ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoj
                 logger.info(f"   ⏭️ Sin stock. Desactivando automáticamente...")
                 try:
                     hoja_walmart.update_cell(index + 2, 10, "INACTIVO")
-                    # ✅ TELEGRAM RECIBE DATOS REALES
                     enviar_mensaje_telegram(f"🚨 *Sin Stock*\nProducto: {sku_wmt}\nAcción: Desactivado automáticamente")
                 except Exception as e:
                     logger.warning(f"Error al desactivar SKU")
@@ -407,142 +367,73 @@ def ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoj
                 
             # --- 2. ESPIONAJE DE PRECIOS ---
             precio_bb, rivales, ganador = espiar_ofertas_walmart(url_wmt)
-            
-            # ✅ PARA LOGS: usar vendedor enmascarado
             ganador_enmascarado = enmascarar_vendedor(ganador)
             logger.info(f"   👑 BuyBox: ${precio_bb} (Vendedor: {ganador_enmascarado})")
             
-# --- 3. TÁCTICAS DE COMBATE: INTELIGENCIA GUERRILLA ---
+            # --- 3. TÁCTICAS DE COMBATE: INTELIGENCIA GUERRILLA ---
             if "NOSOTROS" not in ganador_enmascarado and precio_bb > 0:
                 
-                # ==========================================
-                # TÁCTICA GLADIADOR - VERSIÓN GUERRILLA
-                # ==========================================
-                
-                # Paso 1: Validar si BuyBox es defendible
                 buybox_defendible = precio_bb >= min_wmt
-                
-                # Paso 2: Encontrar "Rival Válido"
                 rival_objetivo = None
                 tipo_ataque = "NONE"
                 
                 if buybox_defendible:
-                    # BuyBox está en nuestro rango: atacar directo
                     rival_objetivo = precio_bb
                     tipo_ataque = "DIRECTO"
                 else:
-                    # 🛡️ BLOQUE ANTI-SUICIDIO
                     rivales_viables = []
-                    mi_precio_actual_valido = mi_precio_actual > 0.0
-                    
-                    logger.debug(f"   🛡️ Validación anti-suicidio:")
-                    logger.debug(f"      mi_precio_actual: ${mi_precio_actual}")
-                    logger.debug(f"      es_válido: {mi_precio_actual_valido}")
                     
                     for r in rivales:
-                        precio_r = r.get("precio", 0)
+                        precio_r = float(r.get("precio", 0))
                         nombre_original = r.get("nombre", "")
                         nombre_r = enmascarar_vendedor(nombre_original)
                         
                         es_rentable = precio_r >= min_wmt
                         es_segundo = "Segundo" in nombre_original
                         
-                        # 🔍 El Radar de Identidad (La firma blindada)
-                        # Forzamos el formato a 2 decimales para que el ".09" nunca falle
                         es_nuestra_firma = (precio_r == max_wmt) or (precio_r >= min_wmt and f"{precio_r:.2f}".endswith('.09'))
                         
-                        # Escudo: Solo nos ignoramos si es "Segundo" Y ADEMÁS tiene nuestra firma
                         if es_segundo and es_nuestra_firma:
-                            logger.warning(
-                                f"   🛡️ SEGURO BLINDADO ACTIVADO:"
-                                f"\n      Ignorando a 'Segundo' (${precio_r}) porque detecté nuestra firma (.09 / MAX)."
-                            )
+                            logger.warning(f"   🛡️ SEGURO BLINDADO ACTIVADO: Ignorando a 'Segundo' (${precio_r})")
                             continue
                             
-                        # Si llega aquí, es un enemigo (el ganador principal, o un 'Segundo' que NO somos nosotros)
                         es_enemigo_por_nombre = (nombre_r != "NOSOTROS")
-                        
                         if es_rentable and es_enemigo_por_nombre:
                             rivales_viables.append(r)
                             
                     if rivales_viables:
-                    # 🎯 AQUÍ ESTÁ LA CURA DE CLAUDE: Encontrar al enemigo intermedio más barato
-                    rival_objetivo = min([float(r.get("precio", 0)) for r in rivales_viables])
-                    
-                    undercut_random = random.uniform(MIN_UNDERCUT, MAX_UNDERCUT)
+                        # 🎯 CURA DE CLAUDE CORRECTAMENTE INDENTADA
+                        rival_objetivo = min([float(r.get("precio", 0)) for r in rivales_viables])
+                        tipo_ataque = "GUERRILLA"
+                
+                # EJECUTAR ATAQUE
+                if rival_objetivo and rival_objetivo > 0:
+                    undercut_random = random.uniform(5, 10) # Mayor undercut para despegarse
                     nuevo_precio = float(int(rival_objetivo - undercut_random)) + 0.09
-                    tipo_ataque = "GUERRILLA"
                     
-                    # Candado de seguridad por si el undercut nos baja del mínimo
+                    # Candados de seguridad
                     if nuevo_precio < min_wmt:
                         nuevo_precio = float(int(min_wmt)) + 0.09
-                        
-                    # Candado por si nos pasamos del máximo
-                    if nuevo_precio > max_wmt:
+                    if max_wmt > 0 and nuevo_precio > max_wmt:
                         nuevo_precio = float(int(max_wmt)) + 0.09
 
-                    # EJECUTAR ATAQUE
                     if nuevo_precio >= min_wmt:
-                        logger.info(f"   🎯 Objetivo de Guerrilla: ${rival_objetivo} | Undercut: -${undercut_random:.2f} = ${nuevo_precio}")
+                        logger.info(f"   🎯 Objetivo {tipo_ataque}: ${rival_objetivo} | Undercut | Nuevo: ${nuevo_precio}")
                         actualizar_precio_walmart(token_wmt, creds_b64, sku_wmt, nuevo_precio)
                         
-                        # 📝 NUEVO: Guardar en el Historial
-                        try:
-                            guardar_historial_walmart(hoja_historial, sku_wmt, mi_precio_actual, nuevo_precio, round(nuevo_precio - min_wmt, 2), bb_vendedor)
-                        except Exception as e:
-                            logger.error(f"Error guardando historial: {e}")
-                        
-                        mensaje_telegram = (
-                            f"⚔️ *Gladiador {tipo_ataque.title()}*\\n"
-                            f"SKU: {sku_wmt}\\n"
-                            f"Rival Objetivo: ${rival_objetivo}\\n"
-                            f"Tu Nuevo Precio: ${nuevo_precio}\\n"
-                            f"Margen de Ganancia: ${nuevo_precio - min_wmt:.2f}"
-                        )
-                        enviar_mensaje_telegram(mensaje_telegram)
-                    else:
-                        logger.info(f"   ⚠️ Margen insuficiente tras cálculo. No atacando.")
-                else:
-                    logger.info(f"   🛡️ Posición defensiva: sin rivales viables en nuestro rango.")
-                
-                # Paso 3: Aplicar undercut aleatorio
-                if rival_objetivo and rival_objetivo > 0:
-                    undercut_random = random.randint(3, 6)
-                    nuevo_precio = round(rival_objetivo - undercut_random, 2)
-                    
-                    # Protección: nunca bajar del mínimo
-                    if nuevo_precio >= min_wmt:
-                        logger.info(f"   ⚔️ Ataque {tipo_ataque}: Rival ${rival_objetivo} - ${undercut_random} = ${nuevo_precio}")
-                        actualizar_precio_walmart(token_wmt, creds_b64, sku_wmt, nuevo_precio)
-                        
-                        # 📝 NUEVO: Guardar en el Historial
-                        try:
-                            guardar_historial_walmart(hoja_historial, sku_wmt, mi_precio_actual, nuevo_precio, round(nuevo_precio - min_wmt, 2), bb_vendedor)
-                        except Exception as e:
-                            logger.error(f"Error guardando historial: {e}")
+                        # 📝 GUARDAR EN HISTORIAL
+                        guardar_historial_walmart(hoja_historial, sku_wmt, mi_precio_actual, nuevo_precio, round(nuevo_precio - min_wmt, 2), ganador)
                         
                         mensaje_telegram = (
                             f"⚔️ *Gladiador {tipo_ataque.title()}*\n"
                             f"SKU: {sku_wmt}\n"
                             f"Rival Objetivo: ${rival_objetivo}\n"
-                            f"Undercut: ${undercut_random}\n"
                             f"Tu Nuevo Precio: ${nuevo_precio}\n"
-                            f"Margen de Ganancia: ${nuevo_precio - min_wmt:.2f}"
+                            f"Margen: ${nuevo_precio - min_wmt:.2f}"
                         )
-                        
-                        if tipo_ataque == "GUERRILLA":
-                            mensaje_telegram += f"\n\n🎯 Atacando al 2do rival porque el BuyBox (${precio_bb}) es muy bajo."
-                        
                         enviar_mensaje_telegram(mensaje_telegram)
                     else:
-                        logger.info(f"   ⚠️ Margen insuficiente. No atacando.")
-                        enviar_mensaje_telegram(
-                            f"⚠️ *Sin Margen*\n"
-                            f"SKU: {sku_wmt}\n"
-                            f"Rival más viable: ${rival_objetivo}\n"
-                            f"Tu mínimo: ${min_wmt}\n"
-                            f"No hay margen suficiente para atacar."
-                        )
+                        logger.info(f"   ⚠️ Margen insuficiente tras cálculo. No atacando.")
                 else:
                     logger.info(f"   🛡️ Posición defensiva: sin rivales viables en nuestro rango.")
                     
@@ -550,31 +441,28 @@ def ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoj
                 # Táctica 3: Optimización (ya ganamos)
                 precio_segundo = 0.0
                 if len(rivales) > 1:
-                    precio_segundo = rivales[1]["precio"]
+                    precio_segundo = float(rivales[1].get("precio", 0))
                 
                 if precio_segundo > precio_bb:
                     distancia_random = random.randint(4, 6) 
-                    nuevo_precio = round(precio_segundo - distancia_random, 2)
+                    nuevo_precio = float(int(precio_segundo - distancia_random)) + 0.09
                     
                     if max_wmt > 0 and nuevo_precio > max_wmt:
-                        nuevo_precio = max_wmt
+                        nuevo_precio = float(int(max_wmt)) + 0.09
                         
                     if nuevo_precio > precio_bb:
-                        # ========== 🛡️ FRENO DEL 8% ==========
-                        nuestro_precio_actual = precio_bb  # Estamos en el BuyBox
+                        nuestro_precio_actual = precio_bb  
                         
-                        # Aplicar freno: limitar incremento a máximo 8%
                         nuevo_precio, fue_limitado = aplicar_freno_8_porciento(
                             nuestro_precio_actual,
                             nuevo_precio
                         )
                         
-                        if fue_limitado:
-                            logger.info(f"   🚀 Optimización de margen ejecutada (FRENO aplicado)")
-                        else:
-                            logger.info(f"   🚀 Optimización de margen ejecutada")
+                        logger.info(f"   🚀 Optimización de margen ejecutada {'(FRENO aplicado)' if fue_limitado else ''}")
+                        actualizar_precio_walmart(token_wmt, creds_b64, sku_wmt, nuevo_precio)
                         
-                        actualizar_precio_walmart(token, creds_b64, sku_wmt, nuevo_precio)
+                        # 📝 GUARDAR EN HISTORIAL
+                        guardar_historial_walmart(hoja_historial, sku_wmt, mi_precio_actual, nuevo_precio, round(nuevo_precio - min_wmt, 2), ganador)
                         
                         mensaje = (
                             f"🚀 *Optimización de Margen*\n"
@@ -582,10 +470,8 @@ def ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoj
                             f"Precio Anterior: ${precio_bb}\n"
                             f"Nuevo Precio: ${nuevo_precio}"
                         )
-                        
                         if fue_limitado:
-                            mensaje += f"\n\n🛡️ (Freno 8% aplicado para proteger cuenta)"
-                        
+                            mensaje += f"\n\n🛡️ (Freno 8% aplicado)"
                         enviar_mensaje_telegram(mensaje)
                     else:
                         logger.info("   ✅ Margen ya optimizado")
@@ -606,7 +492,6 @@ def ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoj
 # ==========================================
 if __name__ == "__main__":
     load_dotenv()
-
     logger.info(f"⏰ Ejecutando ciclo de patrullaje manual o por CRON...")
 
     try:
@@ -614,21 +499,18 @@ if __name__ == "__main__":
         creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
         cliente_gspread = gspread.authorize(creds)
         
-        # 👇 AQUÍ ESTÁ EL CORTE 1 INTEGRADO 👇
-        GOOGLE_SHEETS_ID = os.getenv("GOOGLE_SHEETS_ID") # Asegúrate de que así se llame en tu archivo .env
+        GOOGLE_SHEETS_ID = os.getenv("GOOGLE_SHEETS_ID") 
         hoja_principal = cliente_gspread.open_by_key(GOOGLE_SHEETS_ID).worksheet("Walmart")
         hoja_rivales = cliente_gspread.open_by_key(GOOGLE_SHEETS_ID).worksheet("Rivales WMT")
         hoja_historial = cliente_gspread.open_by_key(GOOGLE_SHEETS_ID).worksheet("Historial_WMT")
-        # 👆 FIN DEL CORTE 1 👆
         
     except Exception as e:
-        logger.error(f"❌ Error al conectar Google Sheets")
+        logger.error(f"❌ Error al conectar Google Sheets: {e}")
         exit(1)
 
     token_wmt, creds_b64 = obtener_token_walmart()
 
     if token_wmt:
-        # 👇 AQUÍ ESTÁ EL CORTE 2 INTEGRADO (Pasándole la hoja de historial a la función) 👇
         ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoja_historial)
     else:
         logger.error("❌ No se pudo obtener el token de Walmart.")
