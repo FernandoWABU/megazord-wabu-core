@@ -47,6 +47,7 @@ credenciales_crudas = [
     os.getenv("SCRAPERAPI_KEY_1", "").strip(),
     os.getenv("SCRAPERAPI_KEY_2", "").strip(),
     os.getenv("SCRAPERAPI_KEY_3", "").strip(),
+    os.getenv("SCRAPERAPI_KEY_4", "").strip(), # 👈 Agregas esta línea
 ]
 
 EXTERNAL_API_CREDENTIALS = [cred for cred in credenciales_crudas if cred]
