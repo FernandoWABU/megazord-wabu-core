@@ -58,11 +58,12 @@ jobs:
           WALMART_PASS: ${{ secrets.WALMART_PASS }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_WMT: ${{ secrets.TELEGRAM_CHAT_WMT }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }} # 👈 ¡NUEVO: Conexión a Render activada!
           SCRAPERAPI_KEY_1: ${{ secrets.SCRAPERAPI_KEY_1 }}
           SCRAPERAPI_KEY_2: ${{ secrets.SCRAPERAPI_KEY_2 }}
           SCRAPERAPI_KEY_3: ${{ secrets.SCRAPERAPI_KEY_3 }}
-          SCRAPERAPI_KEY_4: ${{ secrets.SCRAPERAPI_KEY_4 }} # 👈 Agrega esta línea
-        run: python megazord_walmart.py
+          SCRAPERAPI_KEY_4: ${{ secrets.SCRAPERAPI_KEY_4 }} # 👈 ¡NUEVO: Cuarta llave conectada!
+        run: python megazord_walmart.py # 👈 ¡NUEVO: Nombre limpio sin espacios ni paréntesis!
 
       - name: 📸 Subir evidencia de la GoPro
         if: always()
