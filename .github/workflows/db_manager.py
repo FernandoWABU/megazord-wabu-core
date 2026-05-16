@@ -60,13 +60,28 @@ class DbManager:
     # ---------------- MÉTODOS CRUD ESPECÍFICOS ----------------
 
     def obtener_skus_activos(self, marketplace):
-        """Devuelve los SKUs activos usando el ID numérico como llave maestra"""
-        col_estatus = f"estatus_{marketplace}" if marketplace != 'liverpool' else "estatus"
-        query = f"""
-            SELECT id, sku_{marketplace} as sku, precio_minimo, precio_maximo, costo_odoo, stock 
-            FROM catalogo_maestro_v3 
-            WHERE {col_estatus} = 'ACTIVO' AND sku_{marketplace} IS NOT NULL
-        """
+        """Devuelve los SKUs activos mapeando los nombres exactos de catalogo_maestro_v3"""
+        if marketplace == 'walmart':
+            query = """
+                SELECT id, sku_walmart as sku, minimo_wmt as precio_minimo, maximo_wmt as precio_maximo, costo_odoo, stock 
+                FROM catalogo_maestro_v3 
+                WHERE estatus_wmt = 'ACTIVO' AND sku_walmart IS NOT NULL
+            """
+        elif marketplace == 'coppel':
+            query = """
+                SELECT id, sku_coppel as sku, minimo_coppel as precio_minimo, maximo_coppel as precio_maximo, costo_odoo, stock_coppel as stock 
+                FROM catalogo_maestro_v3 
+                WHERE estatus_coppel = 'ACTIVO' AND sku_coppel IS NOT NULL
+            """
+        elif marketplace == 'liverpool':
+            query = """
+                SELECT id, sku_liverpool as sku, precio_minimo, precio_maximo, costo_odoo, stock 
+                FROM catalogo_maestro_v3 
+                WHERE estatus = 'ACTIVO' AND sku_liverpool IS NOT NULL
+            """
+        else:
+            return []
+            
         return self.execute_query(query, fetch=True)
 
     def registrar_historial(self, catalogo_id, marketplace, precio_ant, precio_nuv, stock, regla, resultado, notas=""):
