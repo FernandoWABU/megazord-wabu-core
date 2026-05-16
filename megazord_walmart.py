@@ -396,7 +396,7 @@ def ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoj
                 min_wmt = float(producto.get('precio_minimo', 0))
                 max_wmt = float(producto.get('precio_maximo', 0))
                 stock_actual = producto.get('stock', 0)
-                url_wmt = ""  
+                url_wmt = producto.get('url_walmart', '')  # 👈 ¡AHORA SÍ TOMAMOS LA URL DE LA BD!
             else:
                 catalogo_id = None
                 sku_wmt = str(producto.get('sku_walmart', '') if isinstance(producto, dict) else producto['sku_walmart'])
