@@ -13,6 +13,7 @@ import pandas as pd
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from datetime import datetime
+from db_manager import DbManager
 
 # ==========================================
 # CONFIGURACIÓN DEL LOGGER
@@ -359,6 +360,16 @@ def ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoj
         df_activos = df[df['estatus_wmt'].astype(str).str.upper() == 'ACTIVO']
         logger.info(f"📋 Procesando {len(df_activos)} productos activos")
         
+        # ==========================================
+        # INICIALIZAR GESTOR DE BASE DE DATOS
+        # ==========================================
+        try:
+            db = DbManager()
+            logger.info("✅ Conexión a PostgreSQL establecida")
+        except Exception as e:
+            logger.error(f"❌ Error conectando a BD: {e}")
+            db = None
+        
         def limpiar_precio(valor):
             try:
                 if pd.isna(valor): return 0.0
@@ -366,11 +377,38 @@ def ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoj
             except:
                 return 0.0
 
-        for index, row in df_activos.iterrows():
-            sku_wmt = str(row['sku_walmart'])
-            url_wmt = str(row['url_walmart'])
-            min_wmt = limpiar_precio(row.get('minimo_wmt', 0))
-            max_wmt = limpiar_precio(row.get('maximo_wmt', 0))
+        # Obtener SKUs de BD en lugar de Google Sheets
+if db:
+    logger.info("📥 Obteniendo SKUs activos de PostgreSQL...")
+    skus_bd = db.obtener_skus_activos('walmart')
+    
+    if not skus_bd:
+        logger.warning("⚠️ No hay SKUs activos en la BD para Walmart")
+        skus_bd = []
+else:
+    logger.warning("⚠️ BD no disponible, usando Google Sheets")
+    skus_bd = []
+
+# Usar BD si disponible, si no usar Google Sheets como fallback
+skus_para_procesar = skus_bd if skus_bd else df_activos
+
+for producto in skus_para_procesar:
+    # ✅ NUEVA ESTRUCTURA: ID como llave maestra
+    if db and isinstance(producto, dict):
+        catalogo_id = producto.get('id')           # ID numérico de la BD
+        sku_wmt = producto.get('sku', '')          # sku_walmart
+        min_wmt = float(producto.get('precio_minimo', 0))
+        max_wmt = float(producto.get('precio_maximo', 0))
+        stock_actual = producto.get('stock', 0)
+        url_wmt = ""  # La BD no tiene URL, obtenerla del scraping
+    else:
+        # Fallback a Google Sheets (compatibilidad hacia atrás)
+        index = skus_para_procesar.index[skus_para_procesar.iloc[:, 9] == producto.get('sku_walmart', '')][0] if not isinstance(producto, dict) else 0
+        catalogo_id = None
+        sku_wmt = str(producto.get('sku_walmart', '') if isinstance(producto, dict) else producto['sku_walmart'])
+        url_wmt = str(producto.get('url_walmart', '') if isinstance(producto, dict) else producto['url_walmart'])
+        min_wmt = limpiar_precio(producto.get('minimo_wmt', 0) if isinstance(producto, dict) else producto.get('minimo_wmt', 0))
+        max_wmt = limpiar_precio(producto.get('maximo_wmt', 0) if isinstance(producto, dict) else producto.get('maximo_wmt', 0))
             
             sku_display = enmascarar_sku(sku_wmt)
             logger.info(f"🔍 Evaluando: {sku_display}")
@@ -387,9 +425,23 @@ def ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoj
             # Circuit Breaker
             if stock_actual <= 0:
                 logger.info(f"   ⏭️ Sin stock. Desactivando automáticamente...")
+                
+                # Registrar alerta en BD
+                if db and catalogo_id:
+                    try:
+                        db.registrar_alerta(
+                            catalogo_id=catalogo_id,
+                            marketplace='WALMART',
+                            tipo_alerta='STOCK_CRITICO',
+                            severidad='ALTA',
+                            mensaje=f"Stock crítico (0). SKU: {sku_wmt}"
+                        )
+                    except Exception as e:
+                        logger.warning(f"⚠️ Error registrando alerta: {e}")
+                
                 try:
                     hoja_walmart.update_cell(index + 2, 10, "INACTIVO")
-                    enviar_mensaje_telegram(f"🚨 *Sin Stock*\nProducto: {sku_wmt}\nAcción: Desactivado automáticamente")
+                    enviar_mensaje_telegram(f"🚨 *Sin Stock*...")
                 except Exception as e:
                     logger.warning(f"Error al desactivar SKU")
                 continue
@@ -398,6 +450,21 @@ def ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoj
             precio_bb, rivales, ganador = espiar_ofertas_walmart(url_wmt)
             ganador_enmascarado = enmascarar_vendedor(ganador)
             logger.info(f"   👑 BuyBox: ${precio_bb} (Vendedor: {ganador_enmascarado})")
+
+            # Registrar rivales en la BD
+            if db and catalogo_id and rivales:
+                try:
+                    for rival in rivales:
+                        db.registrar_rival(
+                            catalogo_id=catalogo_id,
+                            marketplace='WALMART',
+                            nombre_rival=rival.get('nombre', 'Desconocido'),
+                            precio_rival=float(rival.get('precio', 0)),
+                            posicion=rival.get('posicion', 0)
+                        )
+                    logger.info(f"✅ {len(rivales)} rivales registrados en BD")
+                except Exception as e:
+                    logger.warning(f"⚠️ Error registrando rivales: {e}")
             
             # --- 3. TÁCTICAS DE COMBATE: INTELIGENCIA GUERRILLA ---
             if "NOSOTROS" not in ganador_enmascarado and precio_bb > 0:
@@ -452,6 +519,23 @@ def ejecutar_bot_walmart(token_wmt, creds_b64, hoja_principal, hoja_rivales, hoj
                     if nuevo_precio >= min_wmt:
                         logger.info(f"   🎯 Objetivo {tipo_ataque}: ${rival_objetivo} | Undercut | Nuevo: ${nuevo_precio}")
                         actualizar_precio_walmart(token_wmt, creds_b64, sku_wmt, nuevo_precio)
+
+                    # Registrar en historial de BD
+                    if db and catalogo_id:
+                        try:
+                            db.registrar_historial(
+                                catalogo_id=catalogo_id,
+                                marketplace='WALMART',
+                                precio_ant=mi_precio_actual,
+                                precio_nuv=nuevo_precio,
+                                stock=stock_actual,
+                                regla="Guerrilla Inteligente" if tipo_ataque == "GUERRILLA" else "Directo",
+                                resultado="EJECUTADO",
+                                notas=f"Rival objetivo: ${rival_objetivo:.2f}, Undercut: ${undercut_random:.2f}"
+                            )
+                            logger.info(f"✅ Historial registrado en BD (ID: {catalogo_id})")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Error registrando en historial: {e}")    
                         
                         # 📝 GUARDAR EN HISTORIAL
                         guardar_historial_walmart(hoja_historial, sku_wmt, mi_precio_actual, nuevo_precio, round(nuevo_precio - min_wmt, 2), ganador)
