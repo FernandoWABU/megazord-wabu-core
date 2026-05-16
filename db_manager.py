@@ -84,6 +84,14 @@ class DbManager:
             
         return self.execute_query(query, fetch=True)
 
+    def registrar_historial(self, catalogo_id, marketplace, precio_ant, precio_nuv, stock, regla, resultado, notas=""):
+        query = """
+            INSERT INTO historial_operaciones 
+            (catalogo_id, marketplace, precio_anterior, precio_nuevo, stock_momento, regla_aplicada, resultado, notas)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        return self.execute_query(query, (catalogo_id, marketplace, precio_ant, precio_nuv, stock, regla, resultado, notas))
+
     def registrar_rival(self, catalogo_id, marketplace, nombre_rival, precio_rival, posicion):
         """Inserta los precios de la competencia en la tabla monitoreo_rivales"""
         query = """
@@ -92,7 +100,6 @@ class DbManager:
             VALUES (%s, %s, %s, %s, %s)
         """
         return self.execute_query(query, (catalogo_id, marketplace, nombre_rival, precio_rival, posicion))
-
     def actualizar_precio(self, catalogo_id, nuevo_precio, stock):
         """Actualiza el catálogo. El trigger de SQL cambiará el updated_at automáticamente."""
         # Se requiere lógica para saber en qué marketplace se actualiza, pero a nivel base de datos:
