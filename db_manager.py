@@ -75,7 +75,7 @@ class DbManager:
             """
         elif marketplace == 'liverpool':
             query = """
-                SELECT id, sku_liverpool as sku, precio_minimo, precio_maximo, costo_odoo, stock 
+                SELECT id, sku_interno, sku_liverpool as sku, precio_minimo, precio_maximo, costo_odoo, stock, regla_estrategia 
                 FROM catalogo_maestro_v3 
                 WHERE estatus = 'ACTIVO' AND sku_liverpool IS NOT NULL
             """
@@ -100,8 +100,33 @@ class DbManager:
             VALUES (%s, %s, %s, %s, %s)
         """
         return self.execute_query(query, (catalogo_id, marketplace, nombre_rival, precio_rival, posicion))
+
     def actualizar_precio(self, catalogo_id, nuevo_precio, stock):
         """Actualiza el catálogo. El trigger de SQL cambiará el updated_at automáticamente."""
         # Se requiere lógica para saber en qué marketplace se actualiza, pero a nivel base de datos:
         query = "UPDATE catalogo_maestro_v3 SET stock = %s WHERE id = %s"
         return self.execute_query(query, (stock, catalogo_id))
+
+    def registrar_historial_liverpool(self, filas):
+            """Guarda el historial específico de Liverpool (Camino 2) usando executemany"""
+            query = """
+                INSERT INTO historial_precios 
+                (fecha_hora, sku_interno, sku_liverpool, precio_rival, nuestro_precio, stock, posicion, buybox) 
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            conn = None
+            try:
+                conn = self._pool.getconn()
+                with conn.cursor() as cursor:
+                    # Convertimos las listas en tuplas para que PostgreSQL las acepte sin quejarse
+                    filas_tuplas = [tuple(fila) for fila in filas]
+                    cursor.executemany(query, filas_tuplas)
+                    conn.commit()
+                    return cursor.rowcount
+            except Exception as e:
+                if conn: conn.rollback()
+                logger.error(f"❌ Error guardando historial clásico de Liverpool: {e}")
+                return 0
+            finally:
+                if conn:
+                    self._pool.putconn(conn)
