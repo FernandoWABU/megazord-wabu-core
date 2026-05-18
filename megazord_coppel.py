@@ -19,7 +19,8 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Tuple, Optional
-
+# NUEVO: Importar DbManager para PostgreSQL
+from db_manager import DbManager
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -461,12 +462,12 @@ class GoogleSheetsHandler:
 # LÓGICA PRINCIPAL DE REPRICING
 # ==========================================
 class MegazordCoppel:
-    """Motor principal de repricing Guerrilla."""
+    """Bot de repricing para Coppel con sincronización de inventario."""
     
-    def __init__(self, mirakl: MiraklCoppel, sheets: GoogleSheetsHandler):
+    def __init__(self, mirakl: MiraklCoppel, sheets: GoogleSheetsHandler, db=None):
         self.mirakl = mirakl
         self.sheets = sheets
-        self.alertas = []
+        self.db = db  # NUEVO: DbManager para PostgreSQL
 
     def sincronizar_inventario(self) -> Tuple[int, int]:
         """
@@ -574,17 +575,91 @@ class MegazordCoppel:
             return 0, len(registros)
     
     def procesar_sku(self, sku_dict: Dict) -> bool:
-        """Procesa UN SKU según estrategia de Guerrilla."""
-        
-        sku_limpio = sku_dict.get('sku_limpio', '')
-        sku_coppel = sku_dict.get('sku_coppel', '')
-        costo_odoo = float(sku_dict.get('costo_odoo', 0))
-        minimo = float(sku_dict.get('minimo_coppel', 0))
-        maximo = float(sku_dict.get('maximo_coppel', 0))
-        regla = sku_dict.get('regla_coppel', '1. Gladiador')
-        
-        logger.info(f"\n🔍 Procesando: {enmascarar_sku(sku_coppel)}")
-        
+    """Procesa UN SKU según estrategia de Guerrilla."""
+    
+    # Extraer datos del diccionario
+    sku_limpio = sku_dict.get('sku_limpio', '')
+    sku_coppel = sku_dict.get('sku_coppel', '')
+    costo_odoo = float(sku_dict.get('costo_odoo', 0))
+    minimo = float(sku_dict.get('minimo_coppel', 0))
+    maximo = float(sku_dict.get('maximo_coppel', 0))
+    regla = sku_dict.get('regla_coppel', '1. Gladiador')
+    
+    # NUEVO: Obtener catalogo_id de la BD
+    catalogo_id = None
+    if self.db:
+        try:
+            resultado = self.db.execute_query(
+                "SELECT id FROM catalogo_maestro_v3 WHERE sku_coppel = %s LIMIT 1",
+                (sku_coppel,),
+                fetch=True
+            )
+            if resultado:
+                catalogo_id = resultado[0]['id']
+        except Exception as e:
+            logger.warning(f"⚠️ No se encontró catalogo_id para {sku_coppel}: {e}")
+    
+    logger.info(f"\n🔍 Procesando: {enmascarar_sku(sku_coppel)}")
+    
+    # ==========================================
+    # ALERTAS CRÍTICAS
+    # ==========================================
+    
+    # Alerta 1: Stock crítico
+    mi_oferta = self.mirakl.obtener_mi_oferta(sku_coppel)
+    mi_stock_actual = mi_oferta.get("quantity", 0) if mi_oferta else 0
+    
+    if mi_stock_actual <= 0:
+        if self.db and catalogo_id:
+            try:
+                self.db.registrar_alerta(
+                    catalogo_id=catalogo_id,
+                    marketplace='COPPEL',
+                    tipo_alerta='STOCK_CRITICO',
+                    severidad='ALTA',
+                    mensaje=f"Stock crítico (0). SKU: {sku_limpio} ({sku_coppel})"
+                )
+                logger.warning(f"🚨 ALERTA: Stock crítico para {sku_limpio}")
+            except Exception as e:
+                logger.warning(f"⚠️ Error registrando alerta de stock: {e}")
+    
+    # Alerta 2: Precio mínimo muy bajo
+    if minimo < 50:
+        if self.db and catalogo_id:
+            try:
+                self.db.registrar_alerta(
+                    catalogo_id=catalogo_id,
+                    marketplace='COPPEL',
+                    tipo_alerta='PRECIO_BAJO',
+                    severidad='MEDIA',
+                    mensaje=f"Precio mínimo muy bajo: ${minimo}. SKU: {sku_limpio}"
+                )
+                logger.warning(f"⚠️ ALERTA: Precio mínimo muy bajo para {sku_limpio}")
+            except Exception as e:
+                logger.warning(f"⚠️ Error registrando alerta: {e}")
+    
+    # Alerta 3: Rentabilidad negativa
+    ganancia_test, margen_test = calcular_rentabilidad_coppel(minimo, costo_odoo)
+    if ganancia_test <= 0:
+        if self.db and catalogo_id:
+            try:
+                self.db.registrar_alerta(
+                    catalogo_id=catalogo_id,
+                    marketplace='COPPEL',
+                    tipo_alerta='RENTABILIDAD_NEGATIVA',
+                    severidad='ALTA',
+                    mensaje=f"Rentabilidad negativa en mínimo. SKU: {sku_limpio}, Ganancia: ${ganancia_test}"
+                )
+                logger.warning(f"🚨 ALERTA: Rentabilidad negativa para {sku_limpio}")
+            except Exception as e:
+                logger.warning(f"⚠️ Error registrando alerta: {e}")
+    
+    # ==========================================
+    # RESTO DE LA FUNCIÓN CONTINÚA COMO ESTABA
+    # ==========================================
+    
+    # ... (resto de tu código original)
+                
         # 1. OBTENER NUESTRA OFERTA (Para extraer el Product ID global)
         mi_oferta = self.mirakl.obtener_mi_oferta(sku_coppel)
         
@@ -639,8 +714,10 @@ class MegazordCoppel:
         
         logger.info(f"   👑 BuyBox: ${precio_bb} ({ganador_enmascarado})")
         
-       # Guardar rivales en sheets
-        for oferta in ofertas[:5]:  # Primeros 5
+        # ==========================================
+        # GUARDAR RIVALES EN BD (PostgreSQL) Y SHEETS
+        # ==========================================
+        for idx, oferta in enumerate(ofertas[:5]):  # Primeros 5
             nombre = oferta.get("shop_name")
             if not nombre or nombre == "Desconocido":
                 nombre = oferta.get("shop", {}).get("name", "Desconocido")
@@ -649,7 +726,22 @@ class MegazordCoppel:
             nombre = str(nombre).replace("=", "").strip()
             precio = float(oferta.get("price", 0))
             
+            # Guardar en Google Sheets (como antes)
             self.sheets.guardar_rival(sku_limpio, nombre, precio)
+            
+            # NUEVO: Guardar en PostgreSQL (DbManager)
+            if self.db and catalogo_id:
+                try:
+                    self.db.registrar_rival(
+                        catalogo_id=catalogo_id,
+                        marketplace='COPPEL',
+                        nombre_rival=nombre,
+                        precio_rival=precio,
+                        posicion=idx+1
+                    )
+                    logger.info(f"✅ Rival registrado en BD: {nombre} @ ${precio}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Error registrando rival en BD: {e}")
         
         # ==========================================
         # LÓGICA DE COMBATE: GUERRILLA
@@ -693,6 +785,29 @@ class MegazordCoppel:
                 stock_mirakl = mi_oferta.get("quantity", 0)
                 if self.mirakl.actualizar_precio_oferta(sku_coppel, nuevo_precio, stock_actual=stock_mirakl):
                     ganancia, margen = calcular_rentabilidad_coppel(nuevo_precio, costo_odoo)
+
+                    sku_coppel = sku_dict.get("sku_coppel")
+                    sku_limpio = sku_dict.get("sku_limpio")
+                    costo_odoo = float(sku_dict.get("costo_odoo", 0))
+                    minimo = float(sku_dict.get("minimo_coppel", 0))
+                    maximo = float(sku_dict.get("maximo_coppel", 0))
+                    
+                    # NUEVO: Registrar en historial de BD
+                    if self.db and catalogo_id:
+                        try:
+                            self.db.registrar_historial(
+                                catalogo_id=catalogo_id,
+                                marketplace='COPPEL',
+                                precio_ant=mi_precio_actual,
+                                precio_nuv=nuevo_precio,
+                                stock=stock_mirakl,
+                                regla=tipo_ataque,
+                                resultado="EJECUTADO",
+                                notas=f"BuyBox: ${precio_bb}, Ganancia: ${ganancia} ({margen}%)"
+                            )
+                            logger.info(f"✅ Historial registrado en BD (ID: {catalogo_id})")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Error registrando en historial: {e}")
                     
                     mensaje = (
                         f"⚔️ *Gladiador {tipo_ataque.title()}*\n"
@@ -723,13 +838,35 @@ class MegazordCoppel:
                         mi_precio_actual,
                         nuevo_precio
                     )
-                    
+
                     if nuevo_precio > precio_bb:
                         # EJECUTAR OPTIMIZACIÓN
                         # Extraemos el stock antes de mandar a actualizar
                         mi_stock_actual = mi_oferta.get("quantity", 0)
                         if self.mirakl.actualizar_precio_oferta(sku_coppel, nuevo_precio, stock_actual=mi_stock_actual):
                             ganancia, margen = calcular_rentabilidad_coppel(nuevo_precio, costo_odoo)
+
+                            sku_coppel = sku_dict.get("sku_coppel")
+                            sku_limpio = sku_dict.get("sku_limpio")
+                            costo_odoo = float(sku_dict.get("costo_odoo", 0))
+                            minimo = float(sku_dict.get("minimo_coppel", 0))
+                            maximo = float(sku_dict.get("maximo_coppel", 0))
+                            # NUEVO: Registrar en historial de BD
+                            if self.db and catalogo_id:
+                                try:
+                                    self.db.registrar_historial(
+                                        catalogo_id=catalogo_id,
+                                        marketplace='COPPEL',
+                                        precio_ant=mi_precio_actual,
+                                        precio_nuv=nuevo_precio,
+                                        stock=mi_stock_actual,
+                                        regla="Optimización Margen",
+                                        resultado="EJECUTADO",
+                                        notas=f"Ganancia: ${ganancia} ({margen}%), Freno 15%: {fue_limitado}"
+                                    )
+                                    logger.info(f"✅ Historial de optimización registrado en BD (ID: {catalogo_id})")
+                                except Exception as e:
+                                    logger.warning(f"⚠️ Error registrando en historial: {e}")
                             
                             mensaje = (
                                 f"🚀 *Optimización de Margen*\n"
@@ -783,6 +920,16 @@ def main():
     logger.info("="*80)
     logger.info("🟡 MEGAZORD COPPEL INICIADO")
     logger.info("="*80)
+
+    # ==========================================
+    # INICIALIZAR GESTOR DE BASE DE DATOS
+    # ==========================================
+    try:
+        db = DbManager()
+        logger.info("✅ Conexión a PostgreSQL establecida")
+    except Exception as e:
+        logger.error(f"❌ Error conectando a BD: {e}")
+        db = None
     
     # Validar credenciales
     if not COPPEL_API_KEY:
@@ -793,11 +940,27 @@ def main():
         logger.error("❌ COPPEL_SPREADSHEET_ID no configurada")
         sys.exit(1)
     
-    # Inicializar clientes
+    # ==========================================
+    # INICIALIZAR CLIENTES
+    # ==========================================
     try:
+        # Inicializar Mirakl
         mirakl = MiraklCoppel(COPPEL_API_KEY, COPPEL_BASE_URL, COPPEL_SHOP_ID)
+        
+        # Inicializar Google Sheets
         sheets = GoogleSheetsHandler(GOOGLE_CREDENTIALS_PATH, SPREADSHEET_ID)
-        megazord = MegazordCoppel(mirakl, sheets)
+        
+        # NUEVO: Inicializar DbManager (PostgreSQL)
+        try:
+            db = DbManager()
+            logger.info("✅ Conexión a PostgreSQL establecida")
+        except Exception as e:
+            logger.warning(f"⚠️ BD no disponible: {e}")
+            db = None
+        
+        # Pasar db a MegazordCoppel
+        megazord = MegazordCoppel(mirakl, sheets, db)
+        
     except Exception as e:
         logger.error(f"❌ Error inicializando: {e}")
         sys.exit(1)
@@ -811,8 +974,20 @@ def main():
     
     # ========== FIN SINCRONIZACIÓN ==========
     
-    # Obtener SKUs activos (DESPUÉS de sincronizar)
-    skus_activos = sheets.obtener_skus_activos()
+    # Obtener SKUs de BD en lugar de Google Sheets
+    if db:
+        logger.info("📥 Obteniendo SKUs activos de PostgreSQL...")
+        try:
+            skus_activos = db.obtener_skus_activos('coppel')
+            if not skus_activos:
+                logger.warning("⚠️ No hay SKUs en BD, usando Google Sheets como fallback")
+                skus_activos = df_activos.to_dict('records') if 'df_activos' in locals() else []
+        except Exception as e:
+            logger.warning(f"⚠️ Error conectando a BD: {e}, usando Google Sheets como fallback")
+            skus_activos = df_activos.to_dict('records') if 'df_activos' in locals() else []
+    else:
+        logger.warning("⚠️ BD no disponible, usando Google Sheets como fallback")
+        skus_activos = df_activos.to_dict('records') if 'df_activos' in locals() else []
     
     if not skus_activos:
         logger.warning("⚠️ Sin SKUs activos para procesar")
