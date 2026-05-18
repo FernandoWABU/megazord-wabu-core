@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # ==========================================
-# MEGAZORD LIVERPOOL - VERSIÓN CORREGIDA
+# MEGAZORD LIVERPOOL - VERSIÓN ENTERPRISE V3
 # ==========================================
-# Este archivo reemplaza el anterior con la sintaxis correcta
-# El problema: faltaba 'finally' en obtener_token_autonomo()
+# Se mantiene la tabla 'historial_precios' (Camino 2)
+# Conectado a DbManager para lectura/escritura segura
 
 import urllib.parse
 import random
@@ -28,7 +28,10 @@ from playwright.sync_api import sync_playwright
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
 import json
-import psycopg2
+
+# NUEVO: Importar DbManager para PostgreSQL
+import psycopg2  # Para fallback directo
+from db_manager import DbManager
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -250,17 +253,9 @@ def calcular_rentabilidad(precio_venta, costo_odoo):
         return 0.0, 0.0
 
 # ==========================================
-# OBTENER TOKEN - COPIA EXACTA DE GEMINI SIN EL ERROR
+# OBTENER TOKEN - BÓVEDA VIP PLAYWRIGHT
 # ==========================================
-# Esto es lo que debes copiar EN LUGAR DE tu obtener_token_autonomo()
-
 def obtener_token_autonomo(gc_client):
-    """
-    Obtiene token de Liverpool con:
-    ✅ Monitoreo de timeout inteligente
-    ✅ Recarga forzada si Liverpool se queda esperando
-    ✅ Screenshot GARANTIZADO en cualquier fallo
-    """
     logger.info("🚀 Iniciando sesión en Liverpool (Modo GAFETE VIP + SIMULACIÓN HUMANA)...")
     token_atrapado = None
     p = None
@@ -525,13 +520,11 @@ def obtener_token_autonomo(gc_client):
             except:
                 pass
         gc.collect()
-        # ✅ NO hay return aquí - esto es CRÍTICO
 
 # ==========================================
 # 4. MÓDULO DE CACERÍA DE OFERTAS
 # ==========================================
 def cazar_oferta_especifica(token, sku_interno, sku_liverpool):
-    """Obtiene detalles de una oferta específica usando API interna."""
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     sku_l = str(sku_liverpool).strip()
     urls = [
@@ -551,7 +544,6 @@ def cazar_oferta_especifica(token, sku_interno, sku_liverpool):
     return None
 
 def obtener_info_rivales(liverpool_sku):
-    """Obtiene lista de rivales ordenada por precio."""
     url = f"https://shoppapp.liverpool.com.mx/appclienteservices/services/v2/marketplace/pdp/getSellersOfferDetailsPdp?skuId={liverpool_sku}"
     try:
         res = crear_session_con_retry().get(url, headers={"User-Agent": "Liverpool/2.2.0"}, timeout=30)
@@ -569,7 +561,6 @@ def obtener_info_rivales(liverpool_sku):
     return []
 
 def calcular_posicion_buybox(precios_rivales, nuestro_precio):
-    """Calcula posición en la BuyBox."""
     if not precios_rivales:
         return "1 de 1", "¡Nosotros! 👑"
     todos = sorted(precios_rivales + [nuestro_precio])
@@ -578,10 +569,9 @@ def calcular_posicion_buybox(precios_rivales, nuestro_precio):
     return f"#{posicion} de {total}", "¡Nosotros! 👑" if posicion == 1 else f"Rival (${todos[0]})"
 
 # ==========================================
-# CLASE DE RESULTADOS THREAD-SAFE (FUNDAMENTAL)
+# CLASE DE RESULTADOS THREAD-SAFE
 # ==========================================
 class ResultadosThreadSafe:
-    """Almacena resultados de forma thread-safe para evitar race conditions."""
     def __init__(self):
         self._lock = threading.Lock()
         self.historial_rows = []
@@ -593,10 +583,8 @@ class ResultadosThreadSafe:
         self.ultimo_estado_conocido = {}
 
     def agregar_historial(self, fila):
-        """Agrega fila de historial de forma thread-safe."""
         with self._lock:
             if isinstance(fila, list) and fila:
-                # Si es lista de listas, extiende; si es una sola fila, apéndice
                 if isinstance(fila[0], (list, tuple)):
                     self.historial_rows.extend(fila)
                 else:
@@ -605,22 +593,18 @@ class ResultadosThreadSafe:
                 self.historial_rows.append(fila)
 
     def agregar_archivo_negro(self, fila):
-        """Agrega registro de rival al Historial de forma thread-safe."""
         with self._lock:
             self.archivo_negro_rows.append(fila)
 
     def agregar_alerta(self, mensaje):
-        """Agrega alerta de Telegram de forma thread-safe."""
         with self._lock:
             self.alertas.append(mensaje)
 
     def apagar_sku_liverpool(self, fila_excel, sku_i):
-        """Marca un SKU para apagarse (sin stock) de forma thread-safe."""
         with self._lock:
             self.skus_agotados_a_apagar.append((fila_excel, sku_i))
 
     def obtener_todos(self):
-        """Retorna copias seguras de todos los datos acumulados."""
         with self._lock:
             return (
                 list(self.historial_rows),
@@ -629,15 +613,9 @@ class ResultadosThreadSafe:
             )
 
 # ==========================================
-# 5. DISPARAR PRECIO (SOLO ACTUALIZACIÓN + NOTIFICACIÓN)
-# ==========================================
-# ==========================================
-# 5. DISPARAR PRECIO (SOLO ACTUALIZACIÓN + NOTIFICACIÓN)
+# 5. DISPARAR PRECIO
 # ==========================================
 def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notificacion=""):
-    """
-    Actualiza precio en Liverpool CON AUDITORÍA COMPLETA.
-    """
     url = "https://pro-api.liverpool.com.mx/api/offermanagement/offers/price-quantity"
     headers = {
         "Authorization": f"Bearer {token}",
@@ -661,7 +639,6 @@ def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notifi
             imprimir_simulacion(f"DISPARAR_PRECIO | SKU: {sku_notificacion} | Bajaría a: ${nuevo_precio}")
             return True
             
-        # ========== AUDITORÍA: FORMATO LIMPIO PARA GITHUB ==========
         logger.info(f"🎯 DISPARAR_PRECIO REAL | SKU: {sku_notificacion} | Bajando a: ${nuevo_precio}")
         logger.info(f"   SKU: {sku_notificacion}")
         logger.info(f"   Precio Nuevo: ${nuevo_precio}")
@@ -685,23 +662,15 @@ def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notifi
         return False
 
 # ==========================================
-# 6. CEREBRO ESTRATÉGICO (LÓGICA COMPLETA DE COMBATE - LAS 8 REGLAS INTACTAS)
+# 6. CEREBRO ESTRATÉGICO
 # ==========================================
 def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_config, session):
-    """
-    Procesa un SKU con TODA la lógica de combate.
-    ✅ ALERTAS TELEGRAM UNIFICADAS Y LIMPIAS:
-       - 🚨 ALERTA TÁCTICA: Sombra Activada
-       - 🛑 ALERTA ROJA: Has perdido la BuyBox
-       - 🧠 ANALISTA HISTÓRICO
-    """
     try:
         sku_i = str(regla.get('sku') or regla.get('sku_interno') or regla.get('SKU_Interno') or regla.get('SKU') or 'Sin SKU')
         estatus_regla = str(regla.get('estatus', '')).strip().upper()
         tipo_regla = str(regla.get('regla_estrategia', '1. Gladiador')).strip()
         fila_excel = regla.get('fila_excel', 0)
 
-        # Cazar oferta
         prod = cazar_oferta_especifica(token, sku_i, sku_lp)
 
         if not prod or str(prod.get("state_code", "")).upper() != "ACTIVE":
@@ -716,17 +685,13 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
         base_price = float(prod.get("basePrice", 0))
         precio_actual = float(prod.get("discountPrice") or base_price)
 
-        # 🟢 INICIALIZAR NUEVO_PRECIO COMO SEGURO
         nuevo_precio = precio_actual
 
-        # 🟢 VALIDACIÓN DE INVENTARIO (Circuit Breaker mejorado)
         if cantidad is None:
-            # ERROR DE API: No hacemos nada, solo informamos
             logger.warning(f"⚠️ Error de API al leer stock de {sku_i}. Reintentando en siguiente ciclo.")
             return
         
         if cantidad == 0:
-            # STOCK REAL EN CERO: Aquí sí disparamos el apagado
             resultados.agregar_historial([
                 (datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"),
                 str(sku_i), str(sku_lp), "Agotado", precio_actual, 0, "N/A", "N/A"
@@ -735,7 +700,6 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                 resultados.apagar_sku_liverpool(fila_excel, sku_i)
             return
 
-        # Obtener info de rivales
         info_rivales = obtener_info_rivales(sku_lp)
         precios_rivales = [r["precio"] for r in info_rivales]
 
@@ -743,16 +707,13 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
         precio_maximo_regla = safe_float(regla.get('precio_maximo', base_price) or base_price)
         costo_odoo_sheet = safe_float(regla.get('costo_odoo', 0))
 
-        # ✅ LOGS PÚBLICOS - ENMASCARADOS
         sku_display = enmascarar_sku(sku_lp)
         logger.info(f"🔍 Escaneando {sku_display} | BB: {enmascarar_vendedor(info_rivales[0]['nombre'] if info_rivales else 'N/A')}")
 
-        # Registro de rivales (Historial)
         hora_actual_str = (datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
         for r in info_rivales[:5]:
             resultados.agregar_archivo_negro([hora_actual_str, sku_i, r["nombre"], r["precio"]])
 
-        # Alerta anti-dumping
         if precios_rivales:
             rival_mas_bajo = precios_rivales[0]
             precio_viejo = resultados.ultimo_precio_conocido.get(sku_i, rival_mas_bajo) if hasattr(resultados, 'ultimo_precio_conocido') else rival_mas_bajo
@@ -761,9 +722,8 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                 culpable = info_rivales[0]["nombre"]
                 resultados.agregar_alerta(f"🚨 *ALERTA ANTI-DUMPING*\nEl vendedor _{culpable}_ acaba de desplomar el mercado en *{sku_i}*.\n📉 Anterior: `${precio_viejo}` | 🩸 Nuevo: `${rival_mas_bajo}`")
 
-        # ========== LÓGICA POR TIPO DE REGLA (CEREBRO COMPLETO) ==========
+        # ================= LÓGICA DE REGLAS =================
         if estatus_regla == 'INACTIVO':
-            # MODO ESPÍA: Solo observa, no actúa
             if info_rivales:
                 rival_1 = info_rivales[0]
                 estado_precio = "✅ TIENES MARGEN!" if precio_minimo_regla > 0 and rival_1["precio"] >= precio_minimo_regla else "❌ RIVAL REMATANDO."
@@ -786,7 +746,6 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                 pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
                 if float(precio_actual) != float(nuevo_precio):
                     if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
-                        # ✅ ALERTA: Límite Mínimo activado (si hay cambio)
                         msg_alerta = f"📌 *LÍMITE MÍNIMO ACTIVADO*\n\n📦 *{sku_i}*\nPrecio fijado en mínimo: `${nuevo_precio}`"
                         resultados.agregar_alerta(msg_alerta)
                         resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, precios_rivales[0] if precios_rivales else "SIN RIVAL", nuevo_precio, cantidad, pos, bb])
@@ -803,12 +762,11 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                 else:
                     resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, precios_rivales[0] if precios_rivales else "SIN RIVAL", precio_actual, cantidad, pos, bb])
 
-            # REGLAS 1, 4, 5, 6, 7, 8: GLADIADOR Y DERIVADOS (LÓGICA DE PELEA COMPLETA)
+            # REGLAS 1, 4, 5, 6, 7, 8
             else:
                 if precios_rivales:
                     rival_mas_bajo = precios_rivales[0]
 
-                    # REGLA 4: ANALISTA HISTÓRICO
                     if tipo_regla.startswith('4') and rival_mas_bajo > precio_maximo_regla:
                         mejor_historico = resultados.max_precio_buybox_historico.get(sku_i, 0) if hasattr(resultados, 'max_precio_buybox_historico') else 0
                         if mejor_historico > 0:
@@ -826,16 +784,13 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                         else:
                             resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb])
 
-                    # REGLAS 1, 5, 6, 7, 8: GLADIADOR Y VARIANTES (LÓGICA DE ATAQUE)
                     else:
                         if rival_mas_bajo >= precio_minimo_regla:
                             margen_actual = round(float(rival_mas_bajo) - float(precio_actual), 2)
                             if 1.50 <= margen_actual <= 1.96:
-                                # El margen ya es óptimo, no hacer nada
                                 pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
                                 resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb])
                             else:
-                                # Calcular baja aleatoria entre 1.50 y 1.96
                                 baja = round(random.uniform(1.50, 1.96), 2)
                                 nuevo_precio = round(rival_mas_bajo - baja, 2)
                                 if precio_maximo_regla > 0 and nuevo_precio > precio_maximo_regla:
@@ -846,7 +801,6 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                                     if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
                                         resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, nuevo_precio, cantidad, pos, bb])
                         else:
-                            # EL RIVAL ESTÁ MUY BAJO: ACTIVAR SOMBRA
                             rivales_viables = [p for p in precios_rivales if p >= precio_minimo_regla]
                             if rivales_viables:
                                 objetivo_sombra = rivales_viables[0]
@@ -858,7 +812,6 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
 
                                 pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
                                 
-                                # ✅ ALERTA SOMBRA - FORMATO ELEGANTE
                                 vendedor_ganador = info_rivales[0]["nombre"] if info_rivales else "Desconocido"
                                 msg_alerta = (
                                     f"🚨 *ALERTA TÁCTICA: Sombra Activada*\n\n"
@@ -875,10 +828,7 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                                 if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
                                     resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, nuevo_precio, cantidad, pos, bb])
                             else:
-                                # DERROTA: CONGELARSE EN MÍNIMO
                                 pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
-                                
-                                # ✅ ALERTA ROJA - FORMATO ELEGANTE
                                 vendedor_ganador = info_rivales[0]["nombre"] if info_rivales else "Desconocido"
                                 gan_roja, mar_roja = calcular_rentabilidad(rival_mas_bajo, costo_odoo_sheet)
                                 msg_alerta = (
@@ -894,7 +844,6 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                                 resultados.agregar_alerta(msg_alerta)
                                 resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb])
                 else:
-                    # SIN RIVALES: SOLO NOSOTROS
                     if tipo_regla.startswith('4'):
                         mejor_historico = resultados.max_precio_buybox_historico.get(sku_i, precio_maximo_regla) if hasattr(resultados, 'max_precio_buybox_historico') else precio_maximo_regla
                         nuevo_precio = mejor_historico if mejor_historico > 0 else precio_maximo_regla
@@ -913,73 +862,108 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
         ])
 
 # ==========================================
-# GUARDADO EN SQL
+# GUARDADO EN SQL A TRAVÉS DE DBMANAGER
 # ==========================================
-def guardar_en_sql(filas):
-    """Guarda historial en PostgreSQL (Render)."""
+def guardar_en_sql(filas, db=None):
+    """Guarda historial con DbManager PRIMARY + psycopg2 FALLBACK"""
     if MODO_SIMULACION:
-        imprimir_simulacion(f"SQL OMITIDO | Se guardarían {len(filas)} registros en la Nube.")
+        imprimir_simulacion(f"SQL OMITIDO | Se guardarían {len(filas)} registros.")
         return
-        
     if not filas:
         return
 
+    # Intento 1: DbManager (preferido)
+    if db:
+        try:
+            registros_guardados = db.registrar_historial_liverpool(filas)
+            logger.info(f"☁️ ¡{registros_guardados} registros via DbManager!")
+            return
+        except Exception as e:
+            logger.warning(f"⚠️ DbManager falló: {e}. Usando psycopg2...")
+    
+    # Intento 2: psycopg2 directo (fallback)
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
-
-        query = """
-        INSERT INTO historial_precios 
+        query = """INSERT INTO historial_precios 
         (fecha_hora, sku_interno, sku_liverpool, precio_rival, nuestro_precio, stock, posicion, buybox) 
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """
-
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"""
         cursor.executemany(query, filas)
         conn.commit()
-        logger.info(f"☁️ ¡{cursor.rowcount} registros guardados exitosamente en la Nube SQL!")
-
+        logger.info(f"☁️ ¡{cursor.rowcount} registros via psycopg2 fallback!")
     except Exception as e:
-        logger.error(f"❌ Error al guardar en SQL: {e}")
+        logger.error(f"❌ CRÍTICO: Ambos métodos fallaron: {e}")
     finally:
-        if 'cursor' in locals() and cursor: 
+        if 'cursor' in locals() and cursor:
             cursor.close()
-        if 'conn' in locals() and conn: 
+        if 'conn' in locals() and conn:
             conn.close()
 
 # ==========================================
-# OBTENER REGLAS DESDE SHEETS
+# TRADUCTOR UNIVERSAL (NUBE O SHEETS)
 # ==========================================
-def obtener_reglas_sheets(gc_client):
-    """Obtiene reglas de pricing desde Google Sheets."""
+def obtener_reglas(gc_client, db):
+    """Obtiene reglas de pricing desde PostgreSQL (V3) o Google Sheets como Fallback."""
+    reglas = {}
+    
+    # Intento 1: Bóveda PostgreSQL
+    if db:
+        try:
+            skus_bd = db.obtener_skus_activos('liverpool')
+            if skus_bd:
+                for idx, item in enumerate(skus_bd):
+                    sku_lp = str(item.get('sku', '')).strip()
+                    if sku_lp:
+                        reglas[sku_lp] = {
+                            'id': item.get('id'),
+                            'sku_interno': str(item.get('sku_interno', sku_lp)),
+                            'sku_liverpool': sku_lp,
+                            'precio_minimo': item.get('precio_minimo', 0),
+                            'precio_maximo': item.get('precio_maximo', 0),
+                            'costo_odoo': item.get('costo_odoo', 0),
+                            'estatus': 'ACTIVO',
+                            'regla_estrategia': item.get('regla_estrategia', '1. Gladiador'),
+                            'fila_excel': idx + 2  # Referencia para Circuit Breaker
+                        }
+                logger.info(f"📥 {len(reglas)} SKUs activos cargados desde PostgreSQL.")
+                return reglas
+        except Exception as e:
+            logger.warning(f"⚠️ Error obteniendo SKUs desde BD: {e}. Activando Fallback a Sheets...")
+
+    # Intento 2: Google Sheets (Fallback)
     try:
         hoja = gc_client.open_by_key(GOOGLE_SHEET_ID).worksheet("Hoja 1")
         registros = hoja.get_all_records()
-        reglas = {}
-
         for idx, fila in enumerate(registros):
             sku_lp = str(fila.get('sku_liverpool') or fila.get('SKU_Liverpool') or fila.get('sku_lp', '')).strip()
-            if sku_lp:
+            if sku_lp and str(fila.get('estatus', '')).strip().upper() == 'ACTIVO':
                 fila['fila_excel'] = idx + 2
                 reglas[sku_lp] = fila
-
+        logger.info(f"📥 {len(reglas)} SKUs activos cargados desde Google Sheets (Fallback).")
         return reglas
     except Exception as e:
-        logger.error(f"❌ Error obteniendo reglas: {e}")
+        logger.error(f"❌ Error obteniendo reglas de Sheets: {e}")
         return {}
 
 # ==========================================
 # FUNCIÓN PRINCIPAL
 # ==========================================
 def ejecutar_bot():
-    """Ejecuta el bot principal de Liverpool con toda su potencia."""
-    logger.info("\n--- INICIANDO MEGAZORD LIVERPOOL V16.0 (CONCURRENCIA + DUAL LOGS + ENCRIPTADO) ---")
+    logger.info("\n--- INICIANDO MEGAZORD LIVERPOOL V3 ENTERPRISE ---")
     enviar_telegram("🤖 *Megazord Liverpool* despertando...")
     
     load_dotenv()
     
+    # 1. INICIALIZAR BASE DE DATOS
+    try:
+        db = DbManager()
+        logger.info("✅ Conexión a PostgreSQL establecida")
+    except Exception as e:
+        logger.warning(f"⚠️ Error conectando a BD: {e}")
+        db = None
+    
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
-    # Validar existencia de credentials
     if not os.path.exists('credentials.json'):
         logger.error("❌ credentials.json no encontrado.")
         enviar_telegram("🚨 *ERROR MEGAZORD:* credentials.json no encontrado.")
@@ -1011,7 +995,13 @@ def ejecutar_bot():
         enviar_telegram("ERROR MEGAZORD: No se pudo acceder a las hojas de cálculo.")
         return
 
-    reglas = obtener_reglas_sheets(gc_connection)
+    # Obtener reglas (usando Traductor Universal)
+    reglas = obtener_reglas(gc_connection, db)
+    
+    if not reglas:
+        logger.warning("⚠️ No se encontraron SKUs activos para procesar.")
+        return
+        
     logger.info(f"🚀 Iniciando cacería concurrente con 3 hilos para {len(reglas)} SKUs...")
 
     resultados = ResultadosThreadSafe()
@@ -1041,17 +1031,17 @@ def ejecutar_bot():
     for alerta in alertas:
         enviar_alerta_telegram(alerta)
 
-    # Guardar historial
+    # Guardar historial en PostgreSQL (Camino 2)
     if historial_rows:
-        guardar_en_sql(historial_rows)
+        guardar_en_sql(historial_rows, db)
 
-    # Guardar Historial
+    # Guardar Rivales en Google Sheets (Se mantiene intacto)
     if archivo_negro_rows:
         try:
             hoja_rivales.append_rows(archivo_negro_rows)
-            logger.info(f"📝 Guardados {len(archivo_negro_rows)} registros en Historial")
+            logger.info(f"📝 Guardados {len(archivo_negro_rows)} registros en la pestaña Rivales")
         except Exception as e:
-            logger.error(f"Error guardando Historial: {e}")
+            logger.error(f"Error guardando Rivales: {e}")
 
     # Actualizar contador de corridas
     try:
