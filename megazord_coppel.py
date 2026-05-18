@@ -335,9 +335,9 @@ class MegazordCoppel:
     def procesar_sku(self, sku_dict: Dict) -> bool:
         """Procesa UN SKU según estrategia de Guerrilla."""
         
-        # Extraer datos del diccionario
-        sku_limpio = sku_dict.get('sku_limpio', '')
-        sku_coppel = sku_dict.get('sku_coppel', '')
+        # 🧹 TRADUCTOR UNIVERSAL (BD <-> Sheets)
+        sku_coppel = sku_dict.get('sku') or sku_dict.get('sku_coppel', '')
+        sku_limpio = sku_dict.get('sku_limpio') or sku_coppel
         costo_odoo = float(sku_dict.get('costo_odoo', 0))
         minimo = float(sku_dict.get('precio_minimo') or sku_dict.get('minimo_coppel', 0))
         maximo = float(sku_dict.get('precio_maximo') or sku_dict.get('maximo_coppel', 0))
