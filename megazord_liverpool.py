@@ -711,8 +711,13 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
         logger.info(f"🔍 Escaneando {sku_display} | BB: {enmascarar_vendedor(info_rivales[0]['nombre'] if info_rivales else 'N/A')}")
 
         hora_actual_str = (datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
-        for r in info_rivales[:5]:
-            resultados.agregar_archivo_negro([hora_actual_str, sku_i, r["nombre"], r["precio"]])
+        
+        # 🟢 NUEVO: Preparar radar de rivales para PostgreSQL
+        catalogo_id = regla.get('id')
+        if catalogo_id:
+            for idx, r in enumerate(info_rivales[:5]):
+                # Empaquetamos exactamente lo que pide db_manager.py
+                resultados.agregar_archivo_negro((catalogo_id, 'LIVERPOOL', r["nombre"], r["precio"], idx + 1))
 
         if precios_rivales:
             rival_mas_bajo = precios_rivales[0]
@@ -1035,13 +1040,18 @@ def ejecutar_bot():
     if historial_rows:
         guardar_en_sql(historial_rows, db)
 
-    # Guardar Rivales en Google Sheets (Se mantiene intacto)
-    if archivo_negro_rows:
-        try:
-            hoja_rivales.append_rows(archivo_negro_rows)
-            logger.info(f"📝 Guardados {len(archivo_negro_rows)} registros en la pestaña Rivales")
-        except Exception as e:
-            logger.error(f"Error guardando Rivales: {e}")
+    # 🟢 NUEVO: Guardar Rivales en PostgreSQL (monitoreo_rivales)
+    if archivo_negro_rows and db:
+        guardados = 0
+        for rival_data in archivo_negro_rows:
+            try:
+                db.registrar_rival(*rival_data)
+                guardados += 1
+            except:
+                pass
+        logger.info(f"📡 ¡{guardados} rivales inyectados en la tabla monitoreo_rivales de PostgreSQL!")
+    elif archivo_negro_rows and not db:
+        logger.warning("⚠️ DbManager no disponible, radar de rivales omitido.")
 
     # Actualizar contador de corridas
     try:
