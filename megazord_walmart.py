@@ -180,7 +180,7 @@ def actualizar_precio_walmart(token_wmt, credenciales_b64, sku_wmt, nuevo_precio
 # EL ESCÁNER DE PRECIOS (Rayos X)
 # ==========================================
 def espiar_ofertas_walmart(url_producto):
-    # 🟢 NUEVO: Cargamos las llaves JUSTO CUANDO se necesitan, no antes.
+    # 🟢 Cargamos las llaves JUSTO CUANDO se necesitan
     llaves_scraper = [
         os.getenv("SCRAPERAPI_KEY_1", "").strip(),
         os.getenv("SCRAPERAPI_KEY_2", "").strip(),
@@ -193,17 +193,16 @@ def espiar_ofertas_walmart(url_producto):
         logger.error("❌ No hay llaves de ScraperAPI cargadas. Revisa tu archivo YAML.")
         return 0.0, [], "Error"
 
-    try:
-        # El bot intentará con cada llave válida
-        for credencial in llaves_validas:
-            logger.info(f"🥷 Iniciando escaneo de precios (Rayos X)...")
-            
-            payload = {
-                'api_key': credencial, 
-                'url': url_producto,
-                'country_code': 'mx',
-                'render': 'false' 
-            }
+    # El bot intentará con cada llave válida
+    for credencial in llaves_validas:
+        logger.info(f"🥷 Iniciando escaneo de precios (Rayos X)...")
+        
+        payload = {
+            'api_key': credencial, 
+            'url': url_producto,
+            'country_code': 'mx',
+            'render': 'false' 
+        }
         
         try:
             res = requests.get('https://api.scraperapi.com/', params=payload, timeout=60)
@@ -259,7 +258,11 @@ def espiar_ofertas_walmart(url_producto):
                 
             return precio_actual, rivales, ganador
 
-        except: continue
+        except Exception as e:
+            # Falla con esta llave, intenta la siguiente
+            continue
+    
+    # Si agota todas las llaves y no pudo
     return 0.0, [], "Bloqueado"
 
 # ==========================================
