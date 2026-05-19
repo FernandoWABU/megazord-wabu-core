@@ -62,8 +62,8 @@ jobs:
           SCRAPERAPI_KEY_1: ${{ secrets.SCRAPERAPI_KEY_1 }}
           SCRAPERAPI_KEY_2: ${{ secrets.SCRAPERAPI_KEY_2 }}
           SCRAPERAPI_KEY_3: ${{ secrets.SCRAPERAPI_KEY_3 }}
-          SCRAPERAPI_KEY_4: ${{ secrets.SCRAPERAPI_KEY_4 }} # 👈 ¡NUEVO: Cuarta llave conectada!
-        run: python megazord_walmart.py # 👈 ¡NUEVO: Nombre limpio sin espacios ni paréntesis!
+          SCRAPERAPI_KEY_4: ${{ secrets.SCRAPERAPI_KEY_4 }}
+        run: python megazord_walmart.py
 
       - name: 📸 Subir evidencia de la GoPro
         if: always()
