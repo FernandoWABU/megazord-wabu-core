@@ -63,7 +63,7 @@ class DbManager:
         """Devuelve los SKUs activos mapeando los nombres exactos de catalogo_maestro_v3"""
         if marketplace == 'walmart':
             query = """
-                SELECT id, sku_walmart as sku, minimo_wmt as precio_minimo, maximo_wmt as precio_maximo, costo_odoo, stock, url_walmart 
+                SELECT id, sku_interno, sku_limpio, sku_walmart as sku, minimo_wmt as precio_minimo, maximo_wmt as precio_maximo, costo_odoo, stock, url_walmart 
                 FROM catalogo_maestro_v3 
                 WHERE estatus_wmt = 'ACTIVO' AND sku_walmart IS NOT NULL
             """
