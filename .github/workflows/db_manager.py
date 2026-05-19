@@ -130,3 +130,12 @@ class DbManager:
             finally:
                 if conn:
                     self._pool.putconn(conn)
+
+    def registrar_alerta(self, catalogo_id, marketplace, tipo_alerta, severidad, mensaje):
+            """Registra una alerta en el panel central de PostgreSQL"""
+            query = """
+                INSERT INTO alertas 
+                (catalogo_id, marketplace, tipo_alerta, severidad, mensaje)
+                VALUES (%s, %s, %s, %s, %s)
+            """
+            return self.execute_query(query, (catalogo_id, marketplace, tipo_alerta, severidad, mensaje))
