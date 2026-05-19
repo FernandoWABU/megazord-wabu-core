@@ -177,24 +177,17 @@ def actualizar_precio_walmart(token_wmt, credenciales_b64, sku_wmt, nuevo_precio
     return False
 
 # ==========================================
-# EL ESCÁNER DE PRECIOS (Rayos X)
+# EL ESCÁNER DE PRECIOS (Visión de Rayos X)
 # ==========================================
-def espiar_ofertas_walmart(url_producto):
-    # 🟢 Cargamos las llaves JUSTO CUANDO se necesitan
-    llaves_scraper = [
-        os.getenv("SCRAPERAPI_KEY_1", "").strip(),
-        os.getenv("SCRAPERAPI_KEY_2", "").strip(),
-        os.getenv("SCRAPERAPI_KEY_3", "").strip(),
-        os.getenv("SCRAPERAPI_KEY_4", "").strip(),
-    ]
-    llaves_validas = [cred for cred in llaves_scraper if cred]
+def espiar_ofertas_walmart(url_producto, llaves_scraper):
+    """Escanea Walmart usando las llaves proporcionadas."""
     
-    if not llaves_validas:
-        logger.error("❌ No hay llaves de ScraperAPI cargadas. Revisa tu archivo YAML.")
+    if not llaves_scraper:
+        logger.error("❌ No hay llaves de ScraperAPI cargadas.")
         return 0.0, [], "Error"
 
     # El bot intentará con cada llave válida
-    for credencial in llaves_validas:
+    for credencial in llaves_scraper:
         logger.info(f"🥷 Iniciando escaneo de precios (Rayos X)...")
         
         payload = {
@@ -206,8 +199,13 @@ def espiar_ofertas_walmart(url_producto):
         
         try:
             res = requests.get('https://api.scraperapi.com/', params=payload, timeout=60)
-            if res.status_code in [429, 403]: continue
-            if res.status_code != 200 or not res.text or len(res.text) < 100: return 0.0, [], "Error"
+            
+            if res.status_code in [429, 403]:
+                logger.warning(f"⚠️ Credencial rechazada. Intentando con la siguiente...")
+                continue
+            
+            if res.status_code != 200 or not res.text or len(res.text) < 100:
+                continue
             
             precio_actual = 0.0
             ganador = "Desconocido"
@@ -215,6 +213,7 @@ def espiar_ofertas_walmart(url_producto):
             
             # JSON oculto __NEXT_DATA__
             match_json = re.search(r'<script id="__NEXT_DATA__" type="application/json">({.*?})</script>', res.text, re.DOTALL)
+            
             if match_json:
                 try:
                     datos_json = json.loads(match_json.group(1))
@@ -249,20 +248,12 @@ def espiar_ofertas_walmart(url_producto):
             if match_vendedor: ganador = match_vendedor.group(1).strip()
             elif precio_actual > 0: ganador = "WALMART"
 
-            match_rival = re.search(r'Desde \$([0-9,]+(?:\.[0-9]+)?)', res.text)
-            precio_rival_secundario = float(match_rival.group(1).replace(',', '')) if match_rival else 0.0
-
             rivales = [{"precio": precio_actual, "nombre": ganador, "posicion": 1}]
-            if precio_rival_secundario > 0:
-                rivales.append({"precio": precio_rival_secundario, "nombre": "Segundo", "posicion": 2})
-                
             return precio_actual, rivales, ganador
 
         except Exception as e:
-            # Falla con esta llave, intenta la siguiente
             continue
     
-    # Si agota todas las llaves y no pudo
     return 0.0, [], "Bloqueado"
 
 # ==========================================
