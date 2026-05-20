@@ -1,6 +1,11 @@
 name: Megazord Multi-Tienda
 
 on:
+  schedule:
+    # ⏱️ RELOJ 1: Liverpool (Cada hora en el minuto 17)
+    - cron: '17 * * * *'
+    # ⏱️ RELOJ 2: Walmart (Cada 4 horas en el minuto 27 - Ej. 0:27, 4:27, 8:27...)
+    - cron: '27 */4 * * *'
   workflow_dispatch:
     inputs:
       tienda:
@@ -37,7 +42,8 @@ jobs:
           python -m playwright install-deps chromium
 
       - name: 🟣 Desplegar Megazord Liverpool
-        if: ${{ github.event.inputs.tienda == 'liverpool' || github.event.inputs.tienda == 'ambas' || github.event.inputs.tienda == '' }}
+        # Se ejecuta SI le das al botón manual O SI el reloj que lo despertó fue el de cada hora
+        if: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.tienda == 'liverpool' || github.event.inputs.tienda == 'ambas')) || github.event.schedule == '17 * * * *' }}
         env:
           SHOP_ID_INTERNO: ${{ secrets.SHOP_ID_INTERNO }}
           SHOP_ID_PUBLICO: ${{ secrets.SHOP_ID_PUBLICO }}
@@ -51,14 +57,15 @@ jobs:
         run: python megazord_liverpool.py
 
       - name: 🔵 Desplegar Megazord Walmart
-        if: ${{ github.event.inputs.tienda == 'walmart' || github.event.inputs.tienda == 'ambas' || github.event.inputs.tienda == '' }}
+        # Se ejecuta SI le das al botón manual O SI el reloj que lo despertó fue el de cada 4 horas
+        if: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.tienda == 'walmart' || github.event.inputs.tienda == 'ambas')) || github.event.schedule == '27 */4 * * *' }}
         env:
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           WALMART_USER: ${{ secrets.WALMART_USER }}
           WALMART_PASS: ${{ secrets.WALMART_PASS }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_WMT: ${{ secrets.TELEGRAM_CHAT_WMT }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }} # 👈 ¡NUEVO: Conexión a Render activada!
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SCRAPERAPI_KEY_1: ${{ secrets.SCRAPERAPI_KEY_1 }}
           SCRAPERAPI_KEY_2: ${{ secrets.SCRAPERAPI_KEY_2 }}
           SCRAPERAPI_KEY_3: ${{ secrets.SCRAPERAPI_KEY_3 }}
