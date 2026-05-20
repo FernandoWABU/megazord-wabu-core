@@ -198,8 +198,8 @@ class AuthManager:
         return hashlib.sha256(password.encode()).hexdigest()
     
     def verify_password(self, password: str) -> bool:
-        """Verifica contraseña"""
-        return self.hash_password(password) == self.password_hash
+        """Verifica contraseña (Comparación directa con Streamlit Secrets)"""
+        return password == self.password_hash
     
     def is_authenticated(self) -> bool:
         """Verifica si el usuario está autenticado"""
