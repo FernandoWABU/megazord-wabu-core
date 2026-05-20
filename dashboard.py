@@ -321,34 +321,34 @@ auth = AuthManager()
 
 @st.cache_data(ttl=300)
 def get_historial_operaciones(days: int = 7) -> pd.DataFrame:
+    limit_date = datetime.now() - timedelta(days=days)
     query = """
     SELECT 
-        h.created_at as fecha_hora,
-        c.sku_limpio as sku_interno,
-        h.marketplace as sku_liverpool,
-        h.precio_ant as precio_rival,
-        h.precio_nuv as nuestro_precio,
+        h.created_at,
+        c.sku_interno,
+        c.sku_limpio,
+        h.precio_ant,
+        h.precio_nuv,
         h.stock,
-        0 as posicion,
-        h.resultado as buybox,
-        (h.precio_nuv - h.precio_ant) as diferencia_precio
+        h.resultado
     FROM historial_operaciones h
     LEFT JOIN catalogo_maestro_v3 c ON h.catalogo_id = c.id
-    WHERE h.created_at >= NOW() - INTERVAL '%s days'
+    WHERE h.created_at >= %s
     ORDER BY h.created_at DESC
-    LIMIT 5000
+    LIMIT 50000
     """
-    return db.execute_query(query, (days,))
+    return db.execute_query(query, (limit_date,))
 
 @st.cache_data(ttl=300)
 def get_monitoreo_rivales(limit: int = 1000) -> pd.DataFrame:
     query = """
     SELECT 
-        c.sku_limpio as sku_interno,
+        c.sku_interno,
+        c.sku_limpio,
         m.nombre_rival,
         m.precio_rival as precio,
         m.marketplace,
-        m.created_at as fecha_registro,
+        m.created_at,
         COUNT(*) OVER (PARTITION BY m.nombre_rival) as apariciones_rival
     FROM monitoreo_rivales m
     LEFT JOIN catalogo_maestro_v3 c ON m.catalogo_id = c.id
@@ -362,15 +362,14 @@ def get_catalogo_maestro() -> pd.DataFrame:
     query = """
     SELECT 
         id,
-        sku_limpio as sku,
-        sku_interno,
+        sku_limpio,
         precio_minimo,
         precio_maximo,
         costo_odoo,
-        'Multiverso' as marketplace,
+        marketplace,
         estatus
     FROM catalogo_maestro_v3
-    WHERE sku_limpio IS NOT NULL
+    WHERE estatus = 'ACTIVO'
     ORDER BY sku_limpio
     """
     return db.execute_query(query)
@@ -380,12 +379,13 @@ def get_alertas() -> pd.DataFrame:
     query = """
     SELECT 
         id,
-        tipo_alerta as tipo,
+        tipo,
         mensaje,
-        severidad as severity,
-        created_at as fecha_creacion,
-        FALSE as resuelta
+        severity,
+        created_at,
+        resuelta
     FROM alertas
+    WHERE resuelta = FALSE
     ORDER BY created_at DESC
     LIMIT 100
     """
@@ -396,18 +396,20 @@ def get_metrics_dashboard() -> Dict:
     df_catalogo = get_catalogo_maestro()
     total_skus = len(df_catalogo)
     
-    query_24h = "SELECT COUNT(*) as cambios FROM historial_operaciones WHERE created_at >= NOW() - INTERVAL '1 day'"
-    df_24h = db.execute_query(query_24h)
+    limit_date = datetime.now() - timedelta(days=1)
+    query_24h = "SELECT COUNT(*) as cambios FROM historial_operaciones WHERE created_at >= %s"
+    df_24h = db.execute_query(query_24h, (limit_date,))
     cambios_24h = df_24h.iloc[0, 0] if len(df_24h) > 0 else 0
     
+    limit_date_7d = datetime.now() - timedelta(days=7)
     query_buybox = """
     SELECT 
         COUNT(CASE WHEN resultado = 'EJECUTADO' THEN 1 END) as ganadas,
         COUNT(*) as total
     FROM historial_operaciones
-    WHERE created_at >= NOW() - INTERVAL '7 days'
+    WHERE created_at >= %s
     """
-    df_buybox = db.execute_query(query_buybox)
+    df_buybox = db.execute_query(query_buybox, (limit_date_7d,))
     if len(df_buybox) > 0:
         ganadas = df_buybox.iloc[0]['ganadas']
         total = df_buybox.iloc[0]['total']
@@ -418,8 +420,8 @@ def get_metrics_dashboard() -> Dict:
     df_rivales = get_monitoreo_rivales()
     rivales_unicos = df_rivales['nombre_rival'].nunique() if len(df_rivales) > 0 else 0
     
-    query_margen = "SELECT AVG(precio_nuv - precio_ant) as margen_promedio FROM historial_operaciones WHERE created_at >= NOW() - INTERVAL '7 days'"
-    df_margen = db.execute_query(query_margen)
+    query_margen = "SELECT AVG(precio_nuv - precio_ant) as margen_promedio FROM historial_operaciones WHERE created_at >= %s"
+    df_margen = db.execute_query(query_margen, (limit_date_7d,))
     margen_promedio = df_margen.iloc[0, 0] if len(df_margen) > 0 else 0
     
     return {
@@ -427,7 +429,7 @@ def get_metrics_dashboard() -> Dict:
         'cambios_24h': int(cambios_24h),
         'win_rate_buybox': round(win_rate, 1),
         'rivales_unicos': rivales_unicos,
-        'margen_promedio': round(float(margen_promedio), 2) if pd.notnull(margen_promedio) else 0
+        'margen_promedio': round(float(margen_promedio), 2) if margen_promedio else 0
     }
 
 # ==========================================
@@ -728,13 +730,13 @@ def show_public_dashboard():
         try:
             query = """
             SELECT 
-                DATE(fecha_hora) as fecha,
-                AVG(nuestro_precio - precio_rival) as margen_promedio,
-                MIN(nuestro_precio - precio_rival) as margen_minimo,
-                MAX(nuestro_precio - precio_rival) as margen_maximo
+                DATE(created_at) as fecha,
+                AVG(precio_nuv - precio_ant) as margen_promedio,
+                MIN(precio_nuv - precio_ant) as margen_minimo,
+                MAX(precio_nuv - precio_ant) as margen_maximo
             FROM historial_operaciones
-            WHERE fecha_hora >= NOW() - INTERVAL '30 days'
-            GROUP BY DATE(fecha_hora)
+            WHERE created_at >= NOW() - INTERVAL '30 days'
+            GROUP BY DATE(created_at)
             ORDER BY fecha
             """
             
@@ -791,12 +793,12 @@ def show_public_dashboard():
         try:
             query = """
             SELECT 
-                EXTRACT(HOUR FROM fecha_hora)::int as hora,
+                EXTRACT(HOUR FROM created_at)::int as hora,
                 COUNT(*) as cambios,
-                AVG(nuestro_precio - precio_rival) as margen
+                AVG(precio_nuv - precio_ant) as margen
             FROM historial_operaciones
-            WHERE fecha_hora >= NOW() - INTERVAL '7 days'
-            GROUP BY EXTRACT(HOUR FROM fecha_hora)
+            WHERE created_at >= NOW() - INTERVAL '7 days'
+            GROUP BY EXTRACT(HOUR FROM created_at)
             ORDER BY hora
             """
             
