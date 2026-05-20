@@ -320,7 +320,7 @@ auth = AuthManager()
 # ==========================================
 
 @st.cache_data(ttl=300)
-def get_historial_operaciones(days: int = 7) -> pd.DataFrame:
+def get_historial_precios(days: int = 7) -> pd.DataFrame:
     limit_date = datetime.now() - timedelta(days=days)
     query = """
     SELECT 
@@ -331,7 +331,7 @@ def get_historial_operaciones(days: int = 7) -> pd.DataFrame:
         h.precio_nuv,
         h.stock,
         h.resultado
-    FROM historial_operaciones h
+    FROM historial_precios h
     LEFT JOIN catalogo_maestro_v3 c ON h.catalogo_id = c.id
     WHERE h.created_at >= %s
     ORDER BY h.created_at DESC
@@ -397,7 +397,7 @@ def get_metrics_dashboard() -> Dict:
     total_skus = len(df_catalogo)
     
     limit_date = datetime.now() - timedelta(days=1)
-    query_24h = "SELECT COUNT(*) as cambios FROM historial_operaciones WHERE created_at >= %s"
+    query_24h = "SELECT COUNT(*) as cambios FROM historial_precios WHERE created_at >= %s"
     df_24h = db.execute_query(query_24h, (limit_date,))
     cambios_24h = df_24h.iloc[0, 0] if len(df_24h) > 0 else 0
     
@@ -406,7 +406,7 @@ def get_metrics_dashboard() -> Dict:
     SELECT 
         COUNT(CASE WHEN resultado = 'EJECUTADO' THEN 1 END) as ganadas,
         COUNT(*) as total
-    FROM historial_operaciones
+    FROM historial_precios
     WHERE created_at >= %s
     """
     df_buybox = db.execute_query(query_buybox, (limit_date_7d,))
@@ -420,7 +420,7 @@ def get_metrics_dashboard() -> Dict:
     df_rivales = get_monitoreo_rivales()
     rivales_unicos = df_rivales['nombre_rival'].nunique() if len(df_rivales) > 0 else 0
     
-    query_margen = "SELECT AVG(precio_nuv - precio_ant) as margen_promedio FROM historial_operaciones WHERE created_at >= %s"
+    query_margen = "SELECT AVG(precio_nuv - precio_ant) as margen_promedio FROM historial_precios WHERE created_at >= %s"
     df_margen = db.execute_query(query_margen, (limit_date_7d,))
     margen_promedio = df_margen.iloc[0, 0] if len(df_margen) > 0 else 0
     
@@ -634,7 +634,7 @@ def show_public_dashboard():
             SELECT 
                 buybox,
                 COUNT(*) as cantidad
-            FROM historial_operaciones
+            FROM historial_precios
             WHERE fecha_hora >= NOW() - INTERVAL '7 days'
             GROUP BY buybox
             """
@@ -734,7 +734,7 @@ def show_public_dashboard():
                 AVG(precio_nuv - precio_ant) as margen_promedio,
                 MIN(precio_nuv - precio_ant) as margen_minimo,
                 MAX(precio_nuv - precio_ant) as margen_maximo
-            FROM historial_operaciones
+            FROM historial_precios
             WHERE created_at >= NOW() - INTERVAL '30 days'
             GROUP BY DATE(created_at)
             ORDER BY fecha
@@ -796,7 +796,7 @@ def show_public_dashboard():
                 EXTRACT(HOUR FROM created_at)::int as hora,
                 COUNT(*) as cambios,
                 AVG(precio_nuv - precio_ant) as margen
-            FROM historial_operaciones
+            FROM historial_precios
             WHERE created_at >= NOW() - INTERVAL '7 days'
             GROUP BY EXTRACT(HOUR FROM created_at)
             ORDER BY hora
@@ -1052,7 +1052,7 @@ def show_private_dashboard():
     st.markdown("### 📜 HISTORIAL DE CAMBIOS (Últimos 7 días)")
     
     try:
-        df_historial = get_historial_operaciones(days=7)
+        df_historial = get_historial_precios(days=7)
         
         if len(df_historial) > 0:
             # Filtros
