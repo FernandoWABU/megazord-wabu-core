@@ -61,7 +61,7 @@ DARK_MODE_CSS = """
         --primary-dark: #0a0e27;
         --secondary-dark: #1a1f3a;
         --accent-blue: #00d9ff;
-        --accent-green: #00ff41;
+        --accent-green: #1db954;
         --accent-red: #ff003c;
         --text-primary: #ffffff;
         --text-secondary: #b0bec5;
@@ -99,13 +99,13 @@ DARK_MODE_CSS = """
     }
 
     .metric-box:hover {
-        border-color: #00ff41;
+        border-color: #1db954;
         box-shadow: 0 0 30px rgba(0, 255, 65, 0.3);
     }
 
     /* Botones */
     .stButton > button {
-        background: linear-gradient(135deg, #00d9ff 0%, #00ff41 100%);
+        background: linear-gradient(135deg, #00d9ff 0%, #1db954 100%);
         color: #0a0e27;
         border: none;
         border-radius: 6px;
@@ -135,7 +135,7 @@ DARK_MODE_CSS = """
     .stTextInput > div > div > input:focus,
     .stPasswordInput > div > div > input:focus,
     .stNumberInput > div > div > input:focus {
-        border-color: #00ff41;
+        border-color: #1db954;
         box-shadow: 0 0 10px rgba(0, 255, 65, 0.2);
     }
 
@@ -147,7 +147,7 @@ DARK_MODE_CSS = """
 
     /* Status indicators */
     .status-green {
-        color: #00ff41;
+        color: #1db954;
         font-weight: bold;
     }
 
@@ -172,7 +172,7 @@ DARK_MODE_CSS = """
 
     .success-box {
         background: rgba(0, 255, 65, 0.1);
-        border-left: 4px solid #00ff41;
+        border-left: 4px solid #1db954;
         padding: 15px;
         border-radius: 4px;
         margin: 10px 0;
@@ -319,104 +319,93 @@ auth = AuthManager()
 # 📊 QUERIES OPTIMIZADAS CON CACHE
 # ==========================================
 
-@st.cache_data(ttl=300)  # 5 minutes cache
+@st.cache_data(ttl=300)
 def get_historial_operaciones(days: int = 7) -> pd.DataFrame:
-    """Obtiene historial de operaciones (últimos N días)"""
     query = """
     SELECT 
-        fecha_hora,
-        sku_interno,
-        sku_liverpool,
-        precio_rival,
-        nuestro_precio,
-        stock,
-        posicion,
-        buybox,
-        (nuestro_precio - precio_rival) as diferencia_precio
-    FROM historial_operaciones
-    WHERE fecha_hora >= NOW() - INTERVAL '%s days'
-    ORDER BY fecha_hora DESC
-    LIMIT 50000
+        h.created_at as fecha_hora,
+        c.sku_limpio as sku_interno,
+        h.marketplace as sku_liverpool,
+        h.precio_ant as precio_rival,
+        h.precio_nuv as nuestro_precio,
+        h.stock,
+        0 as posicion,
+        h.resultado as buybox,
+        (h.precio_nuv - h.precio_ant) as diferencia_precio
+    FROM historial_operaciones h
+    LEFT JOIN catalogo_maestro_v3 c ON h.catalogo_id = c.id
+    WHERE h.created_at >= NOW() - INTERVAL '%s days'
+    ORDER BY h.created_at DESC
+    LIMIT 5000
     """
     return db.execute_query(query, (days,))
 
 @st.cache_data(ttl=300)
 def get_monitoreo_rivales(limit: int = 1000) -> pd.DataFrame:
-    """Obtiene monitoreo de rivales"""
     query = """
     SELECT 
-        sku_interno,
-        nombre_rival,
-        precio,
-        marketplace,
-        fecha_registro,
-        COUNT(*) OVER (PARTITION BY nombre_rival) as apariciones_rival
-    FROM monitoreo_rivales
-    ORDER BY fecha_registro DESC
+        c.sku_limpio as sku_interno,
+        m.nombre_rival,
+        m.precio_rival as precio,
+        m.marketplace,
+        m.created_at as fecha_registro,
+        COUNT(*) OVER (PARTITION BY m.nombre_rival) as apariciones_rival
+    FROM monitoreo_rivales m
+    LEFT JOIN catalogo_maestro_v3 c ON m.catalogo_id = c.id
+    ORDER BY m.created_at DESC
     LIMIT %s
     """
     return db.execute_query(query, (limit,))
 
 @st.cache_data(ttl=300)
 def get_catalogo_maestro() -> pd.DataFrame:
-    """Obtiene catálogo maestro"""
     query = """
     SELECT 
         id,
-        sku,
+        sku_limpio as sku,
         sku_interno,
         precio_minimo,
         precio_maximo,
         costo_odoo,
-        marketplace,
+        'Multiverso' as marketplace,
         estatus
     FROM catalogo_maestro_v3
-    WHERE estatus = 'ACTIVO'
-    ORDER BY sku
+    WHERE sku_limpio IS NOT NULL
+    ORDER BY sku_limpio
     """
     return db.execute_query(query)
 
 @st.cache_data(ttl=300)
 def get_alertas() -> pd.DataFrame:
-    """Obtiene alertas críticas"""
     query = """
     SELECT 
         id,
-        tipo,
+        tipo_alerta as tipo,
         mensaje,
-        severity,
-        fecha_creacion,
-        resuelta
+        severidad as severity,
+        created_at as fecha_creacion,
+        FALSE as resuelta
     FROM alertas
-    WHERE resuelta = FALSE
-    ORDER BY fecha_creacion DESC
+    ORDER BY created_at DESC
     LIMIT 100
     """
     return db.execute_query(query)
 
 @st.cache_data(ttl=600)
 def get_metrics_dashboard() -> Dict:
-    """Calcula métricas principales para el dashboard"""
-    
-    # Total SKUs activos
     df_catalogo = get_catalogo_maestro()
     total_skus = len(df_catalogo)
     
-    # Últimas 24h de cambios
-    query_24h = """
-    SELECT COUNT(*) as cambios FROM historial_operaciones 
-    WHERE fecha_hora >= NOW() - INTERVAL '1 day'
-    """
+    query_24h = "SELECT COUNT(*) as cambios FROM historial_operaciones WHERE created_at >= NOW() - INTERVAL '1 day'"
     df_24h = db.execute_query(query_24h)
     cambios_24h = df_24h.iloc[0, 0] if len(df_24h) > 0 else 0
     
-    # Win rate de buybox
     query_buybox = """
     SELECT 
-        COUNT(CASE WHEN buybox = 'Sí' THEN 1 END) as ganadas,
+        COUNT(CASE WHEN resultado = 'EJECUTADO' THEN 1 END) as ganadas,
         COUNT(*) as total
     FROM historial_operaciones
-    WHERE fecha_hora >= NOW() - INTERVAL '7 days'
+    WHERE created_at >= NOW() - INTERVAL '7 days'
     """
     df_buybox = db.execute_query(query_buybox)
     if len(df_buybox) > 0:
@@ -426,16 +415,10 @@ def get_metrics_dashboard() -> Dict:
     else:
         win_rate = 0
     
-    # Rivales únicos
     df_rivales = get_monitoreo_rivales()
     rivales_unicos = df_rivales['nombre_rival'].nunique() if len(df_rivales) > 0 else 0
     
-    # Margen promedio
-    query_margen = """
-    SELECT AVG(nuestro_precio - precio_rival) as margen_promedio
-    FROM historial_operaciones
-    WHERE fecha_hora >= NOW() - INTERVAL '7 days'
-    """
+    query_margen = "SELECT AVG(precio_nuv - precio_ant) as margen_promedio FROM historial_operaciones WHERE created_at >= NOW() - INTERVAL '7 days'"
     df_margen = db.execute_query(query_margen)
     margen_promedio = df_margen.iloc[0, 0] if len(df_margen) > 0 else 0
     
@@ -444,7 +427,7 @@ def get_metrics_dashboard() -> Dict:
         'cambios_24h': int(cambios_24h),
         'win_rate_buybox': round(win_rate, 1),
         'rivales_unicos': rivales_unicos,
-        'margen_promedio': round(float(margen_promedio), 2) if margen_promedio else 0
+        'margen_promedio': round(float(margen_promedio), 2) if pd.notnull(margen_promedio) else 0
     }
 
 # ==========================================
@@ -456,7 +439,7 @@ def render_metric_card(title: str, value: str, subtitle: str = "",
     """Renderiza card de métrica estilo Tesla/Bloomberg"""
     
     colors = {
-        'positive': '#00ff41',
+        'positive': '#1db954',
         'negative': '#ff003c',
         'neutral': '#00d9ff',
         'warning': '#ffaa00'
@@ -486,7 +469,7 @@ def render_alert_box(message: str, alert_type: str = "info"):
     """Renderiza box de alerta"""
     
     colors = {
-        'success': '#00ff41',
+        'success': '#1db954',
         'error': '#ff003c',
         'warning': '#ffaa00',
         'info': '#00d9ff'
@@ -667,7 +650,7 @@ def show_public_dashboard():
                     names='Estado',
                     title='Distribución de Victorias en BuyBox',
                     color_discrete_map={
-                        '✅ GANADO': '#00ff41',
+                        '✅ GANADO': '#1db954',
                         '❌ PERDIDO': '#ff003c'
                     },
                     hole=0.4  # Dona
@@ -773,7 +756,7 @@ def show_public_dashboard():
                     x=df['fecha'],
                     y=df['margen_maximo'],
                     name='Máximo',
-                    line=dict(color='#00ff41', width=2, dash='dot'),
+                    line=dict(color='#1db954', width=2, dash='dot'),
                     fill=None
                 ))
                 
@@ -911,7 +894,7 @@ def show_private_dashboard():
     """Dashboard privado con editor de precios y datos sensibles"""
     
     st.markdown("""
-    <h1 style="color: #00ff41; text-shadow: 0 0 10px rgba(0, 255, 65, 0.3);">
+    <h1 style="color: #1db954; text-shadow: 0 0 10px rgba(0, 255, 65, 0.3);">
         🔐 SALA DE CONTROL EJECUTIVA - MODO COMANDANTE
     </h1>
     """, unsafe_allow_html=True)
