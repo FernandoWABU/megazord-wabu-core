@@ -1082,7 +1082,9 @@ def show_private_dashboard():
             regla_texto = "📋 Regla WMT: Comisión 15% + $76 fijo de envío."
             
         utilidad_neta = ingreso_bruto - costo_con_iva - retenciones_fiscales
-        margen_porcentual = (utilidad_neta / precio_venta_sim * 100) if precio_venta_sim > 0 else 0.0
+        
+        # 🟢 CORRECCIÓN: Margen calculado sobre el costo CON IVA (Retorno de Inversión)
+        margen_porcentual = (utilidad_neta / costo_con_iva * 100) if costo_con_iva > 0 else 0.0
         
         with col_calc4:
             st.markdown(f"**Estatus de la Operación**")
