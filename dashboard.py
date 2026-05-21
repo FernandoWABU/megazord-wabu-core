@@ -363,13 +363,14 @@ def get_catalogo_maestro() -> pd.DataFrame:
     SELECT 
         id,
         sku_limpio,
+        sku_limpio as sku, -- 🟢 Auxiliar para evitar KeyError en el st.data_editor de Claude
+        sku_interno,
         precio_minimo,
         precio_maximo,
         costo_odoo,
         marketplace,
         estatus
     FROM catalogo_maestro_v3
-    WHERE estatus = 'ACTIVO'
     ORDER BY sku_limpio
     """
     return db.execute_query(query)
@@ -1046,6 +1047,60 @@ def show_private_dashboard():
     
     except Exception as e:
         st.error(f"❌ Error en tabla editable: {e}")
+    
+    st.markdown("---")
+
+    # ==========================================
+    # 🧮 SIMULADOR Y CALCULADORA DE REGLAS FINANCIERAS
+    # ==========================================
+    st.markdown("### 🧮 Simulador de Utilidades y Reglas Financieras")
+    
+    with st.expander("🦅 Abrir Calculadora de Comisiones y Retenciones (Liverpool vs Walmart)", expanded=True):
+        col_calc1, col_calc2, col_calc3, col_calc4 = st.columns(4)
+        
+        with col_calc1:
+            mkt_simular = st.selectbox("Marketplace a Simular", ["LIVERPOOL", "WALMART"], key="sim_mkt")
+        with col_calc2:
+            costo_base_sim = st.number_input("Costo Base Odoo (Sin IVA)", min_value=0.0, value=100.0, step=10.0)
+        with col_calc3:
+            precio_venta_sim = st.number_input("Precio de Venta Propuesto", min_value=0.0, value=350.0, step=10.0)
+            
+        # --- MATEMÁTICA FINANCIERA DE TU NEGOCIO ---
+        costo_con_iva = costo_base_sim * 1.16
+        precio_neto_sin_iva = precio_venta_sim / 1.16
+        
+        # Retenciones fiscales (2.5% ISR + 8% IVA = 10.5% sobre precio neto sin IVA)
+        retenciones_fiscales = precio_neto_sin_iva * (0.025 + 0.08)
+        
+        if mkt_simular == "LIVERPOOL":
+            ingreso_bruto = (precio_venta_sim * 0.83) - 130
+            comision_mkt = precio_venta_sim * 0.17 + 130
+            regla_texto = "📋 Regla LVP: Comisión 17% + $130 fijo de envío."
+        else:
+            ingreso_bruto = (precio_venta_sim * 0.85) - 76
+            comision_mkt = precio_venta_sim * 0.15 + 76
+            regla_texto = "📋 Regla WMT: Comisión 15% + $76 fijo de envío."
+            
+        utilidad_neta = ingreso_bruto - costo_con_iva - retenciones_fiscales
+        margen_porcentual = (utilidad_neta / precio_venta_sim * 100) if precio_venta_sim > 0 else 0.0
+        
+        with col_calc4:
+            st.markdown(f"**Estatus de la Operación**")
+            if utilidad_neta > 0:
+                st.success(f"🟢 RENTABLE ({margen_porcentual:.1f}%)")
+            else:
+                st.error(f"🔴 PÉRDIDA ({margen_porcentual:.1f}%)")
+                
+        # Desglose Visual Ejecutivo
+        st.info(regla_texto)
+        
+        metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+        metric_col1.metric("📦 Costo + IVA (Almacén)", f"${costo_con_iva:.2f}")
+        metric_col2.metric("💸 Comisión + Envío Mkt", f"${comision_mkt:.2f}")
+        metric_col3.metric("🏛️ Retención SAT (10.5%)", f"${retenciones_fiscales:.2f}")
+        metric_col4.metric("💰 Utilidad Real Neta", f"${utilidad_neta:.2f}", 
+                           delta=f"{margen_porcentual:.1f}% Margen", 
+                           delta_color="normal" if utilidad_neta > 0 else "inverse")
     
     st.markdown("---")
     
