@@ -316,7 +316,7 @@ db = PostgreSQLManager(DATABASE_URL)
 auth = AuthManager()
 
 # ==========================================
-# 📊 QUERIES OPTIMIZADAS CON CACHE (COLUMNAS REALES)
+# 📊 QUERIES OPTIMIZADAS CON CACHE (ALINEACIÓN TOTAL DE COLUMNAS)
 # ==========================================
 
 @st.cache_data(ttl=300)
@@ -324,17 +324,19 @@ def get_historial_operaciones(days: int = 7) -> pd.DataFrame:
     limit_date = datetime.now() - timedelta(days=days)
     query = """
     SELECT 
-        fecha_hora,
-        sku_interno,
-        sku_liverpool,
-        precio_rival,
-        nuestro_precio,
-        stock,
-        posicion,
-        buybox
-    FROM historial_precios
-    WHERE fecha_hora >= %s
-    ORDER BY fecha_hora DESC
+        h.fecha_hora AS created_at,            -- 🟢 Mapeo para el eje X de las gráficas
+        h.fecha_hora,
+        h.sku_interno,
+        c.sku_limpio,
+        h.precio_rival AS precio_ant,          -- 🟢 Mapeo de columna real a Frontend
+        h.nuestro_precio AS precio_nuv,        -- 🟢 Mapeo de columna real a Frontend
+        h.stock,
+        h.posicion,
+        h.buybox AS resultado                  -- 🟢 Mapeo de columna real a Frontend
+    FROM historial_precios h
+    LEFT JOIN catalogo_maestro_v3 c ON h.sku_interno = c.sku_interno -- 🟢 CORREGIDO: Unión por SKU Interno real
+    WHERE h.fecha_hora >= %s
+    ORDER BY h.fecha_hora DESC
     LIMIT 50000
     """
     return db.execute_query(query, (limit_date,))
@@ -363,7 +365,7 @@ def get_catalogo_maestro() -> pd.DataFrame:
     SELECT 
         id,
         sku_limpio,
-        sku_limpio as sku, -- 🟢 Auxiliar para evitar KeyError en el st.data_editor de Claude
+        sku_limpio as sku, -- Auxiliar para el st.data_editor
         sku_interno,
         precio_minimo,
         precio_maximo,
@@ -403,7 +405,6 @@ def get_metrics_dashboard() -> Dict:
     cambios_24h = df_24h.iloc[0, 0] if len(df_24h) > 0 else 0
     
     limit_date_7d = datetime.now() - timedelta(days=7)
-    # Vacuna robusta: Contamos como ganadas si dice EJECUTADO, SÍ, SI o TRUE
     query_buybox = """
     SELECT 
         COUNT(CASE WHEN UPPER(buybox) IN ('EJECUTADO', 'SÍ', 'SI', 'TRUE') THEN 1 END) as ganadas,
@@ -733,6 +734,7 @@ def show_public_dashboard():
             query = """
             SELECT 
                 DATE(fecha_hora) as fecha,
+                DATE(fecha_hora) as created_at, -- Auxiliar para compatibilidad de layout
                 AVG(nuestro_precio - precio_rival) as margen_promedio,
                 MIN(nuestro_precio - precio_rival) as margen_minimo,
                 MAX(nuestro_precio - precio_rival) as margen_maximo
