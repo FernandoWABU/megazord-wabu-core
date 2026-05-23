@@ -374,7 +374,7 @@ def get_catalogo_maestro() -> pd.DataFrame:
         precio_maximo,
         costo_odoo,
         estatus,
-        COALESCE(regla, 'PRECIO_FIJO') AS regla -- 🟢 NUEVO: Extraemos la regla de repricing activa
+        COALESCE(regla_estrategia, 'PRECIO_FIJO') AS regla -- 🟢 NUEVO: Extraemos la regla de repricing activa
     FROM catalogo_maestro_v3
     ORDER BY sku_limpio
     """
