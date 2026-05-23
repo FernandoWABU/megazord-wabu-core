@@ -978,15 +978,17 @@ def show_private_dashboard():
                     new_max = st.number_input("Precio Máximo", value=float(sku_data['precio_maximo']), step=0.01, format="%.2f")
                 with col3:
                     lista_reglas_oficiales = [
-                        "1. Gladiador",
-                        "2. Ancla Mínimo",
-                        "3. Táctica 3 (Pendiente)",
-                        "4. Táctica 4 (Pendiente)",
-                        "5. Táctica 5 (Pendiente)",
+                        "1. Gladiador", 
+                        "2. Ancla Mínimo", 
+                        "3. Cosecha Máximo", 
+                        "4. Analista Histórico",
+                        "5. Depredador (1+3)",
                         "6. Francotirador (1+4)",
-                        "7. Táctica 7 (Pendiente)",
-                        "8. Táctica 8 (Pendiente)"
+                        "7. Bomba de Tiempo (2+3)",
+                        "8. Liquidador Sabio (2+4)"
                     ]
+                    regla_actual = sku_data['regla'] if sku_data['regla'] in lista_reglas_oficiales else lista_reglas_oficiales[0]
+                    new_rule = st.selectbox("Regla de Repricing", lista_reglas_oficiales, index=lista_reglas_oficiales.index(regla_actual))
                     regla_actual = sku_data['regla'] if sku_data['regla'] in lista_reglas_oficiales else lista_reglas_oficiales[0]
                     new_rule = st.selectbox("Estrategia Activa", lista_reglas_oficiales, index=lista_reglas_oficiales.index(regla_actual))
                 with col4:
@@ -1043,16 +1045,16 @@ def show_private_dashboard():
                     'precio_minimo': st.column_config.NumberColumn("Precio Mínimo", format="$%.2f"),
                     'precio_maximo': st.column_config.NumberColumn("Precio Máximo", format="$%.2f"),
                     'regla': st.column_config.SelectboxColumn(
-                        "Estrategia", 
+                        "Regla", 
                         options=[
-                            "1. Gladiador",
-                            "2. Ancla Mínimo",
-                            "3. Táctica 3 (Pendiente)",
-                            "4. Táctica 4 (Pendiente)",
-                            "5. Táctica 5 (Pendiente)",
+                            "1. Gladiador", 
+                            "2. Ancla Mínimo", 
+                            "3. Cosecha Máximo", 
+                            "4. Analista Histórico",
+                            "5. Depredador (1+3)",
                             "6. Francotirador (1+4)",
-                            "7. Táctica 7 (Pendiente)",
-                            "8. Táctica 8 (Pendiente)"
+                            "7. Bomba de Tiempo (2+3)",
+                            "8. Liquidador Sabio (2+4)"
                         ]
                     ),
                     'estatus': st.column_config.SelectboxColumn("Estatus", options=['ACTIVO', 'INACTIVO'])
