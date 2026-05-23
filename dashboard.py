@@ -374,7 +374,7 @@ def get_catalogo_maestro() -> pd.DataFrame:
         precio_maximo,
         costo_odoo,
         estatus,
-        COALESCE(regla_estrategia, 'PRECIO_FIJO') AS regla -- 🟢 NUEVO: Extraemos la regla de repricing activa
+        COALESCE(regla_estrategia, 'PRECIO_FIJO') AS regla -- 🟢 CORREGIDO: Usamos el nombre real con alias
     FROM catalogo_maestro_v3
     ORDER BY sku_limpio
     """
@@ -900,7 +900,7 @@ def show_public_dashboard():
 # ==========================================
 
 def show_private_dashboard():
-    """Dashboard privado con segmentación por tienda, control de reglas y guardado por ID único"""
+    """Dashboard privado con segmentación por tienda, control de reglas reales y guardado por ID único"""
     
     st.markdown("""
     <h1 style="color: #1db954; text-shadow: 0 0 10px rgba(29, 185, 84, 0.3);">
@@ -925,7 +925,6 @@ def show_private_dashboard():
                 key="tienda_activa_selector"
             )
             
-            # Filtrado inteligente de la memoria según la tienda elegida
             df_canal = df_catalogo.copy()
             if tienda_activa == "LIVERPOOL":
                 df_canal = df_canal[df_canal['sku_liverpool'].notna() & (df_canal['sku_liverpool'] != '')]
@@ -958,7 +957,6 @@ def show_private_dashboard():
                 ]
             
             if not df_filtrado.empty:
-                # El formato del dropdown ahora muestra la información explícita de la plataforma
                 opciones_formateadas = df_filtrado.apply(
                     lambda r: f"🆔 ID: {r['id']} | 📦 {r['sku_limpio']} | LVP: {r['sku_liverpool'] or 'N/A'} | WMT: {r['sku_walmart'] or 'N/A'}", 
                     axis=1
@@ -971,7 +969,7 @@ def show_private_dashboard():
                 )
                 
                 sku_data = df_filtrado.iloc[seleccion_idx]
-                row_id_unico = sku_data['id'] # 🟢 LA LLAVE MAESTRA ANTI-ERRORES
+                row_id_unico = sku_data['id']
                 
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
@@ -979,7 +977,6 @@ def show_private_dashboard():
                 with col2:
                     new_max = st.number_input("Precio Máximo", value=float(sku_data['precio_maximo']), step=0.01, format="%.2f")
                 with col3:
-                    # 🟢 NUEVO: Selector de reglas financieras integrado
                     lista_reglas = ["PRECIO_FIJO", "SMART_REPRICING", "GUERRILLA_AGGRESSIVE", "MATCH_COMPETITION"]
                     regla_actual = sku_data['regla'].upper() if sku_data['regla'] in lista_reglas else "PRECIO_FIJO"
                     new_rule = st.selectbox("Regla de Repricing", lista_reglas, index=lista_reglas.index(regla_actual))
@@ -992,10 +989,10 @@ def show_private_dashboard():
                     render_alert_box(f"⚠️ Alerta: Margen de riesgo. El mínimo está por debajo del costo base ({sku_data['costo_odoo']})", "warning")
                 else:
                     if st.button("💾 Guardar Configuración en PostgreSQL", use_container_width=True):
-                        # 🟢 SOLUCIÓN AL PUNTO 1: Filtramos estrictamente por ID único de fila
+                        # 🟢 CORREGIDO: Apuntamos a la columna real 'regla_estrategia'
                         update_query = """
                         UPDATE catalogo_maestro_v3
-                        SET precio_minimo = %s, precio_maximo = %s, regla = %s
+                        SET precio_minimo = %s, precio_maximo = %s, regla_estrategia = %s
                         WHERE id = %s
                         """
                         if db.execute_update(update_query, (new_min, new_max, new_rule, int(row_id_unico))):
@@ -1020,7 +1017,8 @@ def show_private_dashboard():
     
     try:
         if len(df_canal) > 0:
-            # Desplegamos la tabla mostrando únicamente el contexto de la tienda seleccionada
+            st.markdown("**Consejo:** Puedes visualizar los códigos de cada plataforma en las columnas bloqueadas para mantener el control.")
+            
             edited_df = st.data_editor(
                 df_canal[['id', 'sku_limpio', 'sku_interno', 'sku_liverpool', 'sku_walmart', 'sku_coppel', 'precio_minimo', 'precio_maximo', 'regla', 'estatus']],
                 use_container_width=True,
@@ -1052,10 +1050,10 @@ def show_private_dashboard():
                             row['regla'] != original['regla'] or
                             row['estatus'] != original['estatus']):
                             
-                            # Guardado masivo blindado por ID de fila
+                            # 🟢 CORREGIDO: Apuntamos a la columna real 'regla_estrategia' en actualización masiva
                             update_query = """
                             UPDATE catalogo_maestro_v3
-                            SET precio_minimo = %s, precio_maximo = %s, regla = %s, estatus = %s
+                            SET precio_minimo = %s, precio_maximo = %s, regla_estrategia = %s, estatus = %s
                             WHERE id = %s
                             """
                             if db.execute_update(update_query, (row['precio_minimo'], row['precio_maximo'], row['regla'], row['estatus'], int(row['id']))):
