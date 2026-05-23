@@ -987,10 +987,16 @@ def show_private_dashboard():
                         "7. Bomba de Tiempo (2+3)",
                         "8. Liquidador Sabio (2+4)"
                     ]
-                    regla_actual = sku_data['regla'] if sku_data['regla'] in lista_reglas_oficiales else lista_reglas_oficiales[0]
-                    new_rule = st.selectbox("Regla de Repricing", lista_reglas_oficiales, index=lista_reglas_oficiales.index(regla_actual))
-                    regla_actual = sku_data['regla'] if sku_data['regla'] in lista_reglas_oficiales else lista_reglas_oficiales[0]
-                    new_rule = st.selectbox("Estrategia Activa", lista_reglas_oficiales, index=lista_reglas_oficiales.index(regla_actual))
+                    # Detectamos qué regla tiene actualmente en la BD
+                    regla_actual_bd = sku_data['regla'] if sku_data['regla'] in lista_reglas_oficiales else lista_reglas_oficiales[0]
+                    
+                    # UN SOLO SELECTBOX MAESTRO
+                    new_rule = st.selectbox(
+                        "Regla de Repricing", 
+                        options=lista_reglas_oficiales, 
+                        index=lista_reglas_oficiales.index(regla_actual_bd),
+                        key="selector_regla_individual"
+                    )
                 with col4:
                     st.metric("Costo ODOO Base", f"${float(sku_data['costo_odoo']):.2f}")
                 
