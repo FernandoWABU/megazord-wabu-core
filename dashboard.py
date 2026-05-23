@@ -374,7 +374,7 @@ def get_catalogo_maestro() -> pd.DataFrame:
         precio_maximo,
         costo_odoo,
         estatus,
-        COALESCE(regla_estrategia, 'PRECIO_FIJO') AS regla -- 🟢 CORREGIDO: Usamos el nombre real con alias
+        COALESCE(regla_estrategia, '1. Gladiador') AS regla
     FROM catalogo_maestro_v3
     ORDER BY sku_limpio
     """
@@ -977,9 +977,18 @@ def show_private_dashboard():
                 with col2:
                     new_max = st.number_input("Precio Máximo", value=float(sku_data['precio_maximo']), step=0.01, format="%.2f")
                 with col3:
-                    lista_reglas = ["PRECIO_FIJO", "SMART_REPRICING", "GUERRILLA_AGGRESSIVE", "MATCH_COMPETITION"]
-                    regla_actual = sku_data['regla'].upper() if sku_data['regla'] in lista_reglas else "PRECIO_FIJO"
-                    new_rule = st.selectbox("Regla de Repricing", lista_reglas, index=lista_reglas.index(regla_actual))
+                    lista_reglas_oficiales = [
+                        "1. Gladiador",
+                        "2. Ancla Mínimo",
+                        "3. Táctica 3 (Pendiente)",
+                        "4. Táctica 4 (Pendiente)",
+                        "5. Táctica 5 (Pendiente)",
+                        "6. Francotirador (1+4)",
+                        "7. Táctica 7 (Pendiente)",
+                        "8. Táctica 8 (Pendiente)"
+                    ]
+                    regla_actual = sku_data['regla'] if sku_data['regla'] in lista_reglas_oficiales else lista_reglas_oficiales[0]
+                    new_rule = st.selectbox("Estrategia Activa", lista_reglas_oficiales, index=lista_reglas_oficiales.index(regla_actual))
                 with col4:
                     st.metric("Costo ODOO Base", f"${float(sku_data['costo_odoo']):.2f}")
                 
@@ -1033,7 +1042,19 @@ def show_private_dashboard():
                     'sku_coppel': st.column_config.TextColumn("SKU Coppel", disabled=True),
                     'precio_minimo': st.column_config.NumberColumn("Precio Mínimo", format="$%.2f"),
                     'precio_maximo': st.column_config.NumberColumn("Precio Máximo", format="$%.2f"),
-                    'regla': st.column_config.SelectboxColumn("Regla", options=["PRECIO_FIJO", "SMART_REPRICING", "GUERRILLA_AGGRESSIVE", "MATCH_COMPETITION"]),
+                    'regla': st.column_config.SelectboxColumn(
+                        "Estrategia", 
+                        options=[
+                            "1. Gladiador",
+                            "2. Ancla Mínimo",
+                            "3. Táctica 3 (Pendiente)",
+                            "4. Táctica 4 (Pendiente)",
+                            "5. Táctica 5 (Pendiente)",
+                            "6. Francotirador (1+4)",
+                            "7. Táctica 7 (Pendiente)",
+                            "8. Táctica 8 (Pendiente)"
+                        ]
+                    ),
                     'estatus': st.column_config.SelectboxColumn("Estatus", options=['ACTIVO', 'INACTIVO'])
                 }
             )
