@@ -365,8 +365,11 @@ def get_catalogo_maestro() -> pd.DataFrame:
     SELECT 
         id,
         sku_limpio,
-        sku_limpio as sku, 
+        sku_limpio as sku, -- Auxiliar para el st.data_editor
         sku_interno,
+        sku_liverpool,
+        sku_walmart,
+        sku_coppel,
         precio_minimo,
         precio_maximo,
         costo_odoo,
@@ -896,94 +899,112 @@ def show_public_dashboard():
 # ==========================================
 
 def show_private_dashboard():
-    """Dashboard privado con editor de precios y datos sensibles"""
+    """Dashboard privado con buscador inteligente multi-columna y editor de precios"""
     
     st.markdown("""
-    <h1 style="color: #00ff41; text-shadow: 0 0 10px rgba(0, 255, 65, 0.3);">
+    <h1 style="color: #1db954; text-shadow: 0 0 10px rgba(29, 185, 84, 0.3);">
         🔐 SALA DE CONTROL EJECUTIVA - MODO COMANDANTE
     </h1>
     """, unsafe_allow_html=True)
     
     st.markdown(f"**🕐 Sesión activa desde:** {datetime.fromtimestamp(st.session_state.get('auth_time', time.time())).strftime('%H:%M:%S')}")
     
-    # ========== EDITOR FINANCIERO ==========
-    st.markdown("### 💰 EDITOR FINANCIERO - Actualizar Precios Mínimos/Máximos")
+    # ========== EDITOR FINANCIERO CON BUSCADOR INTELIGENTE ==========
+    st.markdown("### 💰 EDITOR FINANCIERO - Buscador Predictivo Universal")
     
     try:
         df_catalogo = get_catalogo_maestro()
         
         if len(df_catalogo) > 0:
-            # Selector de SKU para editar
-            selected_sku = st.selectbox(
-                "Selecciona SKU para editar",
-                df_catalogo['sku_limpio'].unique(),
-                key="sku_selector"
+            # 🟢 LA MEJORA: Barra de texto libre que busca en todas las columnas críticas en tiempo real
+            termino_busqueda = st.text_input(
+                "🔍 Ingresa cualquier identificador (SKU Limpio, SKU Interno, SKU Liverpool, Walmart o Coppel):",
+                placeholder="Ej: HCK13.3atomizador, SKU_48819B..."
             )
             
-            # Obtener datos del SKU seleccionado
-            sku_data = df_catalogo[df_catalogo['sku_limpio'] == selected_sku].iloc[0]
+            df_filtrado = df_catalogo.copy()
+            if termino_busqueda:
+                # Escáner multi-columna tolerante a mayúsculas y minúsculas
+                df_filtrado = df_catalogo[
+                    df_catalogo['sku_limpio'].astype(str).str.contains(termino_busqueda, case=False, na=False) |
+                    df_catalogo['sku_interno'].astype(str).str.contains(termino_busqueda, case=False, na=False) |
+                    df_catalogo['sku_liverpool'].astype(str).str.contains(termino_busqueda, case=False, na=False) |
+                    df_catalogo['sku_walmart'].astype(str).str.contains(termino_busqueda, case=False, na=False) |
+                    df_catalogo['sku_coppel'].astype(str).str.contains(termino_busqueda, case=False, na=False)
+                ]
             
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                new_min = st.number_input(
-                    "Precio Mínimo",
-                    value=float(sku_data['precio_minimo']),
-                    step=0.01,
-                    format="%.2f"
+            if not df_filtrado.empty:
+                # Generar etiquetas dinámicas ultra descriptivas para el menú desplegable
+                opciones_formateadas = df_filtrado.apply(
+                    lambda r: f"📦 {r['sku_limpio']} | Int: {r['sku_interno']} | LVP: {r['sku_liverpool'] or 'N/A'} | WMT: {r['sku_walmart'] or 'N/A'}", 
+                    axis=1
+                ).tolist()
+                
+                seleccion_idx = st.selectbox(
+                    f"🎯 Coincidencias encontradas ({len(df_filtrado)}). Elige el producto a modificar:",
+                    range(len(df_filtrado)),
+                    format_func=lambda x: opciones_formateadas[x]
                 )
-            
-            with col2:
-                new_max = st.number_input(
-                    "Precio Máximo",
-                    value=float(sku_data['precio_maximo']),
-                    step=0.01,
-                    format="%.2f"
-                )
-            
-            with col3:
-                st.metric("Costo ODOO", f"${float(sku_data['costo_odoo']):.2f}")
-            
-            # Validaciones
-            if new_min >= new_max:
-                render_alert_box("❌ Precio mínimo no puede ser >= máximo", "error")
-            elif new_min < float(sku_data['costo_odoo']):
-                render_alert_box(f"⚠️ Precio mínimo está por debajo del costo ({sku_data['costo_odoo']})", "warning")
+                
+                sku_data = df_filtrado.iloc[seleccion_idx]
+                selected_sku = sku_data['sku_limpio']
+                
+                # Desglose de campos de edición en pantalla
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    new_min = st.number_input("Precio Mínimo", value=float(sku_data['precio_minimo']), step=0.01, format="%.2f")
+                with col2:
+                    new_max = st.number_input("Precio Máximo", value=float(sku_data['precio_maximo']), step=0.01, format="%.2f")
+                with col3:
+                    st.metric("Costo ODOO (Base)", f"${float(sku_data['costo_odoo']):.2f}")
+                
+                if new_min >= new_max:
+                    render_alert_box("❌ El precio mínimo no puede ser mayor o igual al precio máximo", "error")
+                elif new_min < float(sku_data['costo_odoo']):
+                    render_alert_box(f"⚠️ Atención: El precio mínimo está por debajo del costo base de almacén ({sku_data['costo_odoo']})", "warning")
+                else:
+                    if st.button("💾 Guardar Cambios en PostgreSQL", use_container_width=True):
+                        update_query = """
+                        UPDATE catalogo_maestro_v3
+                        SET precio_minimo = %s, precio_maximo = %s
+                        WHERE sku_limpio = %s
+                        """
+                        if db.execute_update(update_query, (new_min, new_max, selected_sku)):
+                            st.success(f"✅ Parámetros actualizados exitosamente para el producto {selected_sku}")
+                            st.cache_data.clear()
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("❌ Ocurrió un error al guardar los cambios en PostgreSQL")
             else:
-                if st.button("💾 Guardar Cambios en PostgreSQL", use_container_width=True):
-                    update_query = """
-                    UPDATE catalogo_maestro_v3
-                    SET precio_minimo = %s, precio_maximo = %s
-                    WHERE sku_limpio = %s
-                    """
-                    
-                    if db.execute_update(update_query, (new_min, new_max, selected_sku)):
-                        st.success(f"✅ Precios actualizados para {selected_sku}")
-                        st.cache_data.clear()
-                    else:
-                        st.error("❌ Error al actualizar en PostgreSQL")
+                st.warning("⚠️ No se encontraron productos que coincidan con la búsqueda")
         else:
-            st.warning("⚠️ No hay SKUs disponibles")
-    
+            st.warning("⚠️ El catálogo maestro se encuentra vacío en la base de datos")
+            
     except Exception as e:
-        st.error(f"❌ Error en editor: {e}")
+        st.error(f"❌ Error crítico en el módulo de edición: {e}")
     
     st.markdown("---")
     
-    # ========== TABLA EDITABLE ==========
+    # ========== TABLA EDITABLE MASIVA ENRIQUECIDA ==========
     st.markdown("### 📊 EDITOR DE CATALOGO (Edición masiva)")
     
     try:
         if len(df_catalogo) > 0:
-            st.markdown("**Nota:** Los cambios se guardan en PostgreSQL al hacer click en 'Guardar Cambios'")
+            st.markdown("**Consejo:** Puedes visualizar los códigos de cada plataforma en las columnas bloqueadas para mantener el control.")
             
+            # Mostramos el mapa completo de SKUs para que edites masivamente con contexto total
             edited_df = st.data_editor(
-                df_catalogo[['sku_limpio', 'precio_minimo', 'precio_maximo', 'estatus']],
+                df_catalogo[['sku_limpio', 'sku_interno', 'sku_liverpool', 'sku_walmart', 'sku_coppel', 'precio_minimo', 'precio_maximo', 'estatus']],
                 use_container_width=True,
                 key="catalog_editor",
                 hide_index=True,
                 column_config={
-                    'sku_limpio': st.column_config.TextColumn("SKU", disabled=True),
+                    'sku_limpio': st.column_config.TextColumn("SKU Limpio", disabled=True),
+                    'sku_interno': st.column_config.TextColumn("SKU Interno", disabled=True),
+                    'sku_liverpool': st.column_config.TextColumn("SKU Liverpool", disabled=True),
+                    'sku_walmart': st.column_config.TextColumn("SKU Walmart", disabled=True),
+                    'sku_coppel': st.column_config.TextColumn("SKU Coppel", disabled=True),
                     'precio_minimo': st.column_config.NumberColumn("Precio Mínimo", format="$%.2f"),
                     'precio_maximo': st.column_config.NumberColumn("Precio Máximo", format="$%.2f"),
                     'estatus': st.column_config.SelectboxColumn("Estatus", options=['ACTIVO', 'INACTIVO'])
@@ -1007,22 +1028,23 @@ def show_private_dashboard():
                             SET precio_minimo = %s, precio_maximo = %s, estatus = %s
                             WHERE sku_limpio = %s
                             """
-                            
                             if db.execute_update(update_query, (row['precio_minimo'], row['precio_maximo'], row['estatus'], row['sku_limpio'])):
                                 cambios += 1
                             else:
                                 errores.append(row['sku_limpio'])
                 
                 if errores:
-                    st.error(f"❌ Error actualizando {len(errores)} SKUs: {', '.join(errores)}")
+                    st.error(f"❌ No se pudieron actualizar los siguientes SKUs: {', '.join(errores)}")
                 else:
-                    st.success(f"✅ {cambios} registros actualizados correctamente en PostgreSQL")
+                    st.success(f"✅ Operación exitosa: {cambios} registros modificados en la base de datos central")
                 st.cache_data.clear()
+                time.sleep(1)
+                st.rerun()
         else:
-            st.warning("⚠️ No hay datos para editar")
+            st.warning("⚠️ No hay datos mapeados en el catálogo")
             
     except Exception as e:
-        st.error(f"❌ Error en tabla editable: {e}")
+        st.error(f"❌ Error en el procesamiento masivo: {e}")
     
     st.markdown("---")
 
