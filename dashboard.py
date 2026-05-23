@@ -320,21 +320,21 @@ auth = AuthManager()
 # ==========================================
 
 @st.cache_data(ttl=300)
-def get_historial_operaciones(days: int = 7) -> pd.DataFrame:
+def get_historial_precios(days: int = 7) -> pd.DataFrame:
     limit_date = datetime.now() - timedelta(days=days)
     query = """
     SELECT 
-        h.fecha_hora AS created_at,            -- 🟢 Mapeo para el eje X de las gráficas
+        h.fecha_hora AS created_at,
         h.fecha_hora,
         h.sku_interno,
         c.sku_limpio,
-        h.precio_rival AS precio_ant,          -- 🟢 Mapeo de columna real a Frontend
-        h.nuestro_precio AS precio_nuv,        -- 🟢 Mapeo de columna real a Frontend
+        h.precio_rival AS precio_ant,
+        h.nuestro_precio AS precio_nuv,
         h.stock,
         h.posicion,
-        h.buybox AS resultado                  -- 🟢 Mapeo de columna real a Frontend
+        h.buybox AS resultado
     FROM historial_precios h
-    LEFT JOIN catalogo_maestro_v3 c ON h.sku_interno = c.sku_interno -- 🟢 CORREGIDO: Unión por SKU Interno real
+    LEFT JOIN catalogo_maestro_v3 c ON h.sku_interno = c.sku_interno
     WHERE h.fecha_hora >= %s
     ORDER BY h.fecha_hora DESC
     LIMIT 50000
@@ -365,12 +365,11 @@ def get_catalogo_maestro() -> pd.DataFrame:
     SELECT 
         id,
         sku_limpio,
-        sku_limpio as sku, -- Auxiliar para el st.data_editor
+        sku_limpio as sku, 
         sku_interno,
         precio_minimo,
         precio_maximo,
         costo_odoo,
-        marketplace,
         estatus
     FROM catalogo_maestro_v3
     ORDER BY sku_limpio
@@ -382,9 +381,9 @@ def get_alertas() -> pd.DataFrame:
     query = """
     SELECT 
         id,
-        tipo,
+        tipo_alerta AS tipo,
         mensaje,
-        severity,
+        severidad AS severity,
         created_at,
         resuelta
     FROM alertas
@@ -900,7 +899,7 @@ def show_private_dashboard():
     """Dashboard privado con editor de precios y datos sensibles"""
     
     st.markdown("""
-    <h1 style="color: #1db954; text-shadow: 0 0 10px rgba(0, 255, 65, 0.3);">
+    <h1 style="color: #00ff41; text-shadow: 0 0 10px rgba(0, 255, 65, 0.3);">
         🔐 SALA DE CONTROL EJECUTIVA - MODO COMANDANTE
     </h1>
     """, unsafe_allow_html=True)
@@ -917,12 +916,12 @@ def show_private_dashboard():
             # Selector de SKU para editar
             selected_sku = st.selectbox(
                 "Selecciona SKU para editar",
-                df_catalogo['sku'].unique(),
+                df_catalogo['sku_limpio'].unique(),
                 key="sku_selector"
             )
             
             # Obtener datos del SKU seleccionado
-            sku_data = df_catalogo[df_catalogo['sku'] == selected_sku].iloc[0]
+            sku_data = df_catalogo[df_catalogo['sku_limpio'] == selected_sku].iloc[0]
             
             col1, col2, col3 = st.columns(3)
             
@@ -954,13 +953,12 @@ def show_private_dashboard():
                 if st.button("💾 Guardar Cambios en PostgreSQL", use_container_width=True):
                     update_query = """
                     UPDATE catalogo_maestro_v3
-                    SET precio_minimo = %s, precio_maximo = %s, fecha_actualizacion = NOW()
-                    WHERE sku = %s
+                    SET precio_minimo = %s, precio_maximo = %s
+                    WHERE sku_limpio = %s
                     """
                     
                     if db.execute_update(update_query, (new_min, new_max, selected_sku)):
                         st.success(f"✅ Precios actualizados para {selected_sku}")
-                        # Limpiar cache
                         st.cache_data.clear()
                     else:
                         st.error("❌ Error al actualizar en PostgreSQL")
@@ -976,40 +974,23 @@ def show_private_dashboard():
     st.markdown("### 📊 EDITOR DE CATALOGO (Edición masiva)")
     
     try:
-        df_catalogo = get_catalogo_maestro()
-        
         if len(df_catalogo) > 0:
-            # Mostrar en data_editor
-            st.markdown("**Nota:** Los cambios en la tabla inferior se guardan en PostgreSQL al hacer click en 'Guardar Cambios'")
+            st.markdown("**Nota:** Los cambios se guardan en PostgreSQL al hacer click en 'Guardar Cambios'")
             
             edited_df = st.data_editor(
-                df_catalogo[['sku', 'precio_minimo', 'precio_maximo', 'marketplace', 'estatus']],
+                df_catalogo[['sku_limpio', 'precio_minimo', 'precio_maximo', 'estatus']],
                 use_container_width=True,
                 key="catalog_editor",
                 hide_index=True,
                 column_config={
-                    'sku': st.column_config.TextColumn("SKU", disabled=True),
-                    'precio_minimo': st.column_config.NumberColumn(
-                        "Precio Mínimo",
-                        format="$%.2f"
-                    ),
-                    'precio_maximo': st.column_config.NumberColumn(
-                        "Precio Máximo",
-                        format="$%.2f"
-                    ),
-                    'marketplace': st.column_config.SelectboxColumn(
-                        "Marketplace",
-                        options=['liverpool', 'coppel', 'walmart']
-                    ),
-                    'estatus': st.column_config.SelectboxColumn(
-                        "Estatus",
-                        options=['ACTIVO', 'INACTIVO']
-                    )
+                    'sku_limpio': st.column_config.TextColumn("SKU", disabled=True),
+                    'precio_minimo': st.column_config.NumberColumn("Precio Mínimo", format="$%.2f"),
+                    'precio_maximo': st.column_config.NumberColumn("Precio Máximo", format="$%.2f"),
+                    'estatus': st.column_config.SelectboxColumn("Estatus", options=['ACTIVO', 'INACTIVO'])
                 },
                 num_rows="dynamic"
             )
             
-            # Botón para guardar cambios
             if st.button("💾 Guardar Cambios Masivos en PostgreSQL", use_container_width=True):
                 cambios = 0
                 errores = []
@@ -1017,36 +998,29 @@ def show_private_dashboard():
                 for idx, row in edited_df.iterrows():
                     if idx < len(df_catalogo):
                         original = df_catalogo.iloc[idx]
-                        
-                        # Detectar cambios
                         if (row['precio_minimo'] != original['precio_minimo'] or 
                             row['precio_maximo'] != original['precio_maximo'] or
                             row['estatus'] != original['estatus']):
                             
                             update_query = """
                             UPDATE catalogo_maestro_v3
-                            SET precio_minimo = %s, precio_maximo = %s, estatus = %s, fecha_actualizacion = NOW()
-                            WHERE sku = %s
+                            SET precio_minimo = %s, precio_maximo = %s, estatus = %s
+                            WHERE sku_limpio = %s
                             """
                             
-                            if db.execute_update(
-                                update_query,
-                                (row['precio_minimo'], row['precio_maximo'], row['estatus'], row['sku'])
-                            ):
+                            if db.execute_update(update_query, (row['precio_minimo'], row['precio_maximo'], row['estatus'], row['sku_limpio'])):
                                 cambios += 1
                             else:
-                                errores.append(row['sku'])
+                                errores.append(row['sku_limpio'])
                 
                 if errores:
                     st.error(f"❌ Error actualizando {len(errores)} SKUs: {', '.join(errores)}")
                 else:
                     st.success(f"✅ {cambios} registros actualizados correctamente en PostgreSQL")
-                
-                # Limpiar cache
                 st.cache_data.clear()
         else:
             st.warning("⚠️ No hay datos para editar")
-    
+            
     except Exception as e:
         st.error(f"❌ Error en tabla editable: {e}")
     
@@ -1057,7 +1031,7 @@ def show_private_dashboard():
     # ==========================================
     st.markdown("### 🧮 Simulador de Utilidades y Reglas Financieras")
     
-    with st.expander("🦅 Abrir Calculadora de Comisiones y Retenciones (Liverpool vs Walmart)", expanded=True):
+    with st.expander("🦅 Abrir Calculadora de Comisiones y Retenciones (Liverpool vs Walmart)", expanded=False):
         col_calc1, col_calc2, col_calc3, col_calc4 = st.columns(4)
         
         with col_calc1:
@@ -1067,11 +1041,8 @@ def show_private_dashboard():
         with col_calc3:
             precio_venta_sim = st.number_input("Precio de Venta Propuesto", min_value=0.0, value=350.0, step=10.0)
             
-        # --- MATEMÁTICA FINANCIERA DE TU NEGOCIO ---
         costo_con_iva = costo_base_sim * 1.16
         precio_neto_sin_iva = precio_venta_sim / 1.16
-        
-        # Retenciones fiscales (2.5% ISR + 8% IVA = 10.5% sobre precio neto sin IVA)
         retenciones_fiscales = precio_neto_sin_iva * (0.025 + 0.08)
         
         if mkt_simular == "LIVERPOOL":
@@ -1084,8 +1055,6 @@ def show_private_dashboard():
             regla_texto = "📋 Regla WMT: Comisión 15% + $76 fijo de envío."
             
         utilidad_neta = ingreso_bruto - costo_con_iva - retenciones_fiscales
-        
-        # 🟢 CORRECCIÓN: Margen calculado sobre el costo CON IVA (Retorno de Inversión)
         margen_porcentual = (utilidad_neta / costo_con_iva * 100) if costo_con_iva > 0 else 0.0
         
         with col_calc4:
@@ -1095,15 +1064,13 @@ def show_private_dashboard():
             else:
                 st.error(f"🔴 PÉRDIDA ({margen_porcentual:.1f}%)")
                 
-        # Desglose Visual Ejecutivo
         st.info(regla_texto)
-        
         metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
         metric_col1.metric("📦 Costo + IVA (Almacén)", f"${costo_con_iva:.2f}")
         metric_col2.metric("💸 Comisión + Envío Mkt", f"${comision_mkt:.2f}")
         metric_col3.metric("🏛️ Retención SAT (10.5%)", f"${retenciones_fiscales:.2f}")
         metric_col4.metric("💰 Utilidad Real Neta", f"${utilidad_neta:.2f}", 
-                           delta=f"{margen_porcentual:.1f}% Margen", 
+                           delta=f"{margen_porcentual:.1f}% ROI", 
                            delta_color="normal" if utilidad_neta > 0 else "inverse")
     
     st.markdown("---")
@@ -1112,46 +1079,29 @@ def show_private_dashboard():
     st.markdown("### 📜 HISTORIAL DE CAMBIOS (Últimos 7 días)")
     
     try:
+        # LLAMADA CORREGIDA A LA FUNCIÓN
         df_historial = get_historial_precios(days=7)
         
         if len(df_historial) > 0:
-            # Filtros
             col1, col2, col3 = st.columns(3)
+            with col1: filter_sku = st.text_input("Buscar SKU:", placeholder="Ej: SKU_123")
+            with col2: filter_resultado = st.selectbox("Filtrar por Resultado:", ["Todos", "EJECUTADO", "NO EJECUTADO"])
+            with col3: max_rows = st.number_input("Mostrar últimos N registros:", value=100, min_value=10, max_value=1000)
             
-            with col1:
-                filter_sku = st.text_input("Buscar SKU:", placeholder="Ej: SKU_123")
+            if filter_sku: df_historial = df_historial[df_historial['sku_interno'].str.contains(filter_sku, case=False)]
+            if filter_resultado != "Todos": df_historial = df_historial[df_historial['resultado'] == filter_resultado]
             
-            with col2:
-                filter_buybox = st.selectbox(
-                    "Filtrar BuyBox:",
-                    ["Todos", "Sí (Ganado)", "No (Perdido)"]
-                )
-            
-            with col3:
-                max_rows = st.number_input("Mostrar últimos N registros:", value=100, min_value=10, max_value=1000)
-            
-            # Aplicar filtros
-            if filter_sku:
-                df_historial = df_historial[df_historial['sku_interno'].str.contains(filter_sku, case=False)]
-            
-            if filter_buybox != "Todos":
-                buybox_val = "Sí" if "Ganado" in filter_buybox else "No"
-                df_historial = df_historial[df_historial['buybox'] == buybox_val]
-            
-            # Mostrar tabla
             st.dataframe(
                 df_historial.head(max_rows),
-                use_container_width=True,
-                hide_index=True,
+                use_container_width=True, hide_index=True,
                 column_config={
-                    'fecha_hora': st.column_config.TextColumn("Fecha"),
+                    'created_at': st.column_config.TextColumn("Fecha"),
                     'sku_interno': st.column_config.TextColumn("SKU Interno"),
-                    'precio_rival': st.column_config.NumberColumn("Precio Rival", format="$%.2f"),
-                    'nuestro_precio': st.column_config.NumberColumn("Nuestro Precio", format="$%.2f"),
-                    'diferencia_precio': st.column_config.NumberColumn("Margen", format="$%.2f"),
+                    'sku_limpio': st.column_config.TextColumn("SKU Limpio"),
+                    'precio_ant': st.column_config.NumberColumn("Precio Anterior", format="$%.2f"),
+                    'precio_nuv': st.column_config.NumberColumn("Precio Nuevo", format="$%.2f"),
                     'stock': st.column_config.NumberColumn("Stock"),
-                    'posicion': st.column_config.NumberColumn("Posición"),
-                    'buybox': st.column_config.TextColumn("BuyBox")
+                    'resultado': st.column_config.TextColumn("Resultado")
                 }
             )
         else:
@@ -1162,14 +1112,12 @@ def show_private_dashboard():
     
     st.markdown("---")
     
-    # ========== BOTÓN DE LOGOUT ==========
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
         if st.button("🚪 Cerrar Sesión", use_container_width=True):
             st.session_state['authenticated'] = False
             st.session_state.clear()
             st.rerun()
-
 # ==========================================
 # 🎬 MAIN APP LOGIC
 # ==========================================
