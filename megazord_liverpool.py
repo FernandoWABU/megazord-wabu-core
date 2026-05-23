@@ -987,7 +987,7 @@ def ejecutar_bot():
     with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
             executor.submit(
-                procesar_sku_threadsafe,
+                procesar_sku,
                 token, sku_lp, regla, resultados, gc_connection, hoja_config, sesion_compartida
             ): sku_lp
             for sku_lp, regla in reglas.items()
