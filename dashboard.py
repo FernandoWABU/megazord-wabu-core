@@ -27,6 +27,7 @@ import hashlib
 import json
 from functools import wraps
 import time
+import requests
 
 # ==========================================
 # 🔧 CONFIGURACIÓN & LOGGING
