@@ -1028,6 +1028,54 @@ def show_private_dashboard():
         st.error(f"❌ Error en Sala de Control: {e}")
     
     st.markdown("---")
+
+    # ==========================================
+    # 🚀 GATILLO MANUAL DE EMERGENCIA (GITHUB TRIGGER)
+    # ==========================================
+    st.markdown("### 🚀 Sistema de Lanzamiento de Patrullas (Barrido de Emergencia)")
+    
+    col_git1, col_git2 = st.columns([2, 1])
+    
+    with col_git1:
+        tienda_lanzar = st.selectbox(
+            "Selecciona qué escuadrón deseas despertar:",
+            ["ambas", "liverpool", "walmart"],
+            key="git_tienda_selector"
+        )
+    
+    with col_git2:
+        st.markdown("<br>", unsafe_allow_html=True) # Espaciador visual
+        if st.button("🔥 DISPARAR BARRIDO AHORA", use_container_width=True):
+            # Configuración secreta del repositorio de Kike
+            REPO = "FernandoWABU/megazord-wabu-core"
+            WORKFLOW_FILE = "main (7).yml" # El nombre exacto de tu Action
+            
+            # 🔐 Extraemos tu Token Personal de los Secrets de Streamlit
+            TOKEN_GITHUB = st.secrets.get("GITHUB_PAT", "")
+            
+            if not TOKEN_GITHUB:
+                st.error("❌ Error de Seguridad: No se encontró el 'GITHUB_PAT' en los Secrets de Streamlit.")
+            else:
+                with st.spinner("📬 Enviando orden de ataque a los servidores de GitHub..."):
+                    url = f"https://api.github.com/repos/{REPO}/actions/workflows/{WORKFLOW_FILE}/dispatches"
+                    headers = {
+                        "Authorization": f"Bearer {TOKEN_GITHUB}",
+                        "Accept": "application/vnd.github+json",
+                        "X-GitHub-Api-Version": "2022-11-28"
+                    }
+                    data = {
+                        "ref": "main", # Tu rama principal
+                        "inputs": {"tienda": tienda_lanzar}
+                    }
+                    
+                    response = requests.post(url, headers=headers, json=data)
+                    
+                    if response.status_code == 204:
+                        st.success(f"🚀 ¡MISIL LANZADO! El barrido para '{tienda_lanzar.upper()}' ha despertado con éxito en GitHub Actions.")
+                    else:
+                        st.error(f"❌ Falla en el lanzamiento (Código {response.status_code}): {response.text}")
+
+    st.markdown("---")
     
     # ========== TABLA EDITABLE MASIVA FILTRADA ==========
     st.markdown("### 📊 3. Editor Masivo del Canal Activo")
