@@ -1049,7 +1049,7 @@ def show_private_dashboard():
         if st.button("🔥 DISPARAR BARRIDO AHORA", use_container_width=True):
             # Configuración secreta del repositorio de Kike
             REPO = "FernandoWABU/megazord-wabu-core"
-            WORKFLOW_FILE = "main (7).yml" # El nombre exacto de tu Action
+            WORKFLOW_FILE = "main.yml"
             
             # 🔐 Extraemos tu Token Personal de los Secrets de Streamlit
             TOKEN_GITHUB = st.secrets.get("GITHUB_PAT", "")
