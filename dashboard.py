@@ -987,6 +987,7 @@ def show_private_dashboard():
                         "6. Francotirador (1+4)",
                         "7. Bomba de Tiempo (2+3)",
                         "8. Liquidador Sabio (2+4)"
+                        "9. Venta Especial"  # <--- ¡Agrega esta línea!
                     ]
                     # Detectamos qué regla tiene actualmente en la BD
                     regla_actual_bd = sku_data['regla'] if sku_data['regla'] in lista_reglas_oficiales else lista_reglas_oficiales[0]
@@ -1110,6 +1111,7 @@ def show_private_dashboard():
                             "6. Francotirador (1+4)",
                             "7. Bomba de Tiempo (2+3)",
                             "8. Liquidador Sabio (2+4)"
+                            "9. Venta Especial"  # <--- ¡Agrega esta línea!
                         ]
                     ),
                     'estatus': st.column_config.SelectboxColumn("Estatus", options=['ACTIVO', 'INACTIVO'])
