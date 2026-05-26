@@ -986,7 +986,7 @@ def show_private_dashboard():
                         "5. Depredador (1+3)",
                         "6. Francotirador (1+4)",
                         "7. Bomba de Tiempo (2+3)",
-                        "8. Liquidador Sabio (2+4)"
+                        "8. Liquidador Sabio (2+4)",
                         "9. Venta Especial"  # <--- ¡Agrega esta línea!
                     ]
                     # Detectamos qué regla tiene actualmente en la BD
@@ -1110,7 +1110,7 @@ def show_private_dashboard():
                             "5. Depredador (1+3)",
                             "6. Francotirador (1+4)",
                             "7. Bomba de Tiempo (2+3)",
-                            "8. Liquidador Sabio (2+4)"
+                            "8. Liquidador Sabio (2+4)",
                             "9. Venta Especial"  # <--- ¡Agrega esta línea!
                         ]
                     ),
