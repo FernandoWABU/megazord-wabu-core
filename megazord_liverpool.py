@@ -767,7 +767,67 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                 else:
                     resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, precios_rivales[0] if precios_rivales else "SIN RIVAL", precio_actual, cantidad, pos, bb])
 
-            # REGLAS 1, 4, 5, 6, 7, 8
+            # =========================================
+            # ⭐ REGLA 9: VENTA ESPECIAL (HOT SALE + RULETA RUSA) ⭐
+            # =========================================
+            elif tipo_regla.startswith('9'):
+                logger.info(f"   🎯 VENTA ESPECIAL | Trinquete anti-rebote + Ruleta Rusa (3h)")
+                
+                if precios_rivales:
+                    rival_mas_bajo = precios_rivales[0]
+                    # 1. Calculamos el undercut aleatorio normal
+                    baja_aleatoria = round(random.uniform(1.50, 1.95), 2)
+                    nuevo_precio_propuesto = round(rival_mas_bajo - baja_aleatoria, 2)
+                    
+                    # 2. Lógica con Probabilidad de 3 Horas (Ruleta Rusa)
+                    if nuevo_precio_propuesto >= precio_actual:
+                        # TRINQUETE
+                        dado = random.randint(1, 9)
+                        if dado == 1:
+                            logger.warning(f"   🔥 VENTA ESPECIAL | Ruleta Rusa (Salió 1). Baja agresiva de -$1.50")
+                            nuevo_precio = round(precio_actual - 1.50, 2)
+                            motivo = "🔥 Hachazo Ruleta Rusa"
+                        else:
+                            logger.info(f"   ⬇️ VENTA ESPECIAL | Trinquete activado (Dado: {dado}). Mantienen ${precio_actual}")
+                            nuevo_precio = precio_actual
+                            motivo = "🛡️ Trinquete Anti-Rebote"
+                    else:
+                        # ATAQUE NORMAL
+                        nuevo_precio = nuevo_precio_propuesto
+                        motivo = "⚔️ Ataque Normal"
+                else:
+                    # SIN RIVALES (Monopolio)
+                    nuevo_precio = precio_maximo_regla
+                    motivo = "👑 Monopolio"
+                    
+                # 3. Respetar SIEMPRE las fronteras
+                nuevo_precio = max(nuevo_precio, precio_minimo_regla)
+                nuevo_precio = min(nuevo_precio, precio_maximo_regla)
+                
+                # 4. Guardado y Notificación
+                if float(precio_actual) != float(nuevo_precio):
+                    pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
+                    if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
+                        resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo if precios_rivales else "SIN RIVAL", nuevo_precio, cantidad, pos, bb])
+                        
+                        msg_alerta = (f"🎯 *VENTA ESPECIAL ACTIVADA*\n\n📦 *{sku_i}*\n"
+                                      f"👑 Rival: `${rival_mas_bajo if precios_rivales else 'N/A'}`\n"
+                                      f"📉 Anterior: `${precio_actual}` → Nuevo: `${nuevo_precio}`\n"
+                                      f"⚙️ Táctica: {motivo}")
+                        
+                        if costo_odoo_sheet > 0:
+                            gan, mar = calcular_rentabilidad(nuevo_precio, costo_odoo_sheet)
+                            msg_alerta += f"\n💡 Ganancia: `${gan:.2f}` | Margen: `{mar:.1f}%`"
+                        resultados.agregar_alerta(msg_alerta)
+                    else:
+                        resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo if precios_rivales else "SIN RIVAL", precio_actual, cantidad, pos, bb])
+                else:
+                    pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
+                    resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo if precios_rivales else "SIN RIVAL", precio_actual, cantidad, pos, bb])
+
+            # =========================================
+            # REGLAS 1, 4, 5, 6, 7, 8 (EL RESTO DEL BATALLÓN)
+            # =========================================
             else:
                 if precios_rivales:
                     rival_mas_bajo = precios_rivales[0]
