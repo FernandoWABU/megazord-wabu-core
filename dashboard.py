@@ -973,10 +973,13 @@ def show_private_dashboard():
                 row_id_unico = sku_data['id']
                 
                 col1, col2, col3, col4 = st.columns(4)
+                
                 with col1:
                     new_min = st.number_input("Precio Mínimo", value=float(sku_data['precio_minimo']), step=0.01, format="%.2f")
+                
                 with col2:
                     new_max = st.number_input("Precio Máximo", value=float(sku_data['precio_maximo']), step=0.01, format="%.2f")
+                
                 with col3:
                     lista_reglas_oficiales = [
                         "1. Gladiador", 
@@ -993,29 +996,20 @@ def show_private_dashboard():
                     # 🛠️ Forzar a string puro y limpiar espacios fantasmas
                     regla_limpia = str(sku_data['regla']).strip()
                     
-                    # Verificamos si la regla limpia está en la lista, si no, fallback a la 1
+                    # Verificamos si la regla limpia está en la lista
                     if regla_limpia in lista_reglas_oficiales:
                         regla_actual_bd = regla_limpia
                     else:
                         regla_actual_bd = lista_reglas_oficiales[0]
                     
-                    # UN SOLO SELECTBOX MAESTRO CON LLAVE ÚNICA DINÁMICA
+                    # EL ÚNICO Y VERDADERO SELECTBOX MAESTRO
                     new_rule = st.selectbox(
                         "Regla de Repricing", 
                         options=lista_reglas_oficiales, 
                         index=lista_reglas_oficiales.index(regla_actual_bd),
-                        key=f"selector_regla_{row_id_unico}" # <--- AQUÍ ESTÁ LA MAGIA 🪄
+                        key=f"selector_regla_{row_id_unico}"
                     )
-                    # Detectamos qué regla tiene actualmente en la BD
-                    regla_actual_bd = sku_data['regla'] if sku_data['regla'] in lista_reglas_oficiales else lista_reglas_oficiales[0]
-                    
-                    # UN SOLO SELECTBOX MAESTRO
-                    new_rule = st.selectbox(
-                        "Regla de Repricing", 
-                        options=lista_reglas_oficiales, 
-                        index=lista_reglas_oficiales.index(regla_actual_bd),
-                        key="selector_regla_individual"
-                    )
+                
                 with col4:
                     st.metric("Costo ODOO Base", f"${float(sku_data['costo_odoo']):.2f}")
                 
