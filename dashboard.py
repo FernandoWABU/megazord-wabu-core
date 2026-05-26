@@ -990,7 +990,7 @@ def show_private_dashboard():
                         "9. Venta Especial"
                     ]
                     
-                    # 🛠️ LA MAGIA ESTÁ AQUÍ: Forzar a string puro y limpiar espacios fantasmas
+                    # 🛠️ Forzar a string puro y limpiar espacios fantasmas
                     regla_limpia = str(sku_data['regla']).strip()
                     
                     # Verificamos si la regla limpia está en la lista, si no, fallback a la 1
@@ -999,12 +999,12 @@ def show_private_dashboard():
                     else:
                         regla_actual_bd = lista_reglas_oficiales[0]
                     
-                    # UN SOLO SELECTBOX MAESTRO
+                    # UN SOLO SELECTBOX MAESTRO CON LLAVE ÚNICA DINÁMICA
                     new_rule = st.selectbox(
                         "Regla de Repricing", 
                         options=lista_reglas_oficiales, 
                         index=lista_reglas_oficiales.index(regla_actual_bd),
-                        key="selector_regla_individual"
+                        key=f"selector_regla_{row_id_unico}" # <--- AQUÍ ESTÁ LA MAGIA 🪄
                     )
                     # Detectamos qué regla tiene actualmente en la BD
                     regla_actual_bd = sku_data['regla'] if sku_data['regla'] in lista_reglas_oficiales else lista_reglas_oficiales[0]
