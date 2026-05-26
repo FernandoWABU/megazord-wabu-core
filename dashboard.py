@@ -987,8 +987,25 @@ def show_private_dashboard():
                         "6. Francotirador (1+4)",
                         "7. Bomba de Tiempo (2+3)",
                         "8. Liquidador Sabio (2+4)",
-                        "9. Venta Especial"  # <--- ¡Agrega esta línea!
+                        "9. Venta Especial"
                     ]
+                    
+                    # 🛠️ LA MAGIA ESTÁ AQUÍ: Forzar a string puro y limpiar espacios fantasmas
+                    regla_limpia = str(sku_data['regla']).strip()
+                    
+                    # Verificamos si la regla limpia está en la lista, si no, fallback a la 1
+                    if regla_limpia in lista_reglas_oficiales:
+                        regla_actual_bd = regla_limpia
+                    else:
+                        regla_actual_bd = lista_reglas_oficiales[0]
+                    
+                    # UN SOLO SELECTBOX MAESTRO
+                    new_rule = st.selectbox(
+                        "Regla de Repricing", 
+                        options=lista_reglas_oficiales, 
+                        index=lista_reglas_oficiales.index(regla_actual_bd),
+                        key="selector_regla_individual"
+                    )
                     # Detectamos qué regla tiene actualmente en la BD
                     regla_actual_bd = sku_data['regla'] if sku_data['regla'] in lista_reglas_oficiales else lista_reglas_oficiales[0]
                     
