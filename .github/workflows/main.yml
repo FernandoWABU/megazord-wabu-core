@@ -2,8 +2,8 @@ name: Megazord Multi-Tienda
 
 on:
   schedule:
-    # ⏱️ RELOJ 1: Liverpool (Cada hora en el minuto 17)
-    - cron: '17 * * * *'
+    # ⏱️ RELOJ 1: Liverpool (Cada 20 min: xx:15, xx:35, xx:55)
+    - cron: '15,35,55 * * * *'
     # ⏱️ RELOJ 2: Walmart (Cada 4 horas en el minuto 27 - Ej. 0:27, 4:27, 8:27...)
     - cron: '27 */4 * * *'
   workflow_dispatch:
@@ -42,8 +42,8 @@ jobs:
           python -m playwright install-deps chromium
 
       - name: 🟣 Desplegar Megazord Liverpool
-        # Se ejecuta SI le das al botón manual O SI el reloj que lo despertó fue el de cada hora
-        if: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.tienda == 'liverpool' || github.event.inputs.tienda == 'ambas')) || github.event.schedule == '17 * * * *' }}
+        # Se ejecuta SI le das al botón manual O SI el reloj que lo despertó fue el de 15,35,55
+        if: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.tienda == 'liverpool' || github.event.inputs.tienda == 'ambas')) || github.event.schedule == '15,35,55 * * * *' }}
         env:
           SHOP_ID_INTERNO: ${{ secrets.SHOP_ID_INTERNO }}
           SHOP_ID_PUBLICO: ${{ secrets.SHOP_ID_PUBLICO }}
