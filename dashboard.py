@@ -1041,11 +1041,12 @@ def show_private_dashboard():
                 
                 try:
                     if tienda_activa == "LIVERPOOL":
-                        # 🛠️ QUITAMOS EL INTERVALO DE 30 DÍAS PARA FORZAR LA APARICIÓN DE DATOS ANTIGUOS
+                        # 🛠️ EVOLUCIÓN: Agregamos las columnas stock y buybox a la extracción
                         query_lvp = """
-                        SELECT fecha_hora as created_at, nuestro_precio, precio_rival 
+                        SELECT fecha_hora as created_at, nuestro_precio, precio_rival, stock, buybox 
                         FROM historial_precios 
                         WHERE (sku_interno ILIKE %s OR sku_liverpool ILIKE %s) 
+                        AND fecha_hora >= NOW() - INTERVAL '30 days' 
                         ORDER BY fecha_hora ASC
                         """
                         
@@ -1060,16 +1061,59 @@ def show_private_dashboard():
                         if not df_grafica.empty:
                             df_grafica['created_at'] = pd.to_datetime(df_grafica['created_at'])
                             
+                            # 🛡️ Blindajes numéricos habituales
                             df_grafica['nuestro_precio'] = pd.to_numeric(df_grafica['nuestro_precio'], errors='coerce')
                             df_grafica['precio_rival'] = pd.to_numeric(df_grafica['precio_rival'], errors='coerce')
                             
+                            # 🧳 Limpieza de metadatos para la etiqueta
+                            df_grafica['stock'] = pd.to_numeric(df_grafica['stock'], errors='coerce').fillna(0).astype(int)
+                            df_grafica['buybox'] = df_grafica['buybox'].fillna('Desconocido').astype(str)
+                            
                             fig = go.Figure()
-                            fig.add_trace(go.Scatter(x=df_grafica['created_at'], y=df_grafica['nuestro_precio'], mode='lines+markers', name='🔵 Nuestro Precio', line=dict(color='#00D9FF', width=3)))
-                            fig.add_trace(go.Scatter(x=df_grafica['created_at'], y=df_grafica['precio_rival'], mode='lines', name='🔴 BuyBox Rival', line=dict(color='#FF003C', width=2, dash='dot')))
-                            fig.update_layout(plot_bgcolor='#0E1117', paper_bgcolor='#0E1117', font=dict(color='#FFFFFF'), hovermode='x unified', margin=dict(l=0, r=0, t=30, b=0), height=400)
+                            
+                            # 🔵 TRAZA NUESTRO PRECIO (Con Hover Personalizado)
+                            fig.add_trace(go.Scatter(
+                                x=df_grafica['created_at'], 
+                                y=df_grafica['nuestro_precio'], 
+                                mode='lines+markers', 
+                                name='🔵 Nuestro Precio', 
+                                line=dict(color='#00D9FF', width=3),
+                                # Empaquetamos stock y dueño de la buybox en el flujo de la gráfica
+                                customdata=np.stack((df_grafica['stock'], df_grafica['buybox']), axis=-1),
+                                hovertemplate=(
+                                    "<b>📅 Fecha:</b> %{x}<br>"
+                                    "<b>💰 Nuestro Precio:</b> $%{y:.2f}<br>"
+                                    "<b>📦 Nuestro Stock:</b> %{customdata[0]} pzs<br>"
+                                    "<b>👑 Dueño BuyBox:</b> %{customdata[1]}<extra></extra>"
+                                )
+                            ))
+                            
+                            # 🔴 TRAZA PRECIO RIVAL (Con Hover Personalizado)
+                            fig.add_trace(go.Scatter(
+                                x=df_grafica['created_at'], 
+                                y=df_grafica['precio_rival'], 
+                                mode='lines', 
+                                name='🔴 BuyBox Rival', 
+                                line=dict(color='#FF003C', width=2, dash='dot'),
+                                customdata=df_grafica['buybox'],
+                                hovertemplate=(
+                                    "<b>📅 Fecha:</b> %{x}<br>"
+                                    "<b>🥊 Precio Competencia:</b> $%{y:.2f}<br>"
+                                    "<b>👑 Líder Detectado:</b> %{customdata}<extra></extra>"
+                                )
+                            ))
+                            
+                            fig.update_layout(
+                                plot_bgcolor='#0E1117', 
+                                paper_bgcolor='#0E1117', 
+                                font=dict(color='#FFFFFF'), 
+                                hovermode='x unified', 
+                                margin=dict(l=0, r=0, t=30, b=0), 
+                                height=400
+                            )
                             st.plotly_chart(fig, use_container_width=True)
                         else:
-                            st.info(f"No hay NINGÚN historial de cambios registrado para el SKU '{sku_int}'.")
+                            st.info(f"No hay historial de cambios para el SKU '{sku_int}' en los últimos 30 días.")
                             
                     elif tienda_activa == "WALMART":
                         query_wmt = """
