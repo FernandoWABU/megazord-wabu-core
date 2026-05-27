@@ -1034,27 +1034,24 @@ def show_private_dashboard():
                             st.error("❌ Error de comunicación con la base de datos central.")
 
                 # ==========================================
-                # 📈 INYECCIÓN DE LA GRÁFICA DE HISTORIAL (V4 - ILIKE FIX)
+                # 📈 INYECCIÓN DE LA GRÁFICA (V5 - SIN LÍMITE DE TIEMPO)
                 # ==========================================
                 st.markdown("<br>", unsafe_allow_html=True)
-                st.markdown(f"#### 📈 Radar de Precios (30 Días) - {tienda_activa}")
+                st.markdown(f"#### 📈 Radar de Precios (Histórico Completo) - {tienda_activa}")
                 
                 try:
                     if tienda_activa == "LIVERPOOL":
-                        # 🛠️ CORREGIDO: Usamos ILIKE para buscar dentro de cadenas concatenadas como "1182084057|SHMTBOY4"
+                        # 🛠️ QUITAMOS EL INTERVALO DE 30 DÍAS PARA FORZAR LA APARICIÓN DE DATOS ANTIGUOS
                         query_lvp = """
                         SELECT fecha_hora as created_at, nuestro_precio, precio_rival 
                         FROM historial_precios 
                         WHERE (sku_interno ILIKE %s OR sku_liverpool ILIKE %s) 
-                        AND fecha_hora >= NOW() - INTERVAL '30 days' 
                         ORDER BY fecha_hora ASC
                         """
                         
-                        # Extraemos los identificadores limpios de la fila seleccionada
                         sku_int = str(sku_data.get('sku_interno') or sku_data.get('sku') or '').strip()
                         sku_lvp = str(sku_data.get('sku_liverpool') or sku_data.get('sku_limpio') or '').strip()
                         
-                        # Envolvemos en comodines % para que SQL coincida en cualquier parte (ej. "%SHMTBOY4%")
                         sku_int_param = f"%{sku_int}%" if sku_int else "%VALOR_NULO%"
                         sku_lvp_param = f"%{sku_lvp}%" if sku_lvp else "%VALOR_NULO%"
                         
@@ -1063,7 +1060,6 @@ def show_private_dashboard():
                         if not df_grafica.empty:
                             df_grafica['created_at'] = pd.to_datetime(df_grafica['created_at'])
                             
-                            # 🛡️ Blindaje Anti-Textos ("SIN RIVAL", "Oculto/Agotados")
                             df_grafica['nuestro_precio'] = pd.to_numeric(df_grafica['nuestro_precio'], errors='coerce')
                             df_grafica['precio_rival'] = pd.to_numeric(df_grafica['precio_rival'], errors='coerce')
                             
@@ -1073,13 +1069,13 @@ def show_private_dashboard():
                             fig.update_layout(plot_bgcolor='#0E1117', paper_bgcolor='#0E1117', font=dict(color='#FFFFFF'), hovermode='x unified', margin=dict(l=0, r=0, t=30, b=0), height=400)
                             st.plotly_chart(fig, use_container_width=True)
                         else:
-                            st.info(f"No hay historial de cambios para el SKU '{sku_int}' en los últimos 30 días.")
+                            st.info(f"No hay NINGÚN historial de cambios registrado para el SKU '{sku_int}'.")
                             
                     elif tienda_activa == "WALMART":
                         query_wmt = """
                         SELECT created_at, nombre_rival, precio_rival 
                         FROM monitoreo_rivales 
-                        WHERE marketplace = 'WALMART' AND catalogo_id = %s AND created_at >= NOW() - INTERVAL '30 days' 
+                        WHERE marketplace = 'WALMART' AND catalogo_id = %s 
                         ORDER BY created_at ASC
                         """
                         df_grafica = db.execute_query(query_wmt, (int(row_id_unico),))
@@ -1092,13 +1088,13 @@ def show_private_dashboard():
                             fig.update_layout(plot_bgcolor='#0E1117', paper_bgcolor='#0E1117', font=dict(color='#FFFFFF'), hovermode='x unified', margin=dict(l=0, r=0, t=30, b=0), height=400)
                             st.plotly_chart(fig, use_container_width=True)
                         else:
-                            st.info("No hay escaneos de rivales para este SKU en Walmart en los últimos 30 días.")
+                            st.info("No hay escaneos de rivales para este SKU en Walmart.")
                             
                     elif tienda_activa == "COPPEL":
                         query_cpp = """
                         SELECT created_at, precio_nuevo, regla_aplicada 
                         FROM historial_operaciones 
-                        WHERE marketplace = 'COPPEL' AND catalogo_id = %s AND created_at >= NOW() - INTERVAL '30 days' 
+                        WHERE marketplace = 'COPPEL' AND catalogo_id = %s 
                         ORDER BY created_at ASC
                         """
                         df_grafica = db.execute_query(query_cpp, (int(row_id_unico),))
@@ -1112,7 +1108,7 @@ def show_private_dashboard():
                             fig.update_layout(plot_bgcolor='#0E1117', paper_bgcolor='#0E1117', font=dict(color='#FFFFFF'), hovermode='x unified', margin=dict(l=0, r=0, t=30, b=0), height=400)
                             st.plotly_chart(fig, use_container_width=True)
                         else:
-                            st.info("No hay historial de operaciones para este SKU en Coppel en los últimos 30 días.")
+                            st.info("No hay historial de operaciones para este SKU en Coppel.")
                             
                 except Exception as e:
                     st.error(f"Error cargando gráfica: {e}")
