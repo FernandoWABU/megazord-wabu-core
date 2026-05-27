@@ -1034,31 +1034,36 @@ def show_private_dashboard():
                             st.error("❌ Error de comunicación con la base de datos central.")
 
                 # ==========================================
-                # 📈 INYECCIÓN DE LA GRÁFICA DE HISTORIAL (AUTO-SUFICIENTE V3)
+                # 📈 INYECCIÓN DE LA GRÁFICA DE HISTORIAL (V4 - ILIKE FIX)
                 # ==========================================
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.markdown(f"#### 📈 Radar de Precios (30 Días) - {tienda_activa}")
                 
                 try:
                     if tienda_activa == "LIVERPOOL":
-                        # 🛠️ Consulta limpia de 2 parámetros usando el diccionario row de la BD
+                        # 🛠️ CORREGIDO: Usamos ILIKE para buscar dentro de cadenas concatenadas como "1182084057|SHMTBOY4"
                         query_lvp = """
                         SELECT fecha_hora as created_at, nuestro_precio, precio_rival 
                         FROM historial_precios 
-                        WHERE (TRIM(sku_interno) = %s OR TRIM(sku_liverpool) = %s) 
+                        WHERE (sku_interno ILIKE %s OR sku_liverpool ILIKE %s) 
                         AND fecha_hora >= NOW() - INTERVAL '30 days' 
                         ORDER BY fecha_hora ASC
                         """
-                        # Extraemos los identificadores directamente de sku_data que está 100% definido en el scope
+                        
+                        # Extraemos los identificadores limpios de la fila seleccionada
                         sku_int = str(sku_data.get('sku_interno') or sku_data.get('sku') or '').strip()
                         sku_lvp = str(sku_data.get('sku_liverpool') or sku_data.get('sku_limpio') or '').strip()
                         
-                        df_grafica = db.execute_query(query_lvp, (sku_int, sku_lvp))
+                        # Envolvemos en comodines % para que SQL coincida en cualquier parte (ej. "%SHMTBOY4%")
+                        sku_int_param = f"%{sku_int}%" if sku_int else "%VALOR_NULO%"
+                        sku_lvp_param = f"%{sku_lvp}%" if sku_lvp else "%VALOR_NULO%"
+                        
+                        df_grafica = db.execute_query(query_lvp, (sku_int_param, sku_lvp_param))
                         
                         if not df_grafica.empty:
                             df_grafica['created_at'] = pd.to_datetime(df_grafica['created_at'])
                             
-                            # 🛡️ BLINDAJE ANTI-CRASH: Convierte los textos ("SIN RIVAL", "Oculto/Agotados") en valores vacíos numéricos
+                            # 🛡️ Blindaje Anti-Textos ("SIN RIVAL", "Oculto/Agotados")
                             df_grafica['nuestro_precio'] = pd.to_numeric(df_grafica['nuestro_precio'], errors='coerce')
                             df_grafica['precio_rival'] = pd.to_numeric(df_grafica['precio_rival'], errors='coerce')
                             
