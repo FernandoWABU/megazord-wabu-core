@@ -1032,6 +1032,74 @@ def show_private_dashboard():
                             st.rerun()
                         else:
                             st.error("❌ Error de comunicación con la base de datos central.")
+
+                # ==========================================
+                # 📈 INYECCIÓN DE LA GRÁFICA DE HISTORIAL (CORREGIDA)
+                # ==========================================
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown(f"#### 📈 Radar de Precios (30 Días) - {tienda_activa}")
+                
+                try:
+                    if tienda_activa == "LIVERPOOL":
+                        # CUIDADO: Nombres de columnas reales de DBeaver
+                        query_lvp = """
+                        SELECT fecha_hora as created_at, nuestro_precio, precio_rival 
+                        FROM historial_precios 
+                        WHERE sku_interno = %s AND fecha_hora >= NOW() - INTERVAL '30 days' 
+                        ORDER BY fecha_hora ASC
+                        """
+                        df_grafica = db.execute_query(query_lvp, (str(sku_data['sku_interno']),))
+                        
+                        if not df_grafica.empty:
+                            df_grafica['created_at'] = pd.to_datetime(df_grafica['created_at'])
+                            fig = go.Figure()
+                            fig.add_trace(go.Scatter(x=df_grafica['created_at'], y=df_grafica['nuestro_precio'], mode='lines+markers', name='🔵 Nuestro Precio', line=dict(color='#00D9FF', width=3)))
+                            fig.add_trace(go.Scatter(x=df_grafica['created_at'], y=df_grafica['precio_rival'], mode='lines', name='🔴 BuyBox Rival', line=dict(color='#FF003C', width=2, dash='dot')))
+                            fig.update_layout(plot_bgcolor='#0E1117', paper_bgcolor='#0E1117', font=dict(color='#FFFFFF'), hovermode='x unified', margin=dict(l=0, r=0, t=30, b=0), height=400)
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("No hay historial de cambios para este SKU en Liverpool en los últimos 30 días.")
+                            
+                    elif tienda_activa == "WALMART":
+                        # CUIDADO: Nombres de columnas reales de DBeaver
+                        query_wmt = """
+                        SELECT created_at, nombre_rival, precio_rival 
+                        FROM monitoreo_rivales 
+                        WHERE marketplace = 'WALMART' AND catalogo_id = %s AND created_at >= NOW() - INTERVAL '30 days' 
+                        ORDER BY created_at ASC
+                        """
+                        df_grafica = db.execute_query(query_wmt, (int(row_id_unico),))
+                        
+                        if not df_grafica.empty:
+                            df_grafica['created_at'] = pd.to_datetime(df_grafica['created_at'])
+                            fig = px.line(df_grafica, x='created_at', y='precio_rival', color='nombre_rival', title="Tendencia de Rivales (Walmart)", color_discrete_sequence=px.colors.qualitative.Set1)
+                            fig.update_layout(plot_bgcolor='#0E1117', paper_bgcolor='#0E1117', font=dict(color='#FFFFFF'), hovermode='x unified', margin=dict(l=0, r=0, t=30, b=0), height=400)
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("No hay escaneos de rivales para este SKU en Walmart en los últimos 30 días.")
+                            
+                    elif tienda_activa == "COPPEL":
+                        # CUIDADO: Nombres de columnas reales de DBeaver
+                        query_cpp = """
+                        SELECT created_at, precio_nuevo, regla_aplicada 
+                        FROM historial_operaciones 
+                        WHERE marketplace = 'COPPEL' AND catalogo_id = %s AND created_at >= NOW() - INTERVAL '30 days' 
+                        ORDER BY created_at ASC
+                        """
+                        df_grafica = db.execute_query(query_cpp, (int(row_id_unico),))
+                        
+                        if not df_grafica.empty:
+                            df_grafica['created_at'] = pd.to_datetime(df_grafica['created_at'])
+                            fig = go.Figure()
+                            fig.add_trace(go.Scatter(x=df_grafica['created_at'], y=df_grafica['precio_nuevo'], mode='lines+markers', name='🟠 Precio Coppel', line=dict(color='#FFA500', width=3)))
+                            fig.update_layout(plot_bgcolor='#0E1117', paper_bgcolor='#0E1117', font=dict(color='#FFFFFF'), hovermode='x unified', margin=dict(l=0, r=0, t=30, b=0), height=400)
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("No hay historial de operaciones para este SKU en Coppel en los últimos 30 días.")
+                            
+                except Exception as e:
+                    st.error(f"Error cargando gráfica: {e}")
+                # ==========================================
             else:
                 st.warning(f"⚠️ No se encontraron listados en {tienda_activa} con ese criterio.")
         else:
