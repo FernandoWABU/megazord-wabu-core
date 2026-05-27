@@ -771,30 +771,49 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
             # ⭐ REGLA 9: VENTA ESPECIAL (HOT SALE + RULETA RUSA) ⭐
             # =========================================
             elif tipo_regla.startswith('9'):
-                logger.info(f"   🎯 VENTA ESPECIAL | Trinquete anti-rebote + Ruleta Rusa (3h)")
+                logger.info(f"   🎯 VENTA ESPECIAL | Trinquete + Ruleta + Escudo Sombra")
                 
                 if precios_rivales:
                     rival_mas_bajo = precios_rivales[0]
-                    # 1. Calculamos el undercut aleatorio normal
-                    baja_aleatoria = round(random.uniform(1.50, 1.95), 2)
-                    nuevo_precio_propuesto = round(rival_mas_bajo - baja_aleatoria, 2)
                     
-                    # 2. Lógica con Probabilidad de 3 Horas (Ruleta Rusa)
-                    if nuevo_precio_propuesto >= precio_actual:
-                        # TRINQUETE
-                        dado = random.randint(1, 9)
-                        if dado == 1:
-                            logger.warning(f"   🔥 VENTA ESPECIAL | Ruleta Rusa (Salió 1). Baja agresiva de -$1.50")
-                            nuevo_precio = round(precio_actual - 1.50, 2)
-                            motivo = "🔥 Hachazo Ruleta Rusa"
+                    # 🟢 ESCUDO: ¿El rival más bajo está dentro de nuestro margen permitido?
+                    if rival_mas_bajo >= precio_minimo_regla:
+                        # 1. Calculamos el undercut aleatorio normal
+                        baja_aleatoria = round(random.uniform(1.50, 1.95), 2)
+                        nuevo_precio_propuesto = round(rival_mas_bajo - baja_aleatoria, 2)
+                        
+                        # 2. Lógica con Probabilidad de 3 Horas (Ruleta Rusa)
+                        if nuevo_precio_propuesto >= precio_actual:
+                            # TRINQUETE
+                            dado = random.randint(1, 9)
+                            if dado == 1:
+                                logger.warning(f"   🔥 VENTA ESPECIAL | Ruleta Rusa (Salió 1). Baja agresiva de -$1.50")
+                                nuevo_precio = round(precio_actual - 1.50, 2)
+                                motivo = "🔥 Hachazo Ruleta Rusa"
+                            else:
+                                logger.info(f"   ⬇️ VENTA ESPECIAL | Trinquete activado (Dado: {dado}). Mantienen ${precio_actual}")
+                                nuevo_precio = precio_actual
+                                motivo = "🛡️ Trinquete Anti-Rebote"
                         else:
-                            logger.info(f"   ⬇️ VENTA ESPECIAL | Trinquete activado (Dado: {dado}). Mantienen ${precio_actual}")
-                            nuevo_precio = precio_actual
-                            motivo = "🛡️ Trinquete Anti-Rebote"
+                            # ATAQUE NORMAL
+                            nuevo_precio = nuevo_precio_propuesto
+                            motivo = "⚔️ Ataque Normal"
+                            
                     else:
-                        # ATAQUE NORMAL
-                        nuevo_precio = nuevo_precio_propuesto
-                        motivo = "⚔️ Ataque Normal"
+                        # 🔴 EL RIVAL PERFORÓ NUESTRO MÍNIMO: ACTIVAMOS SOMBRA PRICING (.09)
+                        rivales_viables = [p for p in precios_rivales if p >= precio_minimo_regla]
+                        
+                        if rivales_viables:
+                            objetivo_sombra = rivales_viables[0]
+                            nuevo_precio = round(float(int(objetivo_sombra) - 1) + 0.09, 2)
+                            motivo = "🎯 Sombra Activada (.09)"
+                            logger.info(f"   🎯 VENTA ESPECIAL | Haciendo sombra a rival viable: ${nuevo_precio}")
+                        else:
+                            # Todos están rematando, nos congelamos
+                            nuevo_precio = precio_actual
+                            motivo = "🛑 Alerta Roja (Perdida BB)"
+                            logger.warning(f"   🛑 VENTA ESPECIAL | Pérdida de BuyBox. Congelado en ${precio_actual}")
+
                 else:
                     # SIN RIVALES (Monopolio)
                     nuevo_precio = precio_maximo_regla
@@ -807,30 +826,49 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                 # 4. Guardado y Notificación
                 if float(precio_actual) != float(nuevo_precio):
                     pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
-                    
-                    # 💡 AQUÍ ESTÁ LA MAGIA: Inyectamos el motivo al resultado de la base de datos
                     bb_con_motivo = f"{bb} | {motivo}"
                     
                     if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
                         resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo if precios_rivales else "SIN RIVAL", nuevo_precio, cantidad, pos, bb_con_motivo])
                         
-                        msg_alerta = (f"🎯 *VENTA ESPECIAL ACTIVADA*\n\n📦 *{sku_i}*\n"
-                                      f"👑 Rival: `${rival_mas_bajo if precios_rivales else 'N/A'}`\n"
-                                      f"📉 Anterior: `${precio_actual}` → Nuevo: `${nuevo_precio}`\n"
-                                      f"⚙️ Táctica: {motivo}")
+                        # Mensaje dinámico según la táctica
+                        if motivo == "🎯 Sombra Activada (.09)":
+                            vendedor_ganador = info_rivales[0]["nombre"] if info_rivales else "Desconocido"
+                            msg_alerta = (f"🚨 *ALERTA TÁCTICA: Sombra Activada (Regla 9)*\n\n📦 *{sku_i}*\n"
+                                          f"👑 Ganador actual: *{vendedor_ganador}*\n"
+                                          f"💰 Precio de la BuyBox: `${rival_mas_bajo}`\n"
+                                          f"🎯 Haciendo Sombra a: `${nuevo_precio}`...")
+                        else:
+                            msg_alerta = (f"🎯 *VENTA ESPECIAL ACTIVADA*\n\n📦 *{sku_i}*\n"
+                                          f"👑 Rival: `${rival_mas_bajo if precios_rivales else 'N/A'}`\n"
+                                          f"📉 Anterior: `${precio_actual}` → Nuevo: `${nuevo_precio}`\n"
+                                          f"⚙️ Táctica: {motivo}")
                         
                         if costo_odoo_sheet > 0:
-                            gan, mar = calcular_rentabilidad(nuevo_precio, costo_odoo_sheet)
-                            msg_alerta += f"\n💡 Ganancia: `${gan:.2f}` | Margen: `{mar:.1f}%`"
+                            gan, mar = calcular_rentabilidad(nuevo_precio if motivo != "🎯 Sombra Activada (.09)" else rival_mas_bajo, costo_odoo_sheet)
+                            msg_alerta += f"\n💡 Ganancia referencial: `${gan:.2f}` | Margen: `{mar:.1f}%`"
                         resultados.agregar_alerta(msg_alerta)
                     else:
                         resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo if precios_rivales else "SIN RIVAL", precio_actual, cantidad, pos, bb_con_motivo])
                 else:
                     pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
-                    
-                    # 💡 AQUÍ TAMBIÉN: Para cuando el Trinquete bloquea el precio
                     bb_con_motivo = f"{bb} | {motivo}"
                     
+                    # Alerta Roja Específica si no hay sombra y perdimos la BuyBox
+                    if motivo == "🛑 Alerta Roja (Perdida BB)":
+                        gan_roja, mar_roja = calcular_rentabilidad(rival_mas_bajo, costo_odoo_sheet)
+                        vendedor_ganador = info_rivales[0]["nombre"] if info_rivales else "Desconocido"
+                        msg_alerta = (
+                            f"🛑 *ALERTA ROJA: Has perdido la BuyBox (Regla 9)*\n\n"
+                            f"📦 *{sku_i}*\n"
+                            f"👑 Ganador actual: *{vendedor_ganador}*\n"
+                            f"💰 Precio de la BuyBox: `${rival_mas_bajo}`\n"
+                            f"🥶 Me quedo congelado en `${precio_actual}` (Mínimo: `${precio_minimo_regla}`).\n"
+                            f"💡 Para poder salir (igualando a `${rival_mas_bajo}`):\n"
+                            f"Ganancia: `${gan_roja:.2f}` | Margen: `{mar_roja:.1f}%`"
+                        )
+                        resultados.agregar_alerta(msg_alerta)
+                        
                     resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo if precios_rivales else "SIN RIVAL", precio_actual, cantidad, pos, bb_con_motivo])
 
             # =========================================
