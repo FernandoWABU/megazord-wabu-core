@@ -807,8 +807,12 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                 # 4. Guardado y Notificación
                 if float(precio_actual) != float(nuevo_precio):
                     pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
+                    
+                    # 💡 AQUÍ ESTÁ LA MAGIA: Inyectamos el motivo al resultado de la base de datos
+                    bb_con_motivo = f"{bb} | {motivo}"
+                    
                     if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
-                        resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo if precios_rivales else "SIN RIVAL", nuevo_precio, cantidad, pos, bb])
+                        resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo if precios_rivales else "SIN RIVAL", nuevo_precio, cantidad, pos, bb_con_motivo])
                         
                         msg_alerta = (f"🎯 *VENTA ESPECIAL ACTIVADA*\n\n📦 *{sku_i}*\n"
                                       f"👑 Rival: `${rival_mas_bajo if precios_rivales else 'N/A'}`\n"
@@ -820,10 +824,14 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                             msg_alerta += f"\n💡 Ganancia: `${gan:.2f}` | Margen: `{mar:.1f}%`"
                         resultados.agregar_alerta(msg_alerta)
                     else:
-                        resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo if precios_rivales else "SIN RIVAL", precio_actual, cantidad, pos, bb])
+                        resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo if precios_rivales else "SIN RIVAL", precio_actual, cantidad, pos, bb_con_motivo])
                 else:
                     pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
-                    resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo if precios_rivales else "SIN RIVAL", precio_actual, cantidad, pos, bb])
+                    
+                    # 💡 AQUÍ TAMBIÉN: Para cuando el Trinquete bloquea el precio
+                    bb_con_motivo = f"{bb} | {motivo}"
+                    
+                    resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo if precios_rivales else "SIN RIVAL", precio_actual, cantidad, pos, bb_con_motivo])
 
             # =========================================
             # REGLAS 1, 4, 5, 6, 7, 8 (EL RESTO DEL BATALLÓN)
