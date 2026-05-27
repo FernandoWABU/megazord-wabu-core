@@ -1034,29 +1034,32 @@ def show_private_dashboard():
                             st.error("❌ Error de comunicación con la base de datos central.")
 
                 # ==========================================
-                # 📈 INYECCIÓN DE LA GRÁFICA DE HISTORIAL (BLINDADA)
+                # 📈 INYECCIÓN DE LA GRÁFICA DE HISTORIAL (BULLETPROOF V2)
                 # ==========================================
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.markdown(f"#### 📈 Radar de Precios (30 Días) - {tienda_activa}")
                 
                 try:
                     if tienda_activa == "LIVERPOOL":
-                        # Búsqueda implacable: Busca por SKU interno o SKU Liverpool, limpiando espacios
+                        # 🛠️ CORREGIDO: Ahora tenemos 4 comodines para buscar por cualquier combinación de SKU
                         query_lvp = """
                         SELECT fecha_hora as created_at, nuestro_precio, precio_rival 
                         FROM historial_precios 
-                        WHERE (TRIM(sku_interno) = %s OR TRIM(sku_liverpool) = %s) 
+                        WHERE (TRIM(sku_interno) = %s OR TRIM(sku_liverpool) = %s OR TRIM(sku_interno) = %s OR TRIM(sku_liverpool) = %s) 
                         AND fecha_hora >= NOW() - INTERVAL '30 days' 
                         ORDER BY fecha_hora ASC
                         """
-                        sku_int = str(sku_data['sku_interno']).strip()
-                        sku_lvp = str(sku_data['sku_liverpool']).strip()
-                        df_grafica = db.execute_query(query_lvp, (sku_int, sku_lvp))
+                        sku_int = str(sku_data.get('sku_interno', sku_seleccionado)).strip()
+                        sku_lvp = str(sku_data.get('sku_liverpool', sku_seleccionado)).strip()
+                        sku_sel = str(sku_seleccionado).strip()
+                        
+                        # Enviamos exactamente los 4 parámetros correspondientes a los 4 comodines %s
+                        df_grafica = db.execute_query(query_lvp, (sku_int, sku_lvp, sku_sel, sku_sel))
                         
                         if not df_grafica.empty:
                             df_grafica['created_at'] = pd.to_datetime(df_grafica['created_at'])
                             
-                            # 🛠️ BLINDAJE ANTI-CRASH: Convierte los textos como "SIN RIVAL" en valores nulos matemáticos
+                            # 🛡️ BLINDAJE ANTI-CRASH: Convierte los textos ("SIN RIVAL", "Oculto/Agotados") en valores vacíos numéricos
                             df_grafica['nuestro_precio'] = pd.to_numeric(df_grafica['nuestro_precio'], errors='coerce')
                             df_grafica['precio_rival'] = pd.to_numeric(df_grafica['precio_rival'], errors='coerce')
                             
@@ -1066,7 +1069,7 @@ def show_private_dashboard():
                             fig.update_layout(plot_bgcolor='#0E1117', paper_bgcolor='#0E1117', font=dict(color='#FFFFFF'), hovermode='x unified', margin=dict(l=0, r=0, t=30, b=0), height=400)
                             st.plotly_chart(fig, use_container_width=True)
                         else:
-                            st.info("No hay historial de cambios para este SKU en Liverpool en los últimos 30 días. (El Megazord aún no ha registrado movimientos).")
+                            st.info(f"No hay historial de cambios para el SKU '{sku_seleccionado}' en los últimos 30 días.")
                             
                     elif tienda_activa == "WALMART":
                         query_wmt = """
