@@ -1232,9 +1232,24 @@ def show_private_dashboard():
             if filter_sku: df_historial = df_historial[df_historial['sku_interno'].str.contains(filter_sku, case=False)]
             if filter_resultado != "Todos": df_historial = df_historial[df_historial['resultado'] == filter_resultado]
             
+            # --- BLOQUE DE VISUALIZACIÓN TÁCTICA ---
+            def resaltar_regla_9(row):
+                """Aplica colores a las filas basado en el resultado"""
+                res = str(row['resultado'])
+                if "Ruleta Rusa" in res:
+                    return ['background-color: #8B0000; color: white'] * len(row) # Rojo vino agresivo
+                elif "Trinquete" in res:
+                    return ['background-color: #B8860B; color: black'] * len(row) # Amarillo dorado alerta
+                return [''] * len(row)
+
+            # Convertimos a formato estilizado antes de enviar a Streamlit
+            df_estilizado = df_historial.head(max_rows).style.apply(resaltar_regla_9, axis=1)
+
+            # Mostramos la tabla estilizada
             st.dataframe(
-                df_historial.head(max_rows),
-                use_container_width=True, hide_index=True,
+                df_estilizado,
+                use_container_width=True, 
+                hide_index=True,
                 column_config={
                     'created_at': st.column_config.TextColumn("Fecha"),
                     'sku_interno': st.column_config.TextColumn("SKU Interno"),
