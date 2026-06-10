@@ -397,8 +397,12 @@ def show_private_dashboard():
         df_e = st.data_editor(df_b, hide_index=True, use_container_width=True)
         if st.button("💾 Guardar Bóveda"):
             for _, r in df_e.iterrows():
-                db.execute_update("UPDATE cuentas_liverpool SET is_active=%s, cookie_vip=%s WHERE id_cuenta=%s", (r['is_active'], r['cookie_vip'], r['id_cuenta']))
-            st.success("✅ Bóveda Actualizada")
+                # ¡CORREGIDO! Ahora manda a guardar el Nombre, el Correo, el Switch y la Cookie.
+                db.execute_update(
+                    "UPDATE cuentas_liverpool SET nombre_descriptivo=%s, email_usuario=%s, is_active=%s, cookie_vip=%s WHERE id_cuenta=%s", 
+                    (r['nombre_descriptivo'], r['email_usuario'], r['is_active'], r['cookie_vip'], r['id_cuenta'])
+                )
+            st.success("✅ Bóveda Actualizada con Éxito")
             st.rerun()
 
     # ACORDEÓN: HISTORIAL
