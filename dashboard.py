@@ -37,7 +37,7 @@ st.set_page_config(
 )
 
 # ==========================================
-# 🎨 DARK MODE CSS
+# 🎨 DARK MODE CSS (Corregido para visibilidad)
 # ==========================================
 
 DARK_MODE_CSS = """
@@ -53,7 +53,25 @@ DARK_MODE_CSS = """
         --border-color: #00d9ff;
     }
     .main { background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%); color: #ffffff; }
-    [data-testid="stSidebar"] { background: linear-gradient(180deg, #0f1428 0%, #1a1f3a 100%); border-right: 2px solid #00d9ff; }
+    
+    /* FIX DE VISIBILIDAD DEL SIDEBAR */
+    [data-testid="stSidebar"] { 
+        background-color: #0f1428 !important; 
+        border-right: 2px solid #00d9ff; 
+    }
+    [data-testid="stSidebar"] label, 
+    [data-testid="stSidebar"] p, 
+    [data-testid="stSidebar"] span, 
+    [data-testid="stSidebar"] div { 
+        color: #ffffff !important; 
+    }
+    [data-testid="stSidebar"] h1, 
+    [data-testid="stSidebar"] h2, 
+    [data-testid="stSidebar"] h3 { 
+        color: #00d9ff !important; 
+        font-weight: bold;
+    }
+
     h1, h2, h3 { color: #00d9ff; text-shadow: 0 0 10px rgba(0, 217, 255, 0.3); font-weight: 700; }
     .metric-box { background: linear-gradient(135deg, #1a1f3a 0%, #0f2540 100%); border: 2px solid #00d9ff; border-radius: 8px; padding: 20px; box-shadow: 0 0 20px rgba(0, 217, 255, 0.2); transition: all 0.3s ease; }
     .stButton > button { background: linear-gradient(135deg, #00d9ff 0%, #1db954 100%); color: #0a0e27; border: none; border-radius: 6px; font-weight: bold; padding: 12px 24px; transition: all 0.3s ease; text-transform: uppercase; }
@@ -228,7 +246,7 @@ def show_private_dashboard():
             sku_data = df_filtrado.iloc[sel_idx]
             row_id = sku_data['id']
             
-            # 5 COLUMNAS (Incluye el nuevo selector de cuenta individual)
+            # 5 COLUMNAS
             c1, c2, c3, c4, c5 = st.columns(5)
             with c1: new_min = st.number_input("P. Mín", value=float(sku_data['precio_minimo']), step=0.01)
             with c2: new_max = st.number_input("P. Máx", value=float(sku_data['precio_maximo']), step=0.01)
@@ -238,7 +256,6 @@ def show_private_dashboard():
                 if r_act not in r_list: r_act = r_list[0]
                 new_rule = st.selectbox("Regla", r_list, index=r_list.index(r_act))
             with c4:
-                # Selector de Cambio de Cuenta
                 cta_act = str(sku_data.get('id_cuenta', 'LVP_01'))
                 if cta_act not in lista_cuentas: lista_cuentas.append(cta_act)
                 new_cta = st.selectbox("Tienda Asignada", lista_cuentas, index=lista_cuentas.index(cta_act))
@@ -306,18 +323,37 @@ def show_private_dashboard():
                     st.rerun()
         except Exception as e: st.error(f"Error masivo: {e}")
 
-    # ACORDEÓN: CALCULADORA
-    with st.expander("🧮 Simulador de Utilidades (Calculadora)", expanded=False):
-        cc1, cc2, cc3 = st.columns(3)
-        with cc1: mkt = st.selectbox("Marketplace", ["LIVERPOOL", "WALMART"])
-        with cc2: costo = st.number_input("Costo (Sin IVA)", value=100.0)
-        with cc3: precio = st.number_input("Precio Venta", value=350.0)
-        c_iva = costo * 1.16
-        ret = (precio / 1.16) * 0.105
-        ingreso = (precio * 0.83) - 130 if mkt == "LIVERPOOL" else (precio * 0.85) - 76
-        util = ingreso - c_iva - ret
-        if util > 0: st.success(f"🟢 UTILIDAD NETA: ${util:.2f}")
-        else: st.error(f"🔴 PÉRDIDA NETA: ${util:.2f}")
+    # ACORDEÓN: CALCULADORA COMPLETA (Corregida)
+    with st.expander("🧮 Simulador de Utilidades y Reglas Financieras", expanded=False):
+        col_calc1, col_calc2, col_calc3, col_calc4 = st.columns(4)
+        with col_calc1: mkt_simular = st.selectbox("Marketplace", ["LIVERPOOL", "WALMART"], key="sim_mkt")
+        with col_calc2: costo_base_sim = st.number_input("Costo Odoo (Sin IVA)", min_value=0.0, value=100.0, step=10.0)
+        with col_calc3: precio_venta_sim = st.number_input("Precio Propuesto", min_value=0.0, value=350.0, step=10.0)
+            
+        costo_con_iva = costo_base_sim * 1.16
+        precio_neto_sin_iva = precio_venta_sim / 1.16
+        retenciones_fiscales = precio_neto_sin_iva * (0.025 + 0.08)
+        
+        if mkt_simular == "LIVERPOOL":
+            ingreso_bruto = (precio_venta_sim * 0.83) - 130
+            comision_mkt = precio_venta_sim * 0.17 + 130
+        else:
+            ingreso_bruto = (precio_venta_sim * 0.85) - 76
+            comision_mkt = precio_venta_sim * 0.15 + 76
+            
+        utilidad_neta = ingreso_bruto - costo_con_iva - retenciones_fiscales
+        margen_porcentual = (utilidad_neta / costo_con_iva * 100) if costo_con_iva > 0 else 0.0
+        
+        with col_calc4:
+            st.markdown(f"**Estatus de Operación**")
+            if utilidad_neta > 0: st.success(f"🟢 RENTABLE ({margen_porcentual:.1f}%)")
+            else: st.error(f"🔴 PÉRDIDA ({margen_porcentual:.1f}%)")
+                
+        mc1, mc2, mc3, mc4 = st.columns(4)
+        mc1.metric("📦 Costo + IVA", f"${costo_con_iva:.2f}")
+        mc2.metric("💸 Comis+Envío", f"${comision_mkt:.2f}")
+        mc3.metric("🏛️ Retención SAT", f"${retenciones_fiscales:.2f}")
+        mc4.metric("💰 Utilidad Neta", f"${utilidad_neta:.2f}")
 
     # ACORDEÓN: BÓVEDA VIP
     with st.expander("🔐 Panel de Administración: Bóveda VIP (Tokens y Cookies)", expanded=False):
@@ -340,7 +376,6 @@ def show_private_dashboard():
             with hc2: f_res = st.selectbox("Resultado:", ["Todos", "EJECUTADO", "NO EJECUTADO", "Ruleta Rusa"])
             
             if f_sku: df_h = df_h[df_h['sku_interno'].str.contains(f_sku, case=False, na=False)]
-            # AQUÍ ESTÁ CORREGIDO EL FILTRO PARA QUE NO TENGAS QUE ESCRIBIR LA PALABRA EXACTA:
             if f_res != "Todos": df_h = df_h[df_h['resultado'].astype(str).str.contains(f_res, case=False, na=False)]
             
             st.dataframe(df_h.head(200), use_container_width=True, hide_index=True)
