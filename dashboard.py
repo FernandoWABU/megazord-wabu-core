@@ -292,11 +292,11 @@ def show_private_dashboard():
             val_cpp = 'ACTIVO' if new_status_cpp else 'INACTIVO'
 
             if st.button("💾 Guardar Configuración de SKU", use_container_width=True):
-                # Guardamos precios, reglas, cuenta y los tres interruptores independientes en PostgreSQL de Render
+                # ¡CORREGIDO! Usamos estatus_wmt exactamente como está en tu BD
                 query_update_individual = """
                     UPDATE catalogo_maestro_v3 
                     SET precio_minimo=%s, precio_maximo=%s, regla_estrategia=%s, id_cuenta=%s,
-                        estatus=%s, estatus_walmart=%s, estatus_coppel=%s 
+                        estatus=%s, estatus_wmt=%s, estatus_coppel=%s 
                     WHERE id=%s
                 """
                 if db.execute_update(query_update_individual, (new_min, new_max, new_rule, new_cta, val_lvp, val_wmt, val_cpp, int(row_id))):
