@@ -336,7 +336,31 @@ def get_historial_precios(days: int = 7) -> pd.DataFrame:
         h.buybox AS resultado
     FROM historial_precios h
     LEFT JOIN catalogo_maestro_v3 c ON h.sku_interno = c.sku_interno
-    WHERE h.fecha_hora >= %s
+    # ==========================================
+    # 📈 CONSULTA FILTRADA PARA LA GRÁFICA
+    # ==========================================
+    
+    # Construimos el query dinámico según el selector del Sidebar
+    if id_cuenta_filtro == "TODAS":
+        query_grafica = """
+        SELECT fecha_hora, sku_interno, nuestro_precio, precio_rival, stock, id_cuenta
+        FROM historial_precios
+        WHERE sku_interno = %s
+        ORDER BY fecha_hora ASC
+        """
+        params = (sku_buscado,)
+    else:
+        query_grafica = """
+        SELECT fecha_hora, sku_interno, nuestro_precio, precio_rival, stock, id_cuenta
+        FROM historial_precios
+        WHERE sku_interno = %s AND id_cuenta = %s
+        ORDER BY fecha_hora ASC
+        """
+        params = (sku_buscado, id_cuenta_filtro)
+    
+    # Ejecutas tu consulta usando tu variable global 'db'
+    df_precios = pd.read_sql(query_grafica, con=db.connection, params=params) 
+    # (Nota: Ajusta 'db.connection' según cómo mande llamar la conexión tu clase DbManager)
     ORDER BY h.fecha_hora DESC
     LIMIT 50000
     """
@@ -1399,6 +1423,54 @@ def show_private_dashboard():
             st.session_state['authenticated'] = False
             st.session_state.clear()
             st.rerun()
+
+    st.markdown("---")
+    with st.expander("🔐 Panel de Administración: Bóveda VIP de Cuentas"):
+        st.subheader("Configuración Centralizada en PostgreSQL")
+        
+        try:
+            # Consultamos el estado real de la tabla nueva
+            query_boveda = """
+            SELECT id_cuenta, nombre_descriptivo, email_usuario, is_active, cookie_vip, token_autorizacion 
+            FROM cuentas_liverpool
+            ORDER BY id_cuenta ASC
+            """
+            df_boveda = pd.read_sql(query_boveda, con=db.connection)
+            
+            # Usamos el editor interactivo de Streamlit para que puedas editar los datos en vivo
+            st.markdown("💡 *Puedes activar/desactivar (is_active) o modificar las cookies directo en la tabla y presionar Guardar:*")
+            df_editado = st.data_editor(
+                df_boveda,
+                column_config={
+                    "id_cuenta": st.column_config.TextColumn("ID", disabled=True),
+                    "nombre_descriptivo": "Nombre Comercial",
+                    "email_usuario": "Email de Acceso",
+                    "is_active": st.column_config.CheckboxColumn("Botón de Encendido (ON/OFF)"),
+                    "cookie_vip": "Gafete VIP (Cookies)",
+                    "token_autorizacion": "Bearer Token Activo"
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+            
+            # Botón para confirmar los cambios aplicados en la interfaz web hacia PostgreSQL
+            if st.button("💾 Guardar Cambios en Bóveda"):
+                for index, row in df_editado.iterrows():
+                    update_query = """
+                    UPDATE cuentas_liverpool
+                    SET nombre_descriptivo = %s, email_usuario = %s, is_active = %s, cookie_vip = %s
+                    WHERE id_cuenta = %s
+                    """
+                    # Ejecutamos la actualización fila por fila
+                    cursor = db.connection.cursor()
+                    cursor.execute(update_query, (row['nombre_descriptivo'], row['email_usuario'], row['is_active'], row['cookie_vip'], row['id_cuenta']))
+                    db.connection.commit()
+                    cursor.close()
+                st.success("🚀 ¡Bóveda VIP actualizada con éxito en el servidor de Render!")
+                st.rerun()
+                
+        except Exception as e:
+            st.error(f"❌ Error en el módulo de administración: {e}")
 # ==========================================
 # 🎬 MAIN APP LOGIC
 # ==========================================
