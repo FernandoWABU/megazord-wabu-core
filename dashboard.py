@@ -230,17 +230,23 @@ def show_private_dashboard():
         
         # 2. BUSCADOR Y EDITOR INDIVIDUAL
         st.markdown("### 🎯 2. Buscador Predictivo y Editor de Estrategia")
-        term = st.text_input(f"🔍 Buscar en {tienda_activa}:", placeholder="Ej: HCK13.3atomizador...")
+        term = st.text_input(f"🔍 Buscar en {tienda_activa} (SKU Interno, Liverpool, Walmart, etc):", placeholder="Ej: HCK13.3atomizador...")
         
         df_filtrado = df_canal.copy()
         if term:
             df_filtrado = df_canal[
                 df_canal['sku_limpio'].astype(str).str.contains(term, case=False, na=False) |
-                df_canal['sku_interno'].astype(str).str.contains(term, case=False, na=False)
+                df_canal['sku_interno'].astype(str).str.contains(term, case=False, na=False) |
+                df_canal['sku_liverpool'].astype(str).str.contains(term, case=False, na=False) |
+                df_canal['sku_walmart'].astype(str).str.contains(term, case=False, na=False) |
+                df_canal['sku_coppel'].astype(str).str.contains(term, case=False, na=False)
             ]
         
         if not df_filtrado.empty:
-            ops_fmt = df_filtrado.apply(lambda r: f"🆔 {r['id']} | 📦 {r['sku_limpio']} | Cta: {r['id_cuenta']}", axis=1).tolist()
+            ops_fmt = df_filtrado.apply(
+                lambda r: f"🆔 {r['id']} | 📦 {r['sku_limpio']} | Cta: {r.get('id_cuenta', 'N/A')} | LVP: {r.get('sku_liverpool', 'N/A')}", 
+                axis=1
+            ).tolist()
             sel_idx = st.selectbox(f"Coincidencias en {tienda_activa}:", range(len(df_filtrado)), format_func=lambda x: ops_fmt[x])
             
             sku_data = df_filtrado.iloc[sel_idx]
