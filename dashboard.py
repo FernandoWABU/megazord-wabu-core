@@ -601,7 +601,7 @@ def show_private_dashboard():
             with col3: max_rows = st.number_input("Mostrar N registros:", value=100, min_value=10, max_value=1000)
             
             if filter_sku: df_historial = df_historial[df_historial['sku_interno'].str.contains(filter_sku, case=False)]
-            if filter_resultado != "Todos": df_historial = df_historial[df_historial['resultado'] == filter_resultado]
+            if filter_resultado != "Todos": df_historial = df_historial[df_historial['resultado'].astype(str).str.contains(filter_resultado, case=False, na=False)]
             
             def resaltar_regla_9(row):
                 res = str(row['resultado'])
