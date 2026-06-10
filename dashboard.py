@@ -228,7 +228,9 @@ def show_private_dashboard():
 
         st.markdown("---")
         
-        # 2. BUSCADOR Y EDITOR INDIVIDUAL
+        # =========================================================================
+        # 🎯 2. BUSCADOR PREDICTIVO Y EDITOR DE ESTRATEGIA (CON KILL-SWITCH POR TIENDA)
+        # =========================================================================
         st.markdown("### 🎯 2. Buscador Predictivo y Editor de Estrategia")
         term = st.text_input(f"🔍 Buscar en {tienda_activa} (SKU Interno, Liverpool, Walmart, etc):", placeholder="Ej: HCK13.3atomizador...")
         
@@ -247,35 +249,63 @@ def show_private_dashboard():
                 lambda r: f"🆔 {r['id']} | 📦 {r['sku_limpio']} | Cta: {r.get('id_cuenta', 'N/A')} | LVP: {r.get('sku_liverpool', 'N/A')}", 
                 axis=1
             ).tolist()
+            
             sel_idx = st.selectbox(f"Coincidencias en {tienda_activa}:", range(len(df_filtrado)), format_func=lambda x: ops_fmt[x])
             
             sku_data = df_filtrado.iloc[sel_idx]
             row_id = sku_data['id']
             
-            # 5 COLUMNAS
-            c1, c2, c3, c4, c5 = st.columns(5)
-            with c1: new_min = st.number_input("P. Mín", value=float(sku_data['precio_minimo']), step=0.01)
-            with c2: new_max = st.number_input("P. Máx", value=float(sku_data['precio_maximo']), step=0.01)
-            with c3:
+            # Traemos los estatus actuales de la base de datos (manejamos por si Walmart/Coppel se llaman diferente en tu BD)
+            estatus_lvp_actual = str(sku_data.get('estatus', 'ACTIVO')).strip() == 'ACTIVO'
+            estatus_wmt_actual = str(sku_data.get('estatus_walmart', 'ACTIVO')).strip() == 'ACTIVO'
+            estatus_cpp_actual = str(sku_data.get('estatus_coppel', 'ACTIVO')).strip() == 'ACTIVO'
+            
+            # DISEÑO DE FILAS DE EDICIÓN
+            col_min, col_max, col_regla, col_cta, col_costo = st.columns(5)
+            with col_min: new_min = st.number_input("P. Mínimo", value=float(sku_data['precio_minimo']), step=0.01)
+            with col_max: new_max = st.number_input("P. Máximo", value=float(sku_data['precio_maximo']), step=0.01)
+            with col_regla:
                 r_list = ["1. Gladiador", "2. Ancla Mínimo", "3. Cosecha Máximo", "4. Analista Histórico", "5. Depredador", "6. Francotirador", "7. Bomba de Tiempo", "8. Liquidador Sabio", "9. Venta Especial"]
                 r_act = str(sku_data['regla']).strip()
                 if r_act not in r_list: r_act = r_list[0]
-                new_rule = st.selectbox("Regla", r_list, index=r_list.index(r_act))
-            with c4:
+                new_rule = st.selectbox("Regla de Repricing", r_list, index=r_list.index(r_act))
+            with col_cta:
                 cta_act = str(sku_data.get('id_cuenta', 'LVP_01'))
                 if cta_act not in lista_cuentas: lista_cuentas.append(cta_act)
-                new_cta = st.selectbox("Tienda Asignada", lista_cuentas, index=lista_cuentas.index(cta_act))
-            with c5: st.metric("Costo", f"${float(sku_data['costo_odoo']):.2f}")
+                new_cta = st.selectbox("Tienda Asignada (Liverpool)", lista_cuentas, index=lista_cuentas.index(cta_act))
+            with col_costo: st.metric("Costo Odoo Base", f"${float(sku_data['costo_odoo']):.2f}")
             
-            if st.button("💾 Guardar SKU", use_container_width=True):
-                db.execute_update(
-                    "UPDATE catalogo_maestro_v3 SET precio_minimo=%s, precio_maximo=%s, regla_estrategia=%s, id_cuenta=%s WHERE id=%s", 
-                    (new_min, new_max, new_rule, new_cta, int(row_id))
-                )
-                st.success("✅ Guardado")
-                st.cache_data.clear()
-                time.sleep(0.5)
-                st.rerun()
+            # SECCIÓN NUEVA: INTERRUPTORES DE ENCENDIDO (ON/OFF) POR MARKETPLACE
+            st.markdown("##### 🔌 Interruptores de Referencia (Estatus del SKU por Tienda)")
+            col_sw_lvp, col_sw_wmt, col_sw_cpp, _ = st.columns([1, 1, 1, 1])
+            
+            with col_sw_lvp:
+                new_status_lvp = st.toggle("Estatus LIVERPOOL", value=estatus_lvp_actual, help="Prende o apaga el repricer para esta referencia en Liverpool")
+            with col_sw_wmt:
+                new_status_wmt = st.toggle("Estatus WALMART", value=estatus_wmt_actual, help="Prende o apaga el repricer para esta referencia en Walmart")
+            with col_sw_cpp:
+                new_status_cpp = st.toggle("Estatus COPPEL", value=estatus_cpp_actual, help="Prende o apaga el repricer para esta referencia en Coppel")
+            
+            # Convertimos los booleanos de los switches al formato de texto 'ACTIVO'/'INACTIVO' que usa tu base de datos
+            val_lvp = 'ACTIVO' if new_status_lvp else 'INACTIVO'
+            val_wmt = 'ACTIVO' if new_status_wmt else 'INACTIVO'
+            val_cpp = 'ACTIVO' if new_status_cpp else 'INACTIVO'
+
+            if st.button("💾 Guardar Configuración de SKU", use_container_width=True):
+                # Guardamos precios, reglas, cuenta y los tres interruptores independientes en PostgreSQL de Render
+                query_update_individual = """
+                    UPDATE catalogo_maestro_v3 
+                    SET precio_minimo=%s, precio_maximo=%s, regla_estrategia=%s, id_cuenta=%s,
+                        estatus=%s, estatus_walmart=%s, estatus_coppel=%s 
+                    WHERE id=%s
+                """
+                if db.execute_update(query_update_individual, (new_min, new_max, new_rule, new_cta, val_lvp, val_wmt, val_cpp, int(row_id))):
+                    st.success(f"✅ ¡Configuración e Interruptores blindados para el ID {row_id}!")
+                    st.cache_data.clear()
+                    time.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.error("❌ Error al impactar los cambios en el servidor central de PostgreSQL.")
 
             # ACORDEÓN: RADAR DE PRECIOS
             with st.expander(f"📈 Radar de Precios (Histórico) - {tienda_activa}", expanded=False):
