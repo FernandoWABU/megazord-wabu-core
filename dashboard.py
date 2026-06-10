@@ -393,16 +393,33 @@ def show_private_dashboard():
 
     # ACORDEÓN: BÓVEDA VIP
     with st.expander("🔐 Panel de Administración: Bóveda VIP (Tokens y Cookies)", expanded=False):
-        df_b = db.execute_query("SELECT id_cuenta, nombre_descriptivo, email_usuario, is_active, cookie_vip FROM cuentas_liverpool ORDER BY id_cuenta ASC")
-        df_e = st.data_editor(df_b, hide_index=True, use_container_width=True)
+        # 1. Agregamos token_autorizacion al SELECT
+        df_b = db.execute_query("SELECT id_cuenta, nombre_descriptivo, email_usuario, is_active, token_autorizacion, cookie_vip FROM cuentas_liverpool ORDER BY id_cuenta ASC")
+        
+        # 2. Mostramos el editor configurando los nombres de las columnas para que sea fácil de leer
+        df_e = st.data_editor(
+            df_b, 
+            hide_index=True, 
+            use_container_width=True,
+            column_config={
+                "id_cuenta": st.column_config.TextColumn("ID", disabled=True),
+                "nombre_descriptivo": "Nombre Cuenta",
+                "email_usuario": "Correo Login",
+                "is_active": "Activa",
+                "token_autorizacion": "Token (Bearer)",
+                "cookie_vip": "Cookie VIP"
+            }
+        )
+        
         if st.button("💾 Guardar Bóveda"):
             for _, r in df_e.iterrows():
-                # ¡CORREGIDO! Ahora manda a guardar el Nombre, el Correo, el Switch y la Cookie.
+                # 3. Agregamos token_autorizacion al UPDATE
                 db.execute_update(
-                    "UPDATE cuentas_liverpool SET nombre_descriptivo=%s, email_usuario=%s, is_active=%s, cookie_vip=%s WHERE id_cuenta=%s", 
-                    (r['nombre_descriptivo'], r['email_usuario'], r['is_active'], r['cookie_vip'], r['id_cuenta'])
+                    "UPDATE cuentas_liverpool SET nombre_descriptivo=%s, email_usuario=%s, is_active=%s, token_autorizacion=%s, cookie_vip=%s WHERE id_cuenta=%s", 
+                    (r['nombre_descriptivo'], r['email_usuario'], r['is_active'], r['token_autorizacion'], r['cookie_vip'], r['id_cuenta'])
                 )
-            st.success("✅ Bóveda Actualizada con Éxito")
+            st.success("✅ Bóveda Actualizada con Éxito (Tokens y Cookies blindados)")
+            time.sleep(1)
             st.rerun()
 
     # ACORDEÓN: HISTORIAL
