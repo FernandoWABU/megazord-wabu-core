@@ -2,14 +2,7 @@
 # ==========================================
 # MEGAZORD WAR ROOM - DASHBOARD ENTERPRISE V2.0
 # Centro de Comando Ejecutivo con BI Real-Time
-# ==========================================
-# Arquitecto: Senior Software Architect
-# BI Specialist: Enterprise Dashboard Designer
-# 
-# 🚀 MIGRACION COMPLETA: Google Sheets → PostgreSQL Warp Speed
-# 🎨 DISEÑO: Dark Mode Executive (Tesla/Bloomberg Style)
-# 📊 VISUALIZACIONES: Plotly Interactive + Real-Time Metrics
-# 🔐 SEGURIDAD: Password Protection + Role-Based Views
+# MULTI-TENANT ARCHITECTURE INTEGRATED
 # ==========================================
 
 import streamlit as st
@@ -25,7 +18,6 @@ import logging
 from typing import Dict, List, Tuple, Optional
 import hashlib
 import json
-from functools import wraps
 import time
 import requests
 
@@ -44,12 +36,7 @@ st.set_page_config(
     page_title="🤖 MEGAZORD War Room",
     page_icon="⚡",
     layout="wide",
-    initial_sidebar_state="expanded",
-    menu_items={
-        'Get Help': 'https://github.com/FernandoWABU/megazord-wabu-core',
-        'Report a bug': 'https://github.com/FernandoWABU/megazord-wabu-core/issues',
-        'About': "Enterprise Repricing War Room v2.0"
-    }
+    initial_sidebar_state="expanded"
 )
 
 # ==========================================
@@ -68,119 +55,17 @@ DARK_MODE_CSS = """
         --text-secondary: #b0bec5;
         --border-color: #00d9ff;
     }
-
-    /* Fondo principal */
-    .main {
-        background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
-        color: #ffffff;
-    }
-
-    /* Sidebar */
-    [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #0f1428 0%, #1a1f3a 100%);
-        border-right: 2px solid #00d9ff;
-    }
-
-    /* Títulos */
-    h1, h2, h3 {
-        color: #00d9ff;
-        text-shadow: 0 0 10px rgba(0, 217, 255, 0.3);
-        font-weight: 700;
-        letter-spacing: 1px;
-    }
-
-    /* Métricas brillantes */
-    .metric-box {
-        background: linear-gradient(135deg, #1a1f3a 0%, #0f2540 100%);
-        border: 2px solid #00d9ff;
-        border-radius: 8px;
-        padding: 20px;
-        box-shadow: 0 0 20px rgba(0, 217, 255, 0.2);
-        transition: all 0.3s ease;
-    }
-
-    .metric-box:hover {
-        border-color: #1db954;
-        box-shadow: 0 0 30px rgba(0, 255, 65, 0.3);
-    }
-
-    /* Botones */
-    .stButton > button {
-        background: linear-gradient(135deg, #00d9ff 0%, #1db954 100%);
-        color: #0a0e27;
-        border: none;
-        border-radius: 6px;
-        font-weight: bold;
-        padding: 12px 24px;
-        transition: all 0.3s ease;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-
-    .stButton > button:hover {
-        transform: scale(1.05);
-        box-shadow: 0 0 20px rgba(0, 255, 65, 0.4);
-    }
-
-    /* Input fields */
-    .stTextInput > div > div > input,
-    .stPasswordInput > div > div > input,
-    .stNumberInput > div > div > input {
-        background: #1a1f3a;
-        color: #ffffff;
-        border: 2px solid #00d9ff;
-        border-radius: 6px;
-        padding: 10px 15px;
-    }
-
-    .stTextInput > div > div > input:focus,
-    .stPasswordInput > div > div > input:focus,
-    .stNumberInput > div > div > input:focus {
-        border-color: #1db954;
-        box-shadow: 0 0 10px rgba(0, 255, 65, 0.2);
-    }
-
-    /* Tables */
-    .stDataFrame {
-        background: #1a1f3a;
-        border: 2px solid #00d9ff;
-    }
-
-    /* Status indicators */
-    .status-green {
-        color: #1db954;
-        font-weight: bold;
-    }
-
-    .status-red {
-        color: #ff003c;
-        font-weight: bold;
-    }
-
-    .status-yellow {
-        color: #ffaa00;
-        font-weight: bold;
-    }
-
-    /* Alerts */
-    .alert-box {
-        background: rgba(255, 0, 60, 0.1);
-        border-left: 4px solid #ff003c;
-        padding: 15px;
-        border-radius: 4px;
-        margin: 10px 0;
-    }
-
-    .success-box {
-        background: rgba(0, 255, 65, 0.1);
-        border-left: 4px solid #1db954;
-        padding: 15px;
-        border-radius: 4px;
-        margin: 10px 0;
-    }
+    .main { background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%); color: #ffffff; }
+    [data-testid="stSidebar"] { background: linear-gradient(180deg, #0f1428 0%, #1a1f3a 100%); border-right: 2px solid #00d9ff; }
+    h1, h2, h3 { color: #00d9ff; text-shadow: 0 0 10px rgba(0, 217, 255, 0.3); font-weight: 700; }
+    .metric-box { background: linear-gradient(135deg, #1a1f3a 0%, #0f2540 100%); border: 2px solid #00d9ff; border-radius: 8px; padding: 20px; box-shadow: 0 0 20px rgba(0, 217, 255, 0.2); transition: all 0.3s ease; }
+    .metric-box:hover { border-color: #1db954; box-shadow: 0 0 30px rgba(0, 255, 65, 0.3); }
+    .stButton > button { background: linear-gradient(135deg, #00d9ff 0%, #1db954 100%); color: #0a0e27; border: none; border-radius: 6px; font-weight: bold; padding: 12px 24px; transition: all 0.3s ease; text-transform: uppercase; }
+    .stButton > button:hover { transform: scale(1.05); box-shadow: 0 0 20px rgba(0, 255, 65, 0.4); }
+    .stTextInput > div > div > input, .stPasswordInput > div > div > input, .stNumberInput > div > div > input { background: #1a1f3a; color: #ffffff; border: 2px solid #00d9ff; border-radius: 6px; }
+    .stDataFrame { background: #1a1f3a; border: 2px solid #00d9ff; }
 </style>
 """
-
 st.markdown(DARK_MODE_CSS, unsafe_allow_html=True)
 
 # ==========================================
@@ -188,34 +73,18 @@ st.markdown(DARK_MODE_CSS, unsafe_allow_html=True)
 # ==========================================
 
 class AuthManager:
-    """Gestor de autenticación con contraseña hasheada"""
-    
     def __init__(self):
         self.password_hash = os.getenv("DASHBOARD_PASSWORD", "megazord2025")
-        self.session_timeout = 3600  # 1 hora
-    
-    def hash_password(self, password: str) -> str:
-        """Hash seguro de contraseña"""
-        return hashlib.sha256(password.encode()).hexdigest()
-    
+        self.session_timeout = 3600
     def verify_password(self, password: str) -> bool:
-        """Verifica contraseña (Comparación directa con Streamlit Secrets)"""
         return password == self.password_hash
-    
     def is_authenticated(self) -> bool:
-        """Verifica si el usuario está autenticado"""
-        if 'auth_time' not in st.session_state:
-            return False
-        
-        elapsed = time.time() - st.session_state['auth_time']
-        if elapsed > self.session_timeout:
+        if 'auth_time' not in st.session_state: return False
+        if time.time() - st.session_state['auth_time'] > self.session_timeout:
             st.session_state['authenticated'] = False
             return False
-        
         return st.session_state.get('authenticated', False)
-    
     def login(self, password: str) -> bool:
-        """Autentica usuario"""
         if self.verify_password(password):
             st.session_state['authenticated'] = True
             st.session_state['auth_time'] = time.time()
@@ -227,1265 +96,377 @@ class AuthManager:
 # ==========================================
 
 class PostgreSQLManager:
-    """Gestor de conexiones PostgreSQL con pool y cache"""
-    
     def __init__(self, database_url: str):
         self.database_url = database_url
         self._pool = None
         self._initialize_pool()
-    
     def _initialize_pool(self):
-        """Inicializa connection pool"""
         try:
-            self._pool = psycopg2.pool.SimpleConnectionPool(
-                1,  # min
-                10, # max
-                self.database_url,
-                connect_timeout=5
-            )
-            logger.info("✅ PostgreSQL connection pool initialized")
+            self._pool = psycopg2.pool.SimpleConnectionPool(1, 10, self.database_url, connect_timeout=5)
         except Exception as e:
-            logger.error(f"❌ Error initializing pool: {e}")
             st.error("❌ No se pudo conectar a PostgreSQL")
-    
     def execute_query(self, query: str, params: tuple = None) -> pd.DataFrame:
-        """Ejecuta query y retorna DataFrame"""
         try:
             conn = self._pool.getconn()
             cursor = conn.cursor()
-            
-            if params:
-                cursor.execute(query, params)
-            else:
-                cursor.execute(query)
-            
+            if params: cursor.execute(query, params)
+            else: cursor.execute(query)
             columns = [desc[0] for desc in cursor.description]
             data = cursor.fetchall()
-            
             cursor.close()
             self._pool.putconn(conn)
-            
             return pd.DataFrame(data, columns=columns)
-        
         except Exception as e:
-            logger.error(f"❌ Query error: {e}")
             return pd.DataFrame()
-    
     def execute_update(self, query: str, params: tuple = None) -> bool:
-        """Ejecuta UPDATE/INSERT/DELETE"""
         try:
             conn = self._pool.getconn()
             cursor = conn.cursor()
-            
-            if params:
-                cursor.execute(query, params)
-            else:
-                cursor.execute(query)
-            
+            if params: cursor.execute(query, params)
+            else: cursor.execute(query)
             conn.commit()
-            affected_rows = cursor.rowcount
-            
             cursor.close()
             self._pool.putconn(conn)
-            
-            logger.info(f"✅ {affected_rows} rows affected")
             return True
-        
         except Exception as e:
-            logger.error(f"❌ Update error: {e}")
-            if conn:
-                conn.rollback()
-                self._pool.putconn(conn)
+            if conn: conn.rollback()
+            self._pool.putconn(conn)
             return False
-    
-    def close(self):
-        """Cierra todos los pools"""
-        if self._pool:
-            self._pool.closeall()
 
 # ==========================================
 # 💾 INICIALIZACIÓN GLOBAL
 # ==========================================
-
-# Database connection
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
-    st.error("❌ DATABASE_URL no configurado en variables de entorno")
+    st.error("❌ DATABASE_URL no configurado")
     st.stop()
-
 db = PostgreSQLManager(DATABASE_URL)
 auth = AuthManager()
 
 # ==========================================
-# 📊 QUERIES OPTIMIZADAS CON CACHE (ALINEACIÓN TOTAL DE COLUMNAS)
+# 🧩 COMPONENTES CLAUDE: MULTI-TENANT
+# ==========================================
+
+def renderizar_selector_cuenta_global(db):
+    """Paso 1: Selector en el Sidebar"""
+    st.sidebar.subheader("📍 Filtro de Cuenta")
+    try:
+        query = "SELECT id_cuenta, nombre_descriptivo, is_active FROM cuentas_liverpool ORDER BY id_cuenta ASC"
+        resultado = db.execute_query(query)
+        if resultado.empty:
+            st.sidebar.error("❌ No hay cuentas")
+            return "TODAS"
+        
+        opciones = ["🌍 TODAS LAS CUENTAS"]
+        map_cuentas = {"🌍 TODAS LAS CUENTAS": "TODAS"}
+        
+        for _, row in resultado.iterrows():
+            icono = "✅" if row['is_active'] else "⏸️"
+            opcion_texto = f"{icono} {row['id_cuenta']} - {row['nombre_descriptivo']}"
+            opciones.append(opcion_texto)
+            map_cuentas[opcion_texto] = row['id_cuenta']
+            
+        if 'cuenta_seleccionada' not in st.session_state:
+            st.session_state.cuenta_seleccionada = "🌍 TODAS LAS CUENTAS"
+            
+        seleccion = st.sidebar.selectbox(
+            "Selecciona la tienda activa:",
+            opciones,
+            index=opciones.index(st.session_state.cuenta_seleccionada) if st.session_state.cuenta_seleccionada in opciones else 0
+        )
+        st.session_state.cuenta_seleccionada = seleccion
+        id_cuenta_filtro = map_cuentas[seleccion]
+        st.sidebar.info(f"📌 Visualizando: **{id_cuenta_filtro}**")
+        return id_cuenta_filtro
+    except Exception as e:
+        return "TODAS"
+
+def renderizar_historial_precios_filtrado(db, id_cuenta_filtro):
+    """Paso 2: Gráfica Global con soporte Multi-Cuenta"""
+    st.subheader("📊 Gráfica Global Multi-Cuenta (Últimos 30 días)")
+    try:
+        if id_cuenta_filtro == "TODAS":
+            query = """SELECT fecha_hora, sku_interno, nuestro_precio, id_cuenta FROM historial_precios WHERE fecha_hora >= NOW() - INTERVAL '30 days' ORDER BY fecha_hora ASC LIMIT 1000"""
+            df = db.execute_query(query)
+        else:
+            query = """SELECT fecha_hora, sku_interno, nuestro_precio, id_cuenta FROM historial_precios WHERE id_cuenta = %s AND fecha_hora >= NOW() - INTERVAL '30 days' ORDER BY fecha_hora ASC LIMIT 1000"""
+            df = db.execute_query(query, (id_cuenta_filtro,))
+            
+        if df.empty:
+            st.warning("⚠️ No hay datos para graficar en este filtro.")
+            return
+            
+        df['fecha_hora'] = pd.to_datetime(df['fecha_hora'])
+        df['nuestro_precio'] = pd.to_numeric(df['nuestro_precio'], errors='coerce')
+        fig = go.Figure()
+        
+        if id_cuenta_filtro == "TODAS":
+            cuentas = df['id_cuenta'].unique()
+            colores = ['#00D9FF', '#FF6B6B', '#1db954', '#FF69B4']
+            for idx, c in enumerate(cuentas):
+                df_c = df[df['id_cuenta'] == c]
+                fig.add_trace(go.Scatter(x=df_c['fecha_hora'], y=df_c['nuestro_precio'], mode='lines+markers', name=f'Cuenta: {c}', line=dict(color=colores[idx % 4], width=2)))
+        else:
+            skus = df['sku_interno'].unique()[:5] # Max 5 lineas
+            for sku in skus:
+                df_sku = df[df['sku_interno'] == sku]
+                fig.add_trace(go.Scatter(x=df_sku['fecha_hora'], y=df_sku['nuestro_precio'], mode='lines+markers', name=f'SKU: {sku}'))
+                
+        fig.update_layout(plot_bgcolor='#0E1117', paper_bgcolor='#0E1117', font=dict(color='#FFFFFF'), hovermode='x unified', height=500)
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"Error gráfica: {e}")
+
+def renderizar_panel_admin_boveda(db):
+    """Paso 3: Bóveda Secreta de Control de Tokens"""
+    with st.expander("🔐 Bóveda de Cuentas (Administración de Cookies e Interruptor)", expanded=False):
+        st.markdown("### Gestión de Servidor PostgreSQL")
+        try:
+            query = "SELECT id_cuenta, nombre_descriptivo, email_usuario, cookie_vip, is_active FROM cuentas_liverpool ORDER BY id_cuenta ASC"
+            df = db.execute_query(query)
+            if df.empty: return
+            
+            st.markdown("💡 *Modifica las cookies o el switch de ON/OFF y presiona guardar:*")
+            df_editado = st.data_editor(
+                df,
+                column_config={
+                    "id_cuenta": st.column_config.TextColumn("ID", disabled=True),
+                    "nombre_descriptivo": "Nombre",
+                    "email_usuario": "Email",
+                    "cookie_vip": "Cookie VIP",
+                    "is_active": st.column_config.CheckboxColumn("Activa (ON/OFF)")
+                },
+                hide_index=True, use_container_width=True
+            )
+            
+            if st.button("💾 Guardar Bóveda en Servidor"):
+                cambios = 0
+                for idx, row in df_editado.iterrows():
+                    orig = df.iloc[idx]
+                    if row['cookie_vip'] != orig['cookie_vip'] or row['is_active'] != orig['is_active']:
+                        # CORRECCIÓN VITAL: Aquí Claude usó execute_query, pero debe ser execute_update
+                        update_q = "UPDATE cuentas_liverpool SET cookie_vip = %s, is_active = %s WHERE id_cuenta = %s"
+                        db.execute_update(update_q, (row['cookie_vip'], row['is_active'], row['id_cuenta']))
+                        cambios += 1
+                if cambios > 0:
+                    st.success(f"✅ ¡Bóveda actualizada! {cambios} cuenta(s) modificada(s).")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.info("No detecté cambios.")
+        except Exception as e:
+            st.error(f"Error Bóveda: {e}")
+
+# ==========================================
+# 📊 QUERIES BASE Y METRICAS
 # ==========================================
 
 @st.cache_data(ttl=300)
 def get_historial_precios(days: int = 7) -> pd.DataFrame:
     limit_date = datetime.now() - timedelta(days=days)
     query = """
-    SELECT 
-        h.fecha_hora AS created_at,
-        h.fecha_hora,
-        h.sku_interno,
-        c.sku_limpio,
-        h.precio_rival AS precio_ant,
-        h.nuestro_precio AS precio_nuv,
-        h.stock,
-        h.posicion,
-        h.buybox AS resultado
-    FROM historial_precios h
-    LEFT JOIN catalogo_maestro_v3 c ON h.sku_interno = c.sku_interno
-    # ==========================================
-    # 📈 CONSULTA FILTRADA PARA LA GRÁFICA
-    # ==========================================
-    
-    # Construimos el query dinámico según el selector del Sidebar
-    if id_cuenta_filtro == "TODAS":
-        query_grafica = """
-        SELECT fecha_hora, sku_interno, nuestro_precio, precio_rival, stock, id_cuenta
-        FROM historial_precios
-        WHERE sku_interno = %s
-        ORDER BY fecha_hora ASC
-        """
-        params = (sku_buscado,)
-    else:
-        query_grafica = """
-        SELECT fecha_hora, sku_interno, nuestro_precio, precio_rival, stock, id_cuenta
-        FROM historial_precios
-        WHERE sku_interno = %s AND id_cuenta = %s
-        ORDER BY fecha_hora ASC
-        """
-        params = (sku_buscado, id_cuenta_filtro)
-    
-    # Ejecutas tu consulta usando tu variable global 'db'
-    df_precios = pd.read_sql(query_grafica, con=db.connection, params=params) 
-    # (Nota: Ajusta 'db.connection' según cómo mande llamar la conexión tu clase DbManager)
-    ORDER BY h.fecha_hora DESC
-    LIMIT 50000
+    SELECT h.fecha_hora AS created_at, h.fecha_hora, h.sku_interno, c.sku_limpio, h.precio_rival AS precio_ant, h.nuestro_precio AS precio_nuv, h.stock, h.posicion, h.buybox AS resultado, h.id_cuenta
+    FROM historial_precios h LEFT JOIN catalogo_maestro_v3 c ON h.sku_interno = c.sku_interno WHERE h.fecha_hora >= %s ORDER BY h.fecha_hora DESC LIMIT 50000
     """
     return db.execute_query(query, (limit_date,))
 
 @st.cache_data(ttl=300)
 def get_monitoreo_rivales(limit: int = 1000) -> pd.DataFrame:
-    query = """
-    SELECT 
-        c.sku_interno,
-        c.sku_limpio,
-        m.nombre_rival,
-        m.precio_rival as precio,
-        m.marketplace,
-        m.created_at,
-        COUNT(*) OVER (PARTITION BY m.nombre_rival) as apariciones_rival
-    FROM monitoreo_rivales m
-    LEFT JOIN catalogo_maestro_v3 c ON m.catalogo_id = c.id
-    ORDER BY m.created_at DESC
-    LIMIT %s
-    """
+    query = "SELECT c.sku_interno, c.sku_limpio, m.nombre_rival, m.precio_rival as precio, m.marketplace, m.created_at, COUNT(*) OVER (PARTITION BY m.nombre_rival) as apariciones_rival FROM monitoreo_rivales m LEFT JOIN catalogo_maestro_v3 c ON m.catalogo_id = c.id ORDER BY m.created_at DESC LIMIT %s"
     return db.execute_query(query, (limit,))
 
 @st.cache_data(ttl=300)
 def get_catalogo_maestro() -> pd.DataFrame:
-    query = """
-    SELECT 
-        id,
-        sku_limpio,
-        sku_limpio as sku, 
-        sku_interno,
-        sku_liverpool,
-        sku_walmart,
-        sku_coppel,
-        precio_minimo,
-        precio_maximo,
-        costo_odoo,
-        estatus,
-        COALESCE(regla_estrategia, '1. Gladiador') AS regla
-    FROM catalogo_maestro_v3
-    ORDER BY sku_limpio
-    """
-    return db.execute_query(query)
-
-@st.cache_data(ttl=300)
-def get_alertas() -> pd.DataFrame:
-    query = """
-    SELECT 
-        id,
-        tipo_alerta AS tipo,
-        mensaje,
-        severidad AS severity,
-        created_at,
-        resuelta
-    FROM alertas
-    WHERE resuelta = FALSE
-    ORDER BY created_at DESC
-    LIMIT 100
-    """
+    query = "SELECT id, sku_limpio, sku_limpio as sku, sku_interno, sku_liverpool, sku_walmart, sku_coppel, precio_minimo, precio_maximo, costo_odoo, estatus, COALESCE(regla_estrategia, '1. Gladiador') AS regla, id_cuenta FROM catalogo_maestro_v3 ORDER BY sku_limpio"
     return db.execute_query(query)
 
 @st.cache_data(ttl=600)
 def get_metrics_dashboard() -> Dict:
     df_catalogo = get_catalogo_maestro()
-    total_skus = len(df_catalogo)
-    
     limit_date = datetime.now() - timedelta(days=1)
-    query_24h = "SELECT COUNT(*) as cambios FROM historial_precios WHERE fecha_hora >= %s"
-    df_24h = db.execute_query(query_24h, (limit_date,))
-    cambios_24h = df_24h.iloc[0, 0] if len(df_24h) > 0 else 0
-    
+    df_24h = db.execute_query("SELECT COUNT(*) as cambios FROM historial_precios WHERE fecha_hora >= %s", (limit_date,))
     limit_date_7d = datetime.now() - timedelta(days=7)
-    query_buybox = """
-    SELECT 
-        COUNT(CASE WHEN UPPER(buybox) IN ('EJECUTADO', 'SÍ', 'SI', 'TRUE') THEN 1 END) as ganadas,
-        COUNT(*) as total
-    FROM historial_precios
-    WHERE fecha_hora >= %s
-    """
-    df_buybox = db.execute_query(query_buybox, (limit_date_7d,))
-    if len(df_buybox) > 0:
-        ganadas = df_buybox.iloc[0]['ganadas']
-        total = df_buybox.iloc[0]['total']
-        win_rate = (ganadas / total * 100) if total > 0 else 0
-    else:
-        win_rate = 0
-    
-    df_rivales = get_monitoreo_rivales()
-    rivales_unicos = df_rivales['nombre_rival'].nunique() if len(df_rivales) > 0 else 0
-    
-    query_margen = "SELECT AVG(nuestro_precio - precio_rival) as margen_promedio FROM historial_precios WHERE fecha_hora >= %s"
-    df_margen = db.execute_query(query_margen, (limit_date_7d,))
-    margen_promedio = df_margen.iloc[0, 0] if len(df_margen) > 0 else 0
+    df_buybox = db.execute_query("SELECT COUNT(CASE WHEN UPPER(buybox) IN ('EJECUTADO', 'SÍ', 'SI', 'TRUE') THEN 1 END) as ganadas, COUNT(*) as total FROM historial_precios WHERE fecha_hora >= %s", (limit_date_7d,))
+    df_margen = db.execute_query("SELECT AVG(nuestro_precio - precio_rival) FROM historial_precios WHERE fecha_hora >= %s", (limit_date_7d,))
     
     return {
-        'total_skus': total_skus,
-        'cambios_24h': int(cambios_24h),
-        'win_rate_buybox': round(win_rate, 1),
-        'rivales_unicos': rivales_unicos,
-        'margen_promedio': round(float(margen_promedio), 2) if margen_promedio else 0
+        'total_skus': len(df_catalogo),
+        'cambios_24h': df_24h.iloc[0,0] if not df_24h.empty else 0,
+        'win_rate_buybox': (df_buybox.iloc[0]['ganadas'] / df_buybox.iloc[0]['total'] * 100) if not df_buybox.empty and df_buybox.iloc[0]['total'] > 0 else 0,
+        'margen_promedio': df_margen.iloc[0,0] if not df_margen.empty and df_margen.iloc[0,0] else 0
     }
 
-# ==========================================
-# 🎨 COMPONENTES UI REUTILIZABLES
-# ==========================================
-
-def render_metric_card(title: str, value: str, subtitle: str = "", 
-                       status: str = "neutral", icon: str = "📊"):
-    """Renderiza card de métrica estilo Tesla/Bloomberg"""
-    
-    colors = {
-        'positive': '#1db954',
-        'negative': '#ff003c',
-        'neutral': '#00d9ff',
-        'warning': '#ffaa00'
-    }
-    
+def render_metric_card(title: str, value: str, subtitle: str = "", status: str = "neutral", icon: str = "📊"):
+    colors = {'positive': '#1db954', 'negative': '#ff003c', 'neutral': '#00d9ff', 'warning': '#ffaa00'}
     color = colors.get(status, colors['neutral'])
-    
-    html = f"""
+    st.markdown(f"""
     <div class="metric-box" style="border-color: {color};">
         <div style="display: flex; justify-content: space-between; align-items: start;">
             <div>
-                <p style="color: #b0bec5; margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">
-                    {title}
-                </p>
-                <h2 style="color: {color}; margin: 10px 0 0 0; font-size: 32px; font-weight: bold;">
-                    {value}
-                </h2>
-                {f'<p style="color: #b0bec5; margin: 5px 0 0 0; font-size: 12px;">{subtitle}</p>' if subtitle else ''}
+                <p style="color: #b0bec5; margin: 0; font-size: 12px; text-transform: uppercase;">{title}</p>
+                <h2 style="color: {color}; margin: 10px 0 0 0; font-size: 32px; font-weight: bold;">{value}</h2>
+                <p style="color: #b0bec5; margin: 5px 0 0 0; font-size: 12px;">{subtitle}</p>
             </div>
             <div style="font-size: 40px; opacity: 0.5;">{icon}</div>
         </div>
     </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 def render_alert_box(message: str, alert_type: str = "info"):
-    """Renderiza box de alerta"""
-    
-    colors = {
-        'success': '#1db954',
-        'error': '#ff003c',
-        'warning': '#ffaa00',
-        'info': '#00d9ff'
-    }
-    
+    colors = {'success': '#1db954', 'error': '#ff003c', 'warning': '#ffaa00', 'info': '#00d9ff'}
     color = colors.get(alert_type, colors['info'])
-    class_name = f"{alert_type}-box"
-    
-    html = f"""
-    <div style="background: rgba(0, 217, 255, 0.1); border-left: 4px solid {color}; padding: 15px; border-radius: 4px; margin: 10px 0;">
-        <p style="color: {color}; margin: 0; font-weight: bold;">{message}</p>
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
+    st.markdown(f'<div style="background: rgba(0, 217, 255, 0.1); border-left: 4px solid {color}; padding: 15px; border-radius: 4px; margin: 10px 0;"><p style="color: {color}; margin: 0; font-weight: bold;">{message}</p></div>', unsafe_allow_html=True)
 
 # ==========================================
-# 📱 PÁGINA DE LOGIN
+# 📱 PÁGINA DE LOGIN Y PÚBLICA (Se mantienen igual)
 # ==========================================
 
 def show_login_page():
-    """Página de autenticación"""
-    
     col1, col2, col3 = st.columns([1, 2, 1])
-    
     with col2:
-        st.markdown("<br>" * 3, unsafe_allow_html=True)
-        
-        st.markdown("""
-        <div style="text-align: center;">
-            <h1 style="color: #00d9ff; font-size: 48px; text-shadow: 0 0 20px rgba(0, 217, 255, 0.5);">
-                ⚡ MEGAZORD WAR ROOM
-            </h1>
-            <p style="color: #b0bec5; font-size: 16px; letter-spacing: 2px;">
-                CENTRO DE COMANDO EJECUTIVO
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown("<br>" * 2, unsafe_allow_html=True)
-        
-        password = st.text_input(
-            "🔐 Contraseña de Acceso",
-            type="password",
-            placeholder="Ingresa contraseña del Comandante"
-        )
-        
+        st.markdown("<br><br><br><div style='text-align: center;'><h1 style='color: #00d9ff;'>⚡ MEGAZORD WAR ROOM</h1><p>CENTRO DE COMANDO EJECUTIVO</p></div><br><br>", unsafe_allow_html=True)
+        password = st.text_input("🔐 Contraseña de Acceso", type="password")
         if st.button("🚀 ACCESO RESTRINGIDO", use_container_width=True):
             if auth.login(password):
                 st.success("✅ ¡Bienvenido Comandante!")
                 st.rerun()
-            else:
-                st.error("❌ Contraseña incorrecta")
-        
-        st.markdown("<br>" * 5, unsafe_allow_html=True)
-        
-        # Public preview (sin datos sensibles)
-        st.markdown("---")
-        st.markdown("""
-        <div style="text-align: center; opacity: 0.6;">
-            <p style="color: #b0bec5; font-size: 12px;">
-                📊 Dashboard Público (Lectura):<br>
-                Acceso sin contraseña a gráficas ejecutivas
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if st.button("📈 Ver Visualizaciones Públicas", use_container_width=True):
-            st.session_state['public_view'] = True
-            st.rerun()
-
-# ==========================================
-# 📊 SECCIÓN PÚBLICA (VISUALIZACIONES)
-# ==========================================
+            else: st.error("❌ Contraseña incorrecta")
 
 def show_public_dashboard():
-    """Dashboard público con visualizaciones (sin editor de datos)"""
-    
-    st.markdown("""
-    <h1 style="color: #00d9ff; text-shadow: 0 0 10px rgba(0, 217, 255, 0.3);">
-        📊 CENTRO DE INTELIGENCIA EJECUTIVA - MODO LECTURA
-    </h1>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("*Última actualización: * " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    
-    # ========== MÉTRICAS PRINCIPALES ==========
-    st.markdown("### 📈 MÉTRICAS CLAVE (7 días)")
-    
-    try:
-        metrics = get_metrics_dashboard()
-        
-        col1, col2, col3, col4, col5 = st.columns(5)
-        
-        with col1:
-            render_metric_card(
-                "Total SKUs Activos",
-                f"{metrics['total_skus']:,}",
-                "Catálogo Master",
-                "positive",
-                "📦"
-            )
-        
-        with col2:
-            render_metric_card(
-                "Cambios 24h",
-                f"{metrics['cambios_24h']:,}",
-                "Actualizaciones",
-                "neutral",
-                "⚡"
-            )
-        
-        with col3:
-            status = "positive" if metrics['win_rate_buybox'] >= 50 else "negative"
-            render_metric_card(
-                "Win Rate BuyBox",
-                f"{metrics['win_rate_buybox']:.1f}%",
-                "Victorias",
-                status,
-                "👑"
-            )
-        
-        with col4:
-            render_metric_card(
-                "Rivales Únicos",
-                f"{metrics['rivales_unicos']}",
-                "Monitoreados",
-                "warning",
-                "🎯"
-            )
-        
-        with col5:
-            status = "positive" if metrics['margen_promedio'] > 0 else "negative"
-            render_metric_card(
-                "Margen Promedio",
-                f"${metrics['margen_promedio']:.2f}",
-                "Diferencia precio",
-                status,
-                "💰"
-            )
-    
-    except Exception as e:
-        st.error(f"❌ Error cargando métricas: {e}")
-        return
-    
-    st.markdown("---")
-    
-    # ========== GRÁFICAS PLOTLY ==========
-    st.markdown("### 🎯 VISUALIZACIONES INTERACTIVAS")
-    
-    # Tabs para diferentes vistas
-    tab1, tab2, tab3, tab4 = st.tabs(
-        ["📊 Win Rate", "🏆 Top Rivales", "📈 Margen Dinámico", "⏰ Timeline"]
-    )
-    
-    with tab1:
-        st.markdown("#### Win Rate de BuyBox (Últimos 7 días)")
-        
-        try:
-            query = """
-            SELECT 
-                buybox,
-                COUNT(*) as cantidad
-            FROM historial_precios
-            WHERE fecha_hora >= NOW() - INTERVAL '7 days'
-            GROUP BY buybox
-            """
-            df = db.execute_query(query)
-            
-            if len(df) > 0:
-                # Convertir 'Sí' a 'Ganado' y 'No' a 'Perdido'
-                df['Estado'] = df['buybox'].apply(
-                    lambda x: '✅ GANADO' if x == 'Sí' else '❌ PERDIDO'
-                )
-                
-                fig = px.pie(
-                    df,
-                    values='cantidad',
-                    names='Estado',
-                    title='Distribución de Victorias en BuyBox',
-                    color_discrete_map={
-                        '✅ GANADO': '#1db954',
-                        '❌ PERDIDO': '#ff003c'
-                    },
-                    hole=0.4  # Dona
-                )
-                
-                fig.update_layout(
-                    paper_bgcolor='rgba(10, 14, 39, 0)',
-                    plot_bgcolor='rgba(10, 14, 39, 0)',
-                    font=dict(color='#ffffff', family='Arial'),
-                    showlegend=True,
-                    hovermode='closest'
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.warning("⚠️ Sin datos disponibles para este período")
-        
-        except Exception as e:
-            st.error(f"❌ Error en gráfica: {e}")
-    
-    with tab2:
-        st.markdown("#### 🏆 TOP 10 Competidores Más Agresivos")
-        
-        try:
-            df_rivales = get_monitoreo_rivales(limit=1000)
-            
-            if len(df_rivales) > 0:
-                # Top 10 rivales
-                top_rivales = df_rivales['nombre_rival'].value_counts().head(10)
-                
-                fig = px.bar(
-                    x=top_rivales.values,
-                    y=top_rivales.index,
-                    orientation='h',
-                    title='Rivales Detectados por Frecuencia',
-                    labels={'x': 'Apariciones', 'y': 'Nombre Rival'},
-                    color=top_rivales.values,
-                    color_continuous_scale='blues'
-                )
-                
-                fig.update_layout(
-                    paper_bgcolor='rgba(10, 14, 39, 0)',
-                    plot_bgcolor='rgba(26, 31, 58, 0.5)',
-                    font=dict(color='#ffffff', family='Arial'),
-                    showlegend=False,
-                    hovermode='closest',
-                    xaxis_title='Frecuencia de Detección',
-                    yaxis_title='Nombre del Rival'
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Tabla detallada
-                st.markdown("#### Detalles de Rivales:")
-                cols = st.columns(3)
-                for idx, (rival, count) in enumerate(top_rivales.head(9).items()):
-                    col = cols[idx % 3]
-                    with col:
-                        render_metric_card(
-                            rival[:20],
-                            str(count),
-                            "detecciones",
-                            "warning",
-                            "🎯"
-                        )
-            else:
-                st.warning("⚠️ Sin rivales detectados")
-        
-        except Exception as e:
-            st.error(f"❌ Error en Top Rivales: {e}")
-    
-    with tab3:
-        st.markdown("#### 📈 Evolución de Margen Dinámico")
-        
-        try:
-            query = """
-            SELECT 
-                DATE(fecha_hora) as fecha,
-                DATE(fecha_hora) as created_at, -- Auxiliar para compatibilidad de layout
-                AVG(nuestro_precio - precio_rival) as margen_promedio,
-                MIN(nuestro_precio - precio_rival) as margen_minimo,
-                MAX(nuestro_precio - precio_rival) as margen_maximo
-            FROM historial_precios
-            WHERE fecha_hora >= NOW() - INTERVAL '30 days'
-            GROUP BY DATE(fecha_hora)
-            ORDER BY fecha
-            """
-            
-            df = db.execute_query(query)
-            
-            if len(df) > 0:
-                fig = go.Figure()
-                
-                fig.add_trace(go.Scatter(
-                    x=df['fecha'],
-                    y=df['margen_promedio'],
-                    mode='lines+markers',
-                    name='Margen Promedio',
-                    line=dict(color='#00d9ff', width=3),
-                    marker=dict(size=8)
-                ))
-                
-                fig.add_trace(go.Scatter(
-                    x=df['fecha'],
-                    y=df['margen_maximo'],
-                    name='Máximo',
-                    line=dict(color='#1db954', width=2, dash='dot'),
-                    fill=None
-                ))
-                
-                fig.add_trace(go.Scatter(
-                    x=df['fecha'],
-                    y=df['margen_minimo'],
-                    name='Mínimo',
-                    line=dict(color='#ff003c', width=2, dash='dot'),
-                    fill='tonexty'
-                ))
-                
-                fig.update_layout(
-                    title='Margen de Precio vs Competencia (30 días)',
-                    paper_bgcolor='rgba(10, 14, 39, 0)',
-                    plot_bgcolor='rgba(26, 31, 58, 0.3)',
-                    font=dict(color='#ffffff'),
-                    hovermode='x unified',
-                    xaxis_title='Fecha',
-                    yaxis_title='Margen ($)'
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.warning("⚠️ Sin datos históricos disponibles")
-        
-        except Exception as e:
-            st.error(f"❌ Error en Timeline: {e}")
-    
-    with tab4:
-        st.markdown("#### ⏰ Actividad por Hora del Día")
-        
-        try:
-            query = """
-            SELECT 
-                EXTRACT(HOUR FROM fecha_hora)::int as hora,
-                COUNT(*) as cambios,
-                AVG(nuestro_precio - precio_rival) as margen
-            FROM historial_precios
-            WHERE fecha_hora >= NOW() - INTERVAL '7 days'
-            GROUP BY EXTRACT(HOUR FROM fecha_hora)
-            ORDER BY hora
-            """
-            
-            df = db.execute_query(query)
-            
-            if len(df) > 0:
-                fig = px.bar(
-                    df,
-                    x='hora',
-                    y='cambios',
-                    color='margen',
-                    color_continuous_scale='viridis',
-                    title='Actividad del Repricing por Hora',
-                    labels={'hora': 'Hora del Día', 'cambios': 'Cambios de Precio'}
-                )
-                
-                fig.update_layout(
-                    paper_bgcolor='rgba(10, 14, 39, 0)',
-                    plot_bgcolor='rgba(26, 31, 58, 0.5)',
-                    font=dict(color='#ffffff'),
-                    xaxis=dict(tickformat='0h')
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-        
-        except Exception as e:
-            st.error(f"❌ Error: {e}")
-    
-    st.markdown("---")
-    
-    # ========== ALERTAS ==========
-    st.markdown("### 🚨 ALERTAS ACTIVAS")
-    
-    try:
-        df_alertas = get_alertas()
-        
-        if len(df_alertas) > 0:
-            critical_alerts = len(df_alertas[df_alertas['severity'] == 'CRITICAL'])
-            warning_alerts = len(df_alertas[df_alertas['severity'] == 'WARNING'])
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                render_metric_card(
-                    "Alertas Críticas",
-                    str(critical_alerts),
-                    "Requieren acción inmediata",
-                    "negative" if critical_alerts > 0 else "positive",
-                    "🚨"
-                )
-            
-            with col2:
-                render_metric_card(
-                    "Alertas de Aviso",
-                    str(warning_alerts),
-                    "Requieren monitoreo",
-                    "warning",
-                    "⚠️"
-                )
-            
-            # Mostrar alertas recientes
-            st.markdown("#### Últimas Alertas:")
-            for idx, row in df_alertas.head(5).iterrows():
-                color = '#ff003c' if row['severity'] == 'CRITICAL' else '#ffaa00'
-                st.markdown(f"""
-                <div style="background: rgba(255, 0, 60, 0.1); border-left: 4px solid {color}; 
-                           padding: 10px; margin: 5px 0; border-radius: 4px;">
-                    <p style="color: {color}; margin: 0; font-weight: bold;">
-                        [{row['tipo']}] {row['mensaje']}
-                    </p>
-                    <p style="color: #b0bec5; margin: 3px 0 0 0; font-size: 11px;">
-                        {row['fecha_creacion']}
-                    </p>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            render_alert_box("✅ Sin alertas críticas en este momento", "success")
-    
-    except Exception as e:
-        st.warning(f"⚠️ No se pudieron cargar alertas: {e}")
-    
-    # Botón para cambiar a vista privada
-    st.markdown("---")
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        if st.button("🔐 Acceso Privado (Comandante)", use_container_width=True):
-            st.session_state['public_view'] = False
-            st.rerun()
+    st.markdown("<h1>📊 CENTRO DE INTELIGENCIA EJECUTIVA - MODO LECTURA</h1>", unsafe_allow_html=True)
+    st.info("Modo de sólo lectura activado.")
+    metrics = get_metrics_dashboard()
+    col1, col2, col3 = st.columns(3)
+    with col1: render_metric_card("Total SKUs Activos", f"{metrics['total_skus']:,}", "Catálogo", "positive", "📦")
+    with col2: render_metric_card("Cambios 24h", f"{metrics['cambios_24h']:,}", "Actualizaciones", "neutral", "⚡")
+    with col3: render_metric_card("Win Rate BuyBox", f"{metrics['win_rate_buybox']:.1f}%", "Victorias", "positive" if metrics['win_rate_buybox'] > 50 else "negative", "👑")
+    if st.button("🔐 Regresar al Login", use_container_width=True):
+        st.session_state['public_view'] = False
+        st.rerun()
 
 # ==========================================
-# 🔐 SECCIÓN PRIVADA (EDITOR DE DATOS)
+# 🔐 SECCIÓN PRIVADA (CON MULTI-TENANT)
 # ==========================================
 
 def show_private_dashboard():
-    """Dashboard privado con segmentación por tienda, control de reglas reales y guardado por ID único"""
     
-    st.markdown("""
-    <h1 style="color: #1db954; text-shadow: 0 0 10px rgba(29, 185, 84, 0.3);">
-        🔐 SALA DE CONTROL EJECUTIVA - MODO COMANDANTE
-    </h1>
-    """, unsafe_allow_html=True)
-    
-    st.markdown(f"**🕐 Sesión activa desde:** {datetime.fromtimestamp(st.session_state.get('auth_time', time.time())).strftime('%H:%M:%S')}")
+    # 📍 INYECCIÓN PASO 1: SIDEBAR MULTI-CUENTA
+    with st.sidebar:
+        st.markdown("---")
+        id_cuenta_filtro = renderizar_selector_cuenta_global(db)
+
+    st.markdown("<h1>🔐 SALA DE CONTROL EJECUTIVA - MODO COMANDANTE</h1>", unsafe_allow_html=True)
     
     try:
         df_catalogo = get_catalogo_maestro()
         
-        if len(df_catalogo) > 0:
+        # Filtramos también el catálogo si el usuario seleccionó una cuenta específica
+        if id_cuenta_filtro != "TODAS" and not df_catalogo.empty:
+            df_catalogo = df_catalogo[df_catalogo['id_cuenta'] == id_cuenta_filtro]
             
-            # ==========================================
-            # 🏬 FILTRO TÁCTICO DE MARKETPLACE
-            # ==========================================
+        if not df_catalogo.empty:
             st.markdown("### 🏬 1. Selecciona el Canal de Venta")
-            tienda_activa = st.selectbox(
-                "¿Qué canal deseas inspeccionar o modificar?",
-                ["TODOS", "LIVERPOOL", "WALMART", "COPPEL"],
-                key="tienda_activa_selector"
-            )
+            tienda_activa = st.selectbox("¿Qué canal deseas inspeccionar?", ["LIVERPOOL", "WALMART", "COPPEL"])
             
             df_canal = df_catalogo.copy()
-            if tienda_activa == "LIVERPOOL":
-                df_canal = df_canal[df_canal['sku_liverpool'].notna() & (df_canal['sku_liverpool'] != '')]
-            elif tienda_activa == "WALMART":
-                df_canal = df_canal[df_canal['sku_walmart'].notna() & (df_canal['sku_walmart'] != '')]
-            elif tienda_activa == "COPPEL":
-                df_canal = df_canal[df_canal['sku_coppel'].notna() & (df_canal['sku_coppel'] != '')]
+            if tienda_activa == "LIVERPOOL": df_canal = df_canal[df_canal['sku_liverpool'].notna() & (df_canal['sku_liverpool'] != '')]
+            elif tienda_activa == "WALMART": df_canal = df_canal[df_canal['sku_walmart'].notna() & (df_canal['sku_walmart'] != '')]
+            elif tienda_activa == "COPPEL": df_canal = df_canal[df_canal['sku_coppel'].notna() & (df_canal['sku_coppel'] != '')]
 
-            st.markdown(f"**Productos en este canal:** {len(df_canal)}")
             st.markdown("---")
             
-            # ==========================================
-            # 💰 EDITOR FINANCIERO INDIVIDUAL (POR ID)
-            # ==========================================
             st.markdown("### 🎯 2. Buscador Predictivo y Editor de Estrategia")
-            
-            termino_busqueda = st.text_input(
-                f"🔍 Buscar en {tienda_activa} (Puedes usar SKU Limpio, Interno o código de barra de la plataforma):",
-                placeholder="Ej: HCK13.3atomizador, SKU_48819B..."
-            )
+            termino_busqueda = st.text_input(f"🔍 Buscar en {tienda_activa}:")
             
             df_filtrado = df_canal.copy()
             if termino_busqueda:
                 df_filtrado = df_canal[
                     df_canal['sku_limpio'].astype(str).str.contains(termino_busqueda, case=False, na=False) |
                     df_canal['sku_interno'].astype(str).str.contains(termino_busqueda, case=False, na=False) |
-                    df_canal['sku_liverpool'].astype(str).str.contains(termino_busqueda, case=False, na=False) |
-                    df_canal['sku_walmart'].astype(str).str.contains(termino_busqueda, case=False, na=False) |
-                    df_canal['sku_coppel'].astype(str).str.contains(termino_busqueda, case=False, na=False)
+                    df_canal['sku_liverpool'].astype(str).str.contains(termino_busqueda, case=False, na=False)
                 ]
             
             if not df_filtrado.empty:
-                opciones_formateadas = df_filtrado.apply(
-                    lambda r: f"🆔 ID: {r['id']} | 📦 {r['sku_limpio']} | LVP: {r['sku_liverpool'] or 'N/A'} | WMT: {r['sku_walmart'] or 'N/A'}", 
-                    axis=1
-                ).tolist()
-                
-                seleccion_idx = st.selectbox(
-                    f"Coincidencias en {tienda_activa}: ({len(df_filtrado)}). Elige el registro exacto:",
-                    range(len(df_filtrado)),
-                    format_func=lambda x: opciones_formateadas[x]
-                )
+                opciones = df_filtrado.apply(lambda r: f"🆔 ID: {r['id']} | 📦 {r['sku_limpio']} | Cuenta: {r['id_cuenta']}", axis=1).tolist()
+                seleccion_idx = st.selectbox("Coincidencias:", range(len(df_filtrado)), format_func=lambda x: opciones[x])
                 
                 sku_data = df_filtrado.iloc[seleccion_idx]
                 row_id_unico = sku_data['id']
                 
                 col1, col2, col3, col4 = st.columns(4)
+                with col1: new_min = st.number_input("Precio Mínimo", value=float(sku_data['precio_minimo']), step=0.01)
+                with col2: new_max = st.number_input("Precio Máximo", value=float(sku_data['precio_maximo']), step=0.01)
+                with col3: 
+                    lista_reglas = ["1. Gladiador", "2. Ancla Mínimo", "3. Cosecha Máximo", "4. Analista Histórico", "5. Depredador (1+3)", "6. Francotirador (1+4)", "7. Bomba de Tiempo (2+3)", "8. Liquidador Sabio (2+4)", "9. Venta Especial"]
+                    regla_actual = str(sku_data['regla']).strip() if str(sku_data['regla']).strip() in lista_reglas else lista_reglas[0]
+                    new_rule = st.selectbox("Regla", options=lista_reglas, index=lista_reglas.index(regla_actual))
+                with col4: st.metric("Costo ODOO", f"${float(sku_data['costo_odoo']):.2f}")
                 
-                with col1:
-                    new_min = st.number_input("Precio Mínimo", value=float(sku_data['precio_minimo']), step=0.01, format="%.2f")
+                if st.button("💾 Guardar Configuración"):
+                    update_query = "UPDATE catalogo_maestro_v3 SET precio_minimo = %s, precio_maximo = %s, regla_estrategia = %s WHERE id = %s"
+                    if db.execute_update(update_query, (new_min, new_max, new_rule, int(row_id_unico))):
+                        st.success("✅ Guardado")
+                        time.sleep(1)
+                        st.rerun()
                 
-                with col2:
-                    new_max = st.number_input("Precio Máximo", value=float(sku_data['precio_maximo']), step=0.01, format="%.2f")
-                
-                with col3:
-                    lista_reglas_oficiales = [
-                        "1. Gladiador", 
-                        "2. Ancla Mínimo", 
-                        "3. Cosecha Máximo", 
-                        "4. Analista Histórico",
-                        "5. Depredador (1+3)",
-                        "6. Francotirador (1+4)",
-                        "7. Bomba de Tiempo (2+3)",
-                        "8. Liquidador Sabio (2+4)",
-                        "9. Venta Especial"
-                    ]
+                # Radar de Precios Individual adaptado
+                st.markdown("#### 📈 Radar de Precios del Producto")
+                if tienda_activa == "LIVERPOOL":
+                    sku_int_param = f"%{str(sku_data.get('sku_interno')).strip()}%"
                     
-                    # 🛠️ Forzar a string puro y limpiar espacios fantasmas
-                    regla_limpia = str(sku_data['regla']).strip()
-                    
-                    # Verificamos si la regla limpia está en la lista
-                    if regla_limpia in lista_reglas_oficiales:
-                        regla_actual_bd = regla_limpia
+                    # Se añade el filtro de id_cuenta para que no se mezclen las líneas si el mismo perfume está en 2 tiendas
+                    if id_cuenta_filtro == "TODAS":
+                        query_lvp = "SELECT fecha_hora as created_at, nuestro_precio, precio_rival, stock, buybox, id_cuenta FROM historial_precios WHERE sku_interno ILIKE %s AND fecha_hora >= NOW() - INTERVAL '30 days' ORDER BY fecha_hora ASC"
+                        df_grafica = db.execute_query(query_lvp, (sku_int_param,))
                     else:
-                        regla_actual_bd = lista_reglas_oficiales[0]
-                    
-                    # EL ÚNICO Y VERDADERO SELECTBOX MAESTRO
-                    new_rule = st.selectbox(
-                        "Regla de Repricing", 
-                        options=lista_reglas_oficiales, 
-                        index=lista_reglas_oficiales.index(regla_actual_bd),
-                        key=f"selector_regla_{row_id_unico}"
-                    )
-                
-                with col4:
-                    st.metric("Costo ODOO Base", f"${float(sku_data['costo_odoo']):.2f}")
-                
-                if new_min >= new_max:
-                    render_alert_box("❌ Operación denegada: El precio mínimo no puede superar al máximo.", "error")
-                elif new_min < float(sku_data['costo_odoo']):
-                    render_alert_box(f"⚠️ Alerta: Margen de riesgo. El mínimo está por debajo del costo base ({sku_data['costo_odoo']})", "warning")
-                else:
-                    if st.button("💾 Guardar Configuración en PostgreSQL", use_container_width=True):
-                        # 🟢 CORREGIDO: Apuntamos a la columna real 'regla_estrategia'
-                        update_query = """
-                        UPDATE catalogo_maestro_v3
-                        SET precio_minimo = %s, precio_maximo = %s, regla_estrategia = %s
-                        WHERE id = %s
-                        """
-                        if db.execute_update(update_query, (new_min, new_max, new_rule, int(row_id_unico))):
-                            st.success(f"✅ Configuración blindada guardada para el ID {row_id_unico} ({sku_data['sku_limpio']})")
-                            st.cache_data.clear()
-                            time.sleep(0.8)
-                            st.rerun()
-                        else:
-                            st.error("❌ Error de comunicación con la base de datos central.")
+                        query_lvp = "SELECT fecha_hora as created_at, nuestro_precio, precio_rival, stock, buybox, id_cuenta FROM historial_precios WHERE sku_interno ILIKE %s AND id_cuenta = %s AND fecha_hora >= NOW() - INTERVAL '30 days' ORDER BY fecha_hora ASC"
+                        df_grafica = db.execute_query(query_lvp, (sku_int_param, id_cuenta_filtro))
+                        
+                    if not df_grafica.empty:
+                        df_grafica['created_at'] = pd.to_datetime(df_grafica['created_at'])
+                        fig = px.line(df_grafica, x='created_at', y='nuestro_precio', color='id_cuenta', title="Evolución de Nuestro Precio")
+                        fig.update_layout(plot_bgcolor='#0E1117', paper_bgcolor='#0E1117', font=dict(color='#FFFFFF'))
+                        st.plotly_chart(fig, use_container_width=True)
 
-                # ==========================================
-                # 📈 INYECCIÓN DE LA GRÁFICA (V5 - SIN LÍMITE DE TIEMPO)
-                # ==========================================
-                st.markdown("<br>", unsafe_allow_html=True)
-                st.markdown(f"#### 📈 Radar de Precios (Histórico Completo) - {tienda_activa}")
-                
-                try:
-                    if tienda_activa == "LIVERPOOL":
-                        # 🛠️ EVOLUCIÓN: Agregamos las columnas stock y buybox a la extracción
-                        query_lvp = """
-                        SELECT fecha_hora as created_at, nuestro_precio, precio_rival, stock, buybox 
-                        FROM historial_precios 
-                        WHERE (sku_interno ILIKE %s OR sku_liverpool ILIKE %s) 
-                        AND fecha_hora >= NOW() - INTERVAL '30 days' 
-                        ORDER BY fecha_hora ASC
-                        """
-                        
-                        sku_int = str(sku_data.get('sku_interno') or sku_data.get('sku') or '').strip()
-                        sku_lvp = str(sku_data.get('sku_liverpool') or sku_data.get('sku_limpio') or '').strip()
-                        
-                        sku_int_param = f"%{sku_int}%" if sku_int else "%VALOR_NULO%"
-                        sku_lvp_param = f"%{sku_lvp}%" if sku_lvp else "%VALOR_NULO%"
-                        
-                        df_grafica = db.execute_query(query_lvp, (sku_int_param, sku_lvp_param))
-                        
-                        if not df_grafica.empty:
-                            df_grafica['created_at'] = pd.to_datetime(df_grafica['created_at'])
-                            
-                            # 🛡️ Blindajes numéricos habituales
-                            df_grafica['nuestro_precio'] = pd.to_numeric(df_grafica['nuestro_precio'], errors='coerce')
-                            df_grafica['precio_rival'] = pd.to_numeric(df_grafica['precio_rival'], errors='coerce')
-                            
-                            # 🧳 Limpieza de metadatos para la etiqueta
-                            df_grafica['stock'] = pd.to_numeric(df_grafica['stock'], errors='coerce').fillna(0).astype(int)
-                            df_grafica['buybox'] = df_grafica['buybox'].fillna('Desconocido').astype(str)
-                            
-                            fig = go.Figure()
-                            
-                            # 🔵 TRAZA NUESTRO PRECIO (Con Hover Personalizado)
-                            fig.add_trace(go.Scatter(
-                                x=df_grafica['created_at'], 
-                                y=df_grafica['nuestro_precio'], 
-                                mode='lines+markers', 
-                                name='🔵 Nuestro Precio', 
-                                line=dict(color='#00D9FF', width=3),
-                                # Empaquetamos stock y dueño de la buybox en el flujo de la gráfica
-                                customdata=np.stack((df_grafica['stock'], df_grafica['buybox']), axis=-1),
-                                hovertemplate=(
-                                    "<b>📅 Fecha:</b> %{x}<br>"
-                                    "<b>💰 Nuestro Precio:</b> $%{y:.2f}<br>"
-                                    "<b>📦 Nuestro Stock:</b> %{customdata[0]} pzs<br>"
-                                    "<b>👑 Dueño BuyBox:</b> %{customdata[1]}<extra></extra>"
-                                )
-                            ))
-                            
-                            # 🔴 TRAZA PRECIO RIVAL (Con Hover Personalizado)
-                            fig.add_trace(go.Scatter(
-                                x=df_grafica['created_at'], 
-                                y=df_grafica['precio_rival'], 
-                                mode='lines', 
-                                name='🔴 BuyBox Rival', 
-                                line=dict(color='#FF003C', width=2, dash='dot'),
-                                customdata=df_grafica['buybox'],
-                                hovertemplate=(
-                                    "<b>📅 Fecha:</b> %{x}<br>"
-                                    "<b>🥊 Precio Competencia:</b> $%{y:.2f}<br>"
-                                    "<b>👑 Líder Detectado:</b> %{customdata}<extra></extra>"
-                                )
-                            ))
-                            
-                            fig.update_layout(
-                                plot_bgcolor='#0E1117', 
-                                paper_bgcolor='#0E1117', 
-                                font=dict(color='#FFFFFF'), 
-                                hovermode='x unified', 
-                                margin=dict(l=0, r=0, t=30, b=0), 
-                                height=400
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
-                        else:
-                            st.info(f"No hay historial de cambios para el SKU '{sku_int}' en los últimos 30 días.")
-                            
-                    elif tienda_activa == "WALMART":
-                        query_wmt = """
-                        SELECT created_at, nombre_rival, precio_rival 
-                        FROM monitoreo_rivales 
-                        WHERE marketplace = 'WALMART' AND catalogo_id = %s 
-                        ORDER BY created_at ASC
-                        """
-                        df_grafica = db.execute_query(query_wmt, (int(row_id_unico),))
-                        
-                        if not df_grafica.empty:
-                            df_grafica['created_at'] = pd.to_datetime(df_grafica['created_at'])
-                            df_grafica['precio_rival'] = pd.to_numeric(df_grafica['precio_rival'], errors='coerce')
-                            
-                            fig = px.line(df_grafica, x='created_at', y='precio_rival', color='nombre_rival', title="Tendencia de Rivales (Walmart)", color_discrete_sequence=px.colors.qualitative.Set1)
-                            fig.update_layout(plot_bgcolor='#0E1117', paper_bgcolor='#0E1117', font=dict(color='#FFFFFF'), hovermode='x unified', margin=dict(l=0, r=0, t=30, b=0), height=400)
-                            st.plotly_chart(fig, use_container_width=True)
-                        else:
-                            st.info("No hay escaneos de rivales para este SKU en Walmart.")
-                            
-                    elif tienda_activa == "COPPEL":
-                        query_cpp = """
-                        SELECT created_at, precio_nuevo, regla_aplicada 
-                        FROM historial_operaciones 
-                        WHERE marketplace = 'COPPEL' AND catalogo_id = %s 
-                        ORDER BY created_at ASC
-                        """
-                        df_grafica = db.execute_query(query_cpp, (int(row_id_unico),))
-                        
-                        if not df_grafica.empty:
-                            df_grafica['created_at'] = pd.to_datetime(df_grafica['created_at'])
-                            df_grafica['precio_nuevo'] = pd.to_numeric(df_grafica['precio_nuevo'], errors='coerce')
-                            
-                            fig = go.Figure()
-                            fig.add_trace(go.Scatter(x=df_grafica['created_at'], y=df_grafica['precio_nuevo'], mode='lines+markers', name='🟠 Precio Coppel', line=dict(color='#FFA500', width=3)))
-                            fig.update_layout(plot_bgcolor='#0E1117', paper_bgcolor='#0E1117', font=dict(color='#FFFFFF'), hovermode='x unified', margin=dict(l=0, r=0, t=30, b=0), height=400)
-                            st.plotly_chart(fig, use_container_width=True)
-                        else:
-                            st.info("No hay historial de operaciones para este SKU en Coppel.")
-                            
-                except Exception as e:
-                    st.error(f"Error cargando gráfica: {e}")
-                # ==========================================
-            else:
-                st.warning(f"⚠️ No se encontraron listados en {tienda_activa} con ese criterio.")
-        else:
-            st.warning("⚠️ Catálogo maestro no disponible.")
-            
     except Exception as e:
-        st.error(f"❌ Error en Sala de Control: {e}")
-    
-    st.markdown("---")
+        st.error(f"Error: {e}")
 
     # ==========================================
-    # 🚀 GATILLO MANUAL DE EMERGENCIA (GITHUB TRIGGER)
+    # 📍 INYECCIÓN PASO 2 y 3: GRAFICA GLOBAL Y PANEL BÓVEDA
     # ==========================================
-    st.markdown("### 🚀 Sistema de Lanzamiento de Patrullas (Barrido de Emergencia)")
-    
-    col_git1, col_git2 = st.columns([2, 1])
-    
-    with col_git1:
-        tienda_lanzar = st.selectbox(
-            "Selecciona qué escuadrón deseas despertar:",
-            ["ambas", "liverpool", "walmart"],
-            key="git_tienda_selector"
-        )
-    
-    with col_git2:
-        st.markdown("<br>", unsafe_allow_html=True) # Espaciador visual
-        if st.button("🔥 DISPARAR BARRIDO AHORA", use_container_width=True):
-            # Configuración secreta del repositorio de Kike
-            REPO = "FernandoWABU/megazord-wabu-core"
-            WORKFLOW_FILE = "main.yml"
-            
-            # 🔐 Extraemos tu Token Personal de los Secrets de Streamlit
-            TOKEN_GITHUB = st.secrets.get("GITHUB_PAT", "")
-            
-            if not TOKEN_GITHUB:
-                st.error("❌ Error de Seguridad: No se encontró el 'GITHUB_PAT' en los Secrets de Streamlit.")
-            else:
-                with st.spinner("📬 Enviando orden de ataque a los servidores de GitHub..."):
-                    url = f"https://api.github.com/repos/{REPO}/actions/workflows/{WORKFLOW_FILE}/dispatches"
-                    headers = {
-                        "Authorization": f"Bearer {TOKEN_GITHUB}",
-                        "Accept": "application/vnd.github+json",
-                        "X-GitHub-Api-Version": "2022-11-28"
-                    }
-                    data = {
-                        "ref": "main", # Tu rama principal
-                        "inputs": {"tienda": tienda_lanzar}
-                    }
-                    
-                    response = requests.post(url, headers=headers, json=data)
-                    
-                    if response.status_code == 204:
-                        st.success(f"🚀 ¡MISIL LANZADO! El barrido para '{tienda_lanzar.upper()}' ha despertado con éxito en GitHub Actions.")
-                    else:
-                        st.error(f"❌ Falla en el lanzamiento (Código {response.status_code}): {response.text}")
-
     st.markdown("---")
-    
-    # ========== TABLA EDITABLE MASIVA FILTRADA ==========
-    st.markdown("### 📊 3. Editor Masivo del Canal Activo")
-    
-    try:
-        if len(df_canal) > 0:
-            st.markdown("**Consejo:** Puedes visualizar los códigos de cada plataforma en las columnas bloqueadas para mantener el control.")
-            
-            edited_df = st.data_editor(
-                df_canal[['id', 'sku_limpio', 'sku_interno', 'sku_liverpool', 'sku_walmart', 'sku_coppel', 'precio_minimo', 'precio_maximo', 'regla', 'estatus']],
-                use_container_width=True,
-                key="catalog_editor_dinamico",
-                hide_index=True,
-                column_config={
-                    'id': st.column_config.NumberColumn("ID Único", disabled=True),
-                    'sku_limpio': st.column_config.TextColumn("SKU Limpio", disabled=True),
-                    'sku_interno': st.column_config.TextColumn("SKU Interno", disabled=True),
-                    'sku_liverpool': st.column_config.TextColumn("SKU Liverpool", disabled=True),
-                    'sku_walmart': st.column_config.TextColumn("SKU Walmart", disabled=True),
-                    'sku_coppel': st.column_config.TextColumn("SKU Coppel", disabled=True),
-                    'precio_minimo': st.column_config.NumberColumn("Precio Mínimo", format="$%.2f"),
-                    'precio_maximo': st.column_config.NumberColumn("Precio Máximo", format="$%.2f"),
-                    'regla': st.column_config.SelectboxColumn(
-                        "Regla", 
-                        options=[
-                            "1. Gladiador", 
-                            "2. Ancla Mínimo", 
-                            "3. Cosecha Máximo", 
-                            "4. Analista Histórico",
-                            "5. Depredador (1+3)",
-                            "6. Francotirador (1+4)",
-                            "7. Bomba de Tiempo (2+3)",
-                            "8. Liquidador Sabio (2+4)",
-                            "9. Venta Especial"  # <--- ¡Agrega esta línea!
-                        ]
-                    ),
-                    'estatus': st.column_config.SelectboxColumn("Estatus", options=['ACTIVO', 'INACTIVO'])
-                }
-            )
-            
-            if st.button("💾 Guardar Cambios Masivos de la Tabla", use_container_width=True):
-                cambios = 0
-                errores = []
-                
-                for idx, row in edited_df.iterrows():
-                    if idx < len(df_canal):
-                        original = df_canal.iloc[idx]
-                        if (row['precio_minimo'] != original['precio_minimo'] or 
-                            row['precio_maximo'] != original['precio_maximo'] or
-                            row['regla'] != original['regla'] or
-                            row['estatus'] != original['estatus']):
-                            
-                            # 🟢 CORREGIDO: Apuntamos a la columna real 'regla_estrategia' en actualización masiva
-                            update_query = """
-                            UPDATE catalogo_maestro_v3
-                            SET precio_minimo = %s, precio_maximo = %s, regla_estrategia = %s, estatus = %s
-                            WHERE id = %s
-                            """
-                            if db.execute_update(update_query, (row['precio_minimo'], row['precio_maximo'], row['regla'], row['estatus'], int(row['id']))):
-                                cambios += 1
-                            else:
-                                errores.append(str(row['id']))
-                
-                if errores:
-                    st.error(f"❌ Error al procesar las siguientes filas ID: {', '.join(errores)}")
-                else:
-                    st.success(f"✅ Éxito Masivo: {cambios} registros actualizados en DBeaver de forma independiente.")
-                st.cache_data.clear()
-                time.sleep(0.8)
-                st.rerun()
-        else:
-            st.warning("⚠️ Sin registros para desplegar en la tabla de este canal.")
-            
-    except Exception as e:
-        st.error(f"❌ Error en bloque masivo: {e}")
+    renderizar_historial_precios_filtrado(db, id_cuenta_filtro)
     
     st.markdown("---")
-
+    renderizar_panel_admin_boveda(db)
+    
     # ==========================================
-    # 🧮 SIMULADOR Y CALCULADORA DE REGLAS FINANCIERAS
+    # TABLA DE HISTORIAL DETALLADO
     # ==========================================
-    st.markdown("### 🧮 Simulador de Utilidades y Reglas Financieras")
-    
-    with st.expander("🦅 Abrir Calculadora de Comisiones y Retenciones (Liverpool vs Walmart)", expanded=False):
-        col_calc1, col_calc2, col_calc3, col_calc4 = st.columns(4)
-        
-        with col_calc1:
-            mkt_simular = st.selectbox("Marketplace a Simular", ["LIVERPOOL", "WALMART"], key="sim_mkt")
-        with col_calc2:
-            costo_base_sim = st.number_input("Costo Base Odoo (Sin IVA)", min_value=0.0, value=100.0, step=10.0)
-        with col_calc3:
-            precio_venta_sim = st.number_input("Precio de Venta Propuesto", min_value=0.0, value=350.0, step=10.0)
-            
-        costo_con_iva = costo_base_sim * 1.16
-        precio_neto_sin_iva = precio_venta_sim / 1.16
-        retenciones_fiscales = precio_neto_sin_iva * (0.025 + 0.08)
-        
-        if mkt_simular == "LIVERPOOL":
-            ingreso_bruto = (precio_venta_sim * 0.83) - 130
-            comision_mkt = precio_venta_sim * 0.17 + 130
-            regla_texto = "📋 Regla LVP: Comisión 17% + $130 fijo de envío."
-        else:
-            ingreso_bruto = (precio_venta_sim * 0.85) - 76
-            comision_mkt = precio_venta_sim * 0.15 + 76
-            regla_texto = "📋 Regla WMT: Comisión 15% + $76 fijo de envío."
-            
-        utilidad_neta = ingreso_bruto - costo_con_iva - retenciones_fiscales
-        margen_porcentual = (utilidad_neta / costo_con_iva * 100) if costo_con_iva > 0 else 0.0
-        
-        with col_calc4:
-            st.markdown(f"**Estatus de la Operación**")
-            if utilidad_neta > 0:
-                st.success(f"🟢 RENTABLE ({margen_porcentual:.1f}%)")
-            else:
-                st.error(f"🔴 PÉRDIDA ({margen_porcentual:.1f}%)")
-                
-        st.info(regla_texto)
-        metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
-        metric_col1.metric("📦 Costo + IVA (Almacén)", f"${costo_con_iva:.2f}")
-        metric_col2.metric("💸 Comisión + Envío Mkt", f"${comision_mkt:.2f}")
-        metric_col3.metric("🏛️ Retención SAT (10.5%)", f"${retenciones_fiscales:.2f}")
-        metric_col4.metric("💰 Utilidad Real Neta", f"${utilidad_neta:.2f}", 
-                           delta=f"{margen_porcentual:.1f}% ROI", 
-                           delta_color="normal" if utilidad_neta > 0 else "inverse")
-    
     st.markdown("---")
-    
-    # ========== HISTORIAL DETALLADO ==========
-    st.markdown("### 📜 HISTORIAL DE CAMBIOS (Últimos 7 días)")
-    
-    try:
-        # LLAMADA CORREGIDA A LA FUNCIÓN
-        df_historial = get_historial_precios(days=7)
-        
-        if len(df_historial) > 0:
-            col1, col2, col3 = st.columns(3)
-            with col1: filter_sku = st.text_input("Buscar SKU:", placeholder="Ej: SKU_123")
-            with col2: filter_resultado = st.selectbox("Filtrar por Resultado:", ["Todos", "EJECUTADO", "NO EJECUTADO"])
-            with col3: max_rows = st.number_input("Mostrar últimos N registros:", value=100, min_value=10, max_value=1000)
+    st.markdown("### 📜 HISTORIAL DE CAMBIOS DETALLADO")
+    df_historial = get_historial_precios(days=7)
+    if not df_historial.empty:
+        # Filtramos la tabla de abajo también por el id_cuenta
+        if id_cuenta_filtro != "TODAS":
+            df_historial = df_historial[df_historial['id_cuenta'] == id_cuenta_filtro]
             
-            if filter_sku: df_historial = df_historial[df_historial['sku_interno'].str.contains(filter_sku, case=False)]
-            if filter_resultado != "Todos": df_historial = df_historial[df_historial['resultado'] == filter_resultado]
-            
-            # --- BLOQUE DE VISUALIZACIÓN TÁCTICA ---
-            def resaltar_regla_9(row):
-                """Aplica colores a las filas basado en el resultado"""
-                res = str(row['resultado'])
-                if "Ruleta Rusa" in res:
-                    return ['background-color: #8B0000; color: white'] * len(row) # Rojo vino agresivo
-                elif "Trinquete" in res:
-                    return ['background-color: #B8860B; color: black'] * len(row) # Amarillo dorado alerta
-                return [''] * len(row)
+        st.dataframe(df_historial.head(100), use_container_width=True, hide_index=True)
 
-            # Convertimos a formato estilizado antes de enviar a Streamlit
-            df_estilizado = df_historial.head(max_rows).style.apply(resaltar_regla_9, axis=1)
-
-            # Mostramos la tabla estilizada
-            st.dataframe(
-                df_estilizado,
-                use_container_width=True, 
-                hide_index=True,
-                column_config={
-                    'created_at': st.column_config.TextColumn("Fecha"),
-                    'sku_interno': st.column_config.TextColumn("SKU Interno"),
-                    'sku_limpio': st.column_config.TextColumn("SKU Limpio"),
-                    'precio_ant': st.column_config.NumberColumn("Precio Anterior", format="$%.2f"),
-                    'precio_nuv': st.column_config.NumberColumn("Precio Nuevo", format="$%.2f"),
-                    'stock': st.column_config.NumberColumn("Stock"),
-                    'resultado': st.column_config.TextColumn("Resultado")
-                }
-            )
-        else:
-            st.warning("⚠️ Sin historial disponible")
-    
-    except Exception as e:
-        st.error(f"❌ Error en historial: {e}")
-    
     st.markdown("---")
-    
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
         if st.button("🚪 Cerrar Sesión", use_container_width=True):
             st.session_state['authenticated'] = False
-            st.session_state.clear()
             st.rerun()
 
-    st.markdown("---")
-    with st.expander("🔐 Panel de Administración: Bóveda VIP de Cuentas"):
-        st.subheader("Configuración Centralizada en PostgreSQL")
-        
-        try:
-            # Consultamos el estado real de la tabla nueva
-            query_boveda = """
-            SELECT id_cuenta, nombre_descriptivo, email_usuario, is_active, cookie_vip, token_autorizacion 
-            FROM cuentas_liverpool
-            ORDER BY id_cuenta ASC
-            """
-            df_boveda = pd.read_sql(query_boveda, con=db.connection)
-            
-            # Usamos el editor interactivo de Streamlit para que puedas editar los datos en vivo
-            st.markdown("💡 *Puedes activar/desactivar (is_active) o modificar las cookies directo en la tabla y presionar Guardar:*")
-            df_editado = st.data_editor(
-                df_boveda,
-                column_config={
-                    "id_cuenta": st.column_config.TextColumn("ID", disabled=True),
-                    "nombre_descriptivo": "Nombre Comercial",
-                    "email_usuario": "Email de Acceso",
-                    "is_active": st.column_config.CheckboxColumn("Botón de Encendido (ON/OFF)"),
-                    "cookie_vip": "Gafete VIP (Cookies)",
-                    "token_autorizacion": "Bearer Token Activo"
-                },
-                hide_index=True,
-                use_container_width=True
-            )
-            
-            # Botón para confirmar los cambios aplicados en la interfaz web hacia PostgreSQL
-            if st.button("💾 Guardar Cambios en Bóveda"):
-                for index, row in df_editado.iterrows():
-                    update_query = """
-                    UPDATE cuentas_liverpool
-                    SET nombre_descriptivo = %s, email_usuario = %s, is_active = %s, cookie_vip = %s
-                    WHERE id_cuenta = %s
-                    """
-                    # Ejecutamos la actualización fila por fila
-                    cursor = db.connection.cursor()
-                    cursor.execute(update_query, (row['nombre_descriptivo'], row['email_usuario'], row['is_active'], row['cookie_vip'], row['id_cuenta']))
-                    db.connection.commit()
-                    cursor.close()
-                st.success("🚀 ¡Bóveda VIP actualizada con éxito en el servidor de Render!")
-                st.rerun()
-                
-        except Exception as e:
-            st.error(f"❌ Error en el módulo de administración: {e}")
 # ==========================================
 # 🎬 MAIN APP LOGIC
 # ==========================================
-
 def main():
-    """Función principal de la aplicación"""
-    
-    # Verificar si es vista pública
-    if st.session_state.get('public_view', False):
-        show_public_dashboard()
-    # Verificar autenticación
-    elif auth.is_authenticated():
-        show_private_dashboard()
-    else:
-        show_login_page()
+    if st.session_state.get('public_view', False): show_public_dashboard()
+    elif auth.is_authenticated(): show_private_dashboard()
+    else: show_login_page()
 
 if __name__ == "__main__":
     main()
