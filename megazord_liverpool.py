@@ -309,7 +309,7 @@ def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notifi
         return False
 
 # ==========================================
-# CEREBRO ESTRATÉGICO MULTI-CUENTA
+# CEREBRO ESTRATÉGICO MULTI-CUENTA (CON LOGGING FORENSE)
 # ==========================================
 def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_config, session, id_cuenta):
     try:
@@ -359,6 +359,18 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
 
         hora_actual_str = (datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
         
+        # 🔴 DEBUG ESPECIAL PARA EL SKU PROBLEMÁTICO
+        if sku_i == "1140609443" or sku_lp == "1140609443":
+            logger.info(f"\n{'='*60}")
+            logger.info(f"🔴 DEBUG ESPECIAL PARA 1140609443")
+            logger.info(f"{'='*60}")
+            logger.info(f"precio_actual: {precio_actual}")
+            logger.info(f"base_price: {base_price}")
+            logger.info(f"cantidad: {cantidad}")
+            logger.info(f"offer_id: {offer_id}")
+            logger.info(f"token válido: {bool(token) and len(token) > 20}")
+            logger.info(f"{'='*60}\n")
+
         # Preparar radar de rivales para PostgreSQL
         catalogo_id = regla.get('id')
         if catalogo_id:
@@ -429,11 +441,9 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                         if nuevo_precio_propuesto >= precio_actual:
                             dado = random.randint(1, 9)
                             if dado == 1:
-                                logger.warning(f"   🔥 [{id_cuenta}] VENTA ESPECIAL | Ruleta Rusa (Salió 1). Baja agresiva de -$1.50")
                                 nuevo_precio = round(precio_actual - 1.50, 2)
                                 motivo = "🔥 Hachazo Ruleta Rusa"
                             else:
-                                logger.info(f"   ⬇️ [{id_cuenta}] VENTA ESPECIAL | Trinquete activado. Mantienen ${precio_actual}")
                                 nuevo_precio = precio_actual
                                 motivo = "🛡️ Trinquete Anti-Rebote"
                         else:
@@ -446,11 +456,9 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                             objetivo_sombra = rivales_viables[0]
                             nuevo_precio = round(float(int(objetivo_sombra) - 1) + 0.09, 2)
                             motivo = "🎯 Sombra Activada (.09)"
-                            logger.info(f"   🎯 [{id_cuenta}] VENTA ESPECIAL | Haciendo sombra a rival viable: ${nuevo_precio}")
                         else:
                             nuevo_precio = precio_actual
                             motivo = "🛑 Alerta Roja (Perdida BB)"
-                            logger.warning(f"   🛑 [{id_cuenta}] VENTA ESPECIAL | Pérdida de BuyBox. Congelado en ${precio_actual}")
 
                 else:
                     nuevo_precio = precio_maximo_regla
@@ -465,134 +473,107 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                     
                     if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
                         resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo if precios_rivales else "SIN RIVAL", nuevo_precio, cantidad, pos, bb_con_motivo, id_cuenta])
-                        
-                        if motivo == "🎯 Sombra Activada (.09)":
-                            vendedor_ganador = info_rivales[0]["nombre"] if info_rivales else "Desconocido"
-                            msg_alerta = (f"🚨 *ALERTA TÁCTICA: Sombra Activada ({id_cuenta})*\n\n📦 *{sku_i}*\n"
-                                          f"👑 Ganador actual: *{vendedor_ganador}*\n"
-                                          f"💰 Precio de la BuyBox: `${rival_mas_bajo}`\n"
-                                          f"🎯 Haciendo Sombra a: `${nuevo_precio}`...")
-                        else:
-                            msg_alerta = (f"🎯 *VENTA ESPECIAL ACTIVADA ({id_cuenta})*\n\n📦 *{sku_i}*\n"
-                                          f"👑 Rival: `${rival_mas_bajo if precios_rivales else 'N/A'}`\n"
-                                          f"📉 Anterior: `${precio_actual}` → Nuevo: `${nuevo_precio}`\n"
-                                          f"⚙️ Táctica: {motivo}")
-                        
-                        if costo_odoo_sheet > 0:
-                            gan, mar = calcular_rentabilidad(nuevo_precio if motivo != "🎯 Sombra Activada (.09)" else rival_mas_bajo, costo_odoo_sheet)
-                            msg_alerta += f"\n💡 Ganancia referencial: `${gan:.2f}` | Margen: `{mar:.1f}%`"
-                        resultados.agregar_alerta(msg_alerta)
                 else:
                     pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
                     bb_con_motivo = f"{bb} | {motivo}"
-                    
-                    if motivo == "🛑 Alerta Roja (Perdida BB)":
-                        gan_roja, mar_roja = calcular_rentabilidad(rival_mas_bajo, costo_odoo_sheet)
-                        vendedor_ganador = info_rivales[0]["nombre"] if info_rivales else "Desconocido"
-                        msg_alerta = (
-                            f"🛑 *ALERTA ROJA: Has perdido la BuyBox ({id_cuenta})*\n\n"
-                            f"📦 *{sku_i}*\n"
-                            f"👑 Ganador actual: *{vendedor_ganador}*\n"
-                            f"💰 Precio de la BuyBox: `${rival_mas_bajo}`\n"
-                            f"🥶 Congelado en `${precio_actual}` (Mínimo: `${precio_minimo_regla}`).\n"
-                            f"💡 Para poder salir (igualando a `${rival_mas_bajo}`):\n"
-                            f"Ganancia: `${gan_roja:.2f}` | Margen: `{mar_roja:.1f}%`"
-                        )
-                        resultados.agregar_alerta(msg_alerta)
-                        
                     resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo if precios_rivales else "SIN RIVAL", precio_actual, cantidad, pos, bb_con_motivo, id_cuenta])
 
             # =========================================
-            # REGLAS 1, 4, 5, 6, 7, 8
+            # REGLAS 1, 4, 5, 6, 7, 8 (FORENSE APLICADO)
             # =========================================
             else:
-                if precios_rivales:
-                    rival_mas_bajo = precios_rivales[0]
-
-                    if tipo_regla.startswith('4') and rival_mas_bajo > precio_maximo_regla:
-                        mejor_historico = resultados.max_precio_buybox_historico.get(sku_i, 0) if hasattr(resultados, 'max_precio_buybox_historico') else 0
-                        if mejor_historico > 0:
-                            nuevo_precio = mejor_historico
-                            msg_alerta = f"🧠 *ANALISTA HISTÓRICO ({id_cuenta})*\n\n📦 *{sku_i}*\nRivales muy caros. Usando mejor precio histórico: `${nuevo_precio}`"
+                logger.info(f"   🎯 REGLA GLADIADOR - Analizando {sku_i}")
+                
+                if not precios_rivales:
+                    logger.info(f"   👑 MONOPOLIO: {sku_i} sin rivales detectados")
+                    nuevo_precio = precio_maximo_regla
+                    pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
+                    if float(precio_actual) != float(nuevo_precio):
+                        if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
+                            resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, "SIN_RIVAL", nuevo_precio, cantidad, pos, bb, id_cuenta])
                         else:
+                            resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, "SIN_RIVAL", precio_actual, cantidad, pos, bb, id_cuenta])
+                    else:
+                        resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, "SIN_RIVAL", precio_actual, cantidad, pos, bb, id_cuenta])
+                    return
+                
+                rival_mas_bajo = precios_rivales[0]
+                
+                try:
+                    rival_mas_bajo = float(rival_mas_bajo)
+                    precio_actual = float(precio_actual)
+                    precio_minimo_regla = float(precio_minimo_regla)
+                    precio_maximo_regla = float(precio_maximo_regla)
+                except (ValueError, TypeError) as e:
+                    logger.error(f"   ❌ Error casting a float: {e}")
+                    resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, f"ERROR_CAST:{str(e)}", precio_actual, cantidad, "ERROR", "ERROR", id_cuenta])
+                    return
+                
+                if rival_mas_bajo >= precio_minimo_regla:
+                    # CÁLCULO DE MARGEN CORREGIDO
+                    diferencia_actual = round(float(rival_mas_bajo) - float(precio_actual), 2)
+                    logger.debug(f"      diferencia_actual (rival - nuestro): ${diferencia_actual}")
+                    
+                    if -1.95 <= diferencia_actual <= -1.50:
+                        logger.info(f"   ℹ️ MARGEN ÓPTIMO: Ya somos ${abs(diferencia_actual)} más baratos")
+                        pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
+                        resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb, id_cuenta])
+                    else:
+                        baja = round(random.uniform(1.50, 1.95), 2)
+                        nuevo_precio = round(rival_mas_bajo - baja, 2)
+                        
+                        if precio_maximo_regla > 0 and nuevo_precio > precio_maximo_regla:
                             nuevo_precio = precio_maximo_regla
-                            msg_alerta = f"🧠 *ANALISTA HISTÓRICO ({id_cuenta})*\n\n📦 *{sku_i}*\nRivales muy caros. Ajustando a máximo: `${nuevo_precio}`"
-
+                        
+                        if nuevo_precio < precio_minimo_regla:
+                            logger.error(f"   ❌ Nuevo precio BAJO mínimo: ${nuevo_precio} < ${precio_minimo_regla}")
+                            pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
+                            resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb, id_cuenta])
+                            return
+                        
+                        if float(precio_actual) == float(nuevo_precio):
+                            pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
+                            resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb, id_cuenta])
+                            return
+                        
+                        logger.info(f"   🚀 DISPARANDO: ${precio_actual} → ${nuevo_precio}")
                         pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
+                        
+                        resultado_disparo = disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i)
+                        
+                        if resultado_disparo:
+                            logger.info(f"   ✅ DISPARO EXITOSO: ${nuevo_precio}")
+                            resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, nuevo_precio, cantidad, pos, bb, id_cuenta])
+                        else:
+                            logger.error(f"   ❌ DISPARO FALLÓ - disparar_precio() devolvió False")
+                            resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb, id_cuenta])
+                
+                else:
+                    logger.warning(f"   🛑 RIVAL INDEFENDIBLE: ${rival_mas_bajo} < ${precio_minimo_regla}")
+                    rivales_viables = [p for p in precios_rivales if p >= precio_minimo_regla]
+                    
+                    if rivales_viables:
+                        objetivo_sombra = rivales_viables[0]
+                        nuevo_precio = round(float(int(objetivo_sombra) - 1) + 0.09, 2)
+                        
+                        if precio_maximo_regla > 0 and nuevo_precio > precio_maximo_regla:
+                            nuevo_precio = precio_maximo_regla
+                        if nuevo_precio < precio_minimo_regla:
+                            nuevo_precio = precio_minimo_regla
+                        
+                        pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
+                        
                         if float(precio_actual) != float(nuevo_precio):
                             if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
-                                resultados.agregar_alerta(msg_alerta)
                                 resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, nuevo_precio, cantidad, pos, bb, id_cuenta])
+                            else:
+                                resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb, id_cuenta])
                         else:
                             resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb, id_cuenta])
-
                     else:
-                        if rival_mas_bajo >= precio_minimo_regla:
-                            margen_actual = round(float(rival_mas_bajo) - float(precio_actual), 2)
-                            if 1.50 <= margen_actual <= 1.96:
-                                pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
-                                resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb, id_cuenta])
-                            else:
-                                baja = round(random.uniform(1.50, 1.96), 2)
-                                nuevo_precio = round(rival_mas_bajo - baja, 2)
-                                if precio_maximo_regla > 0 and nuevo_precio > precio_maximo_regla:
-                                    nuevo_precio = precio_maximo_regla
-
-                                if nuevo_precio >= precio_minimo_regla:
-                                    pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
-                                    if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
-                                        resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, nuevo_precio, cantidad, pos, bb, id_cuenta])
-                        else:
-                            rivales_viables = [p for p in precios_rivales if p >= precio_minimo_regla]
-                            if rivales_viables:
-                                objetivo_sombra = rivales_viables[0]
-                                nuevo_precio = round(float(int(objetivo_sombra) - 1) + 0.09, 2)
-                                if precio_maximo_regla > 0 and nuevo_precio > precio_maximo_regla:
-                                    nuevo_precio = precio_maximo_regla
-                                if nuevo_precio < precio_minimo_regla:
-                                    nuevo_precio = precio_minimo_regla
-
-                                pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
-                                vendedor_ganador = info_rivales[0]["nombre"] if info_rivales else "Desconocido"
-                                msg_alerta = (
-                                    f"🚨 *ALERTA TÁCTICA: Sombra Activada ({id_cuenta})*\n\n"
-                                    f"📦 *{sku_i}*\n"
-                                    f"👑 Ganador actual: *{vendedor_ganador}*\n"
-                                    f"💰 Precio de la BuyBox: `${rival_mas_bajo}`\n"
-                                    f"🎯 Haciendo Sombra a: `${nuevo_precio}`...\n"
-                                )
-                                if costo_odoo_sheet > 0:
-                                    gan, mar = calcular_rentabilidad(rival_mas_bajo, costo_odoo_sheet)
-                                    msg_alerta += f"💡 Para ganar a `${rival_mas_bajo}`: Ganancia: `${gan:.2f}` | Margen: `{mar:.1f}%`"
-
-                                resultados.agregar_alerta(msg_alerta)
-                                if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
-                                    resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, nuevo_precio, cantidad, pos, bb, id_cuenta])
-                            else:
-                                pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
-                                vendedor_ganador = info_rivales[0]["nombre"] if info_rivales else "Desconocido"
-                                gan_roja, mar_roja = calcular_rentabilidad(rival_mas_bajo, costo_odoo_sheet)
-                                msg_alerta = (
-                                    f"🛑 *ALERTA ROJA: Has perdido la BuyBox ({id_cuenta})*\n\n"
-                                    f"📦 *{sku_i}*\n"
-                                    f"👑 Ganador actual: *{vendedor_ganador}*\n"
-                                    f"💰 Precio de la BuyBox: `${rival_mas_bajo}`\n"
-                                    f"🥶 Congelado en `${precio_actual}` (Mínimo: `${precio_minimo_regla}`).\n"
-                                    f"💡 Para poder salir (igualando a `${rival_mas_bajo}`):\n"
-                                    f"Ganancia: `${gan_roja:.2f}` | Margen: `{mar_roja:.1f}%`"
-                                )
-                                resultados.agregar_alerta(msg_alerta)
-                                resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb, id_cuenta])
-                else:
-                    if tipo_regla.startswith('4'):
-                        mejor_historico = resultados.max_precio_buybox_historico.get(sku_i, precio_maximo_regla) if hasattr(resultados, 'max_precio_buybox_historico') else precio_maximo_regla
-                        nuevo_precio = mejor_historico if mejor_historico > 0 else precio_maximo_regla
-                        if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
-                            resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, "SIN RIVAL", nuevo_precio, cantidad, "1 de 1", "¡Nosotros! 👑", id_cuenta])
-                    else:
-                        nuevo_precio = precio_maximo_regla
-                        if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
-                            resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, "SIN RIVAL", nuevo_precio, cantidad, "1 de 1", "¡Nosotros! 👑", id_cuenta])
+                        logger.error(f"   🛑 ALERTA ROJA: Congelado en ${precio_actual}")
+                        pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
+                        resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb, id_cuenta])
 
     except Exception as e:
         logger.error(f"❌ Error en procesar_sku_threadsafe: {e}")
