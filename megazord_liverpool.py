@@ -69,12 +69,11 @@ def enmascarar_precio(precio_real):
         return f"${int(float(precio_real))}.XX"
     except:
         return "$X.XX"
-
 # ==========================================
 # LOGGING
 # ==========================================
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # <--- ¡CAMBIA INFO POR DEBUG AQUÍ!
     format='%(asctime)s | %(levelname)-8s | %(funcName)-20s | %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
     handlers=[
