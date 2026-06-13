@@ -51,6 +51,10 @@ DARK_MODE_CSS = """
         --text-primary: #ffffff;
         --text-secondary: #b0bec5;
         --border-color: #00d9ff;
+        /* FORZAR LETRAS NEGRAS EN BOTONES Y DESPLEGABLES */
+        .stButton > button { color: #000000 !important; text-shadow: none !important; }
+        .stButton > button p { color: #000000 !important; font-weight: 900 !important; }
+        div[data-baseweb="select"] * { color: #000000 !important; }
     }
     .main { background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%); color: #ffffff; }
     
@@ -213,21 +217,33 @@ def show_private_dashboard():
         st.markdown("---")
         st.subheader("⚡ Centro de Lanzamiento")
 
-        # Creamos dos columnas en el panel lateral para que se vea simétrico
+        # 🔐 Credenciales de GitHub (Debes ponerlas en tu .env o en los secrets de Streamlit)
+        GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "tu_token_aqui") 
+        GITHUB_USER = os.getenv("GITHUB_USER", "TuUsuarioDeGithub")
+        GITHUB_REPO = os.getenv("GITHUB_REPO", "TuRepositorio")
+
+        headers_github = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+
         col_btn1, col_btn2 = st.columns(2)
 
-        # 🔵 PANEL COPPEL (Disparo Directo)
+        # 🔵 PANEL COPPEL
         with col_btn1:
             st.markdown("**🔵 Coppel**")
             if st.button("🚀 Lanzar", key="btn_coppel", use_container_width=True):
+                url_coppel = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/actions/workflows/megazord-coppel.yml/dispatches"
                 try:
-                    # Aquí va la orden a GitHub Actions para megazord-coppel.yml
-                    # requests.post("URL_WEBHOOK_COPPEL", headers=headers, json={"ref": "main"})
-                    st.success("✅ Misil Coppel lanzado.")
+                    res = requests.post(url_coppel, headers=headers_github, json={"ref": "main"})
+                    if res.status_code == 204:
+                        st.success("✅ Misil Coppel en camino.")
+                    else:
+                        st.error(f"❌ Error {res.status_code}: Revisa tu Token de GitHub")
                 except Exception as e:
-                    st.error(f"❌ Error: {e}")
+                    st.error(f"❌ Error de conexión: {e}")
 
-        # 🔴🟢 PANEL MULTI-TIENDA (Lista Desplegable)
+        # 🔴🟢 PANEL MULTI-TIENDA
         with col_btn2:
             st.markdown("**🔴🟢 Multi-Tienda**")
             objetivo = st.selectbox(
@@ -236,16 +252,22 @@ def show_private_dashboard():
                 label_visibility="collapsed"
             )
             
-            # El botón cambia de color según la tienda para darle estilo
             if st.button("🚀 Disparar", key="btn_multi", type="primary", use_container_width=True):
+                url_main = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/actions/workflows/main.yml/dispatches"
+                # Pasamos la orden en minúsculas para que haga match perfecto con tu main.yml
+                payload = {
+                    "ref": "main", 
+                    "inputs": {"tienda": objetivo.lower()}
+                }
+                
                 try:
-                    # Aquí va la orden a GitHub Actions para main.yml
-                    # Le pasamos la variable 'objetivo' para que GitHub sepa qué ejecutar
-                    # payload = {"ref": "main", "inputs": {"tienda": objetivo}}
-                    # requests.post("URL_WEBHOOK_MAIN", headers=headers, json=payload)
-                    st.success(f"✅ Misil {objetivo} en camino.")
+                    res = requests.post(url_main, headers=headers_github, json=payload)
+                    if res.status_code == 204:
+                        st.success(f"✅ Misil {objetivo} lanzado con éxito.")
+                    else:
+                        st.error(f"❌ Error {res.status_code}: Revisa tu Token de GitHub")
                 except Exception as e:
-                    st.error(f"❌ Error: {e}")
+                    st.error(f"❌ Error de conexión: {e}")
 
     st.markdown("""<h1 style="color: #1db954;">🔐 SALA DE CONTROL EJECUTIVA - MODO COMANDANTE</h1>""", unsafe_allow_html=True)
     
