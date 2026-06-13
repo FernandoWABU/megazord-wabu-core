@@ -641,7 +641,8 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                 if rival_mas_bajo >= precio_minimo_regla:
                     diferencia_actual = round(float(rival_mas_bajo) - float(precio_actual), 2)
                     
-                    if -1.95 <= diferencia_actual <= -1.50:
+                    # 🎯 ¡PARCHE APLICADO! Evaluamos en positivo (1.50 a 1.95)
+                    if 1.50 <= diferencia_actual <= 1.95:
                         pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
                         resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb, id_cuenta])
                     else:
