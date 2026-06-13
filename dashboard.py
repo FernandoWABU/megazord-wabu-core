@@ -217,10 +217,19 @@ def show_private_dashboard():
         st.markdown("---")
         st.subheader("⚡ Centro de Lanzamiento")
 
-        # 🔐 Credenciales de GitHub (Debes ponerlas en tu .env o en los secrets de Streamlit)
-        GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "tu_token_aqui") 
-        GITHUB_USER = os.getenv("GITHUB_USER", "TuUsuarioDeGithub")
-        GITHUB_REPO = os.getenv("GITHUB_REPO", "TuRepositorio")
+        # 🔐 Credenciales de GitHub (Conectado a Streamlit Secrets)
+        try:
+            GITHUB_TOKEN = st.secrets["GITHUB_PAT"] 
+            
+            # 👇 REEMPLAZA ESTO CON TUS DATOS REALES DE GITHUB 👇
+            GITHUB_USER = "FernandoWABU"       # Ej. "FernandoW"
+            GITHUB_REPO = "megazord-wabu-core"   # Ej. "Megazord_Liverpool"
+            
+        except Exception:
+            st.error("⚠️ Faltan credenciales en los Secrets de Streamlit.")
+            GITHUB_TOKEN = ""
+            GITHUB_USER = ""
+            GITHUB_REPO = ""
 
         headers_github = {
             "Authorization": f"token {GITHUB_TOKEN}",
@@ -239,7 +248,7 @@ def show_private_dashboard():
                     if res.status_code == 204:
                         st.success("✅ Misil Coppel en camino.")
                     else:
-                        st.error(f"❌ Error {res.status_code}: Revisa tu Token de GitHub")
+                        st.error(f"❌ Error {res.status_code}: Verifica tu GITHUB_PAT o el nombre del repositorio.")
                 except Exception as e:
                     st.error(f"❌ Error de conexión: {e}")
 
@@ -254,7 +263,6 @@ def show_private_dashboard():
             
             if st.button("🚀 Disparar", key="btn_multi", type="primary", use_container_width=True):
                 url_main = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/actions/workflows/main.yml/dispatches"
-                # Pasamos la orden en minúsculas para que haga match perfecto con tu main.yml
                 payload = {
                     "ref": "main", 
                     "inputs": {"tienda": objetivo.lower()}
@@ -265,7 +273,7 @@ def show_private_dashboard():
                     if res.status_code == 204:
                         st.success(f"✅ Misil {objetivo} lanzado con éxito.")
                     else:
-                        st.error(f"❌ Error {res.status_code}: Revisa tu Token de GitHub")
+                        st.error(f"❌ Error {res.status_code}: Verifica tu GITHUB_PAT o el nombre del repositorio.")
                 except Exception as e:
                     st.error(f"❌ Error de conexión: {e}")
 
