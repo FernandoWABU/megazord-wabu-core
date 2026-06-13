@@ -207,6 +207,24 @@ def show_private_dashboard():
         cta_label = st.selectbox("Filtrar Dashboard por:", opciones)
         id_cuenta_filtro = map_cuentas[cta_label]
 
+        # ==========================================
+        # 🚀 BOTÓN DE DISPARO RECUPERADO
+        # ==========================================
+        st.markdown("---")
+        st.subheader("⚡ Centro de Operaciones")
+        if st.button("🚀 DISPARAR BARRIDO AHORA", use_container_width=True):
+            try:
+                # Si tienes el bot y el dashboard en el mismo servidor (Render):
+                import subprocess
+                subprocess.Popen(["python", "megazord_liverpool.py"])
+                
+                # Si usabas un Webhook de GitHub Actions, puedes poner aquí tu requests.post(...)
+                # requests.post("TU_URL_DE_GITHUB_AQUI")
+                
+                st.success("✅ ¡Misil lanzado! El bot está corriendo en segundo plano.")
+            except Exception as e:
+                st.error(f"❌ Error al intentar despertar al bot: {e}")
+
     st.markdown("""<h1 style="color: #1db954;">🔐 SALA DE CONTROL EJECUTIVA - MODO COMANDANTE</h1>""", unsafe_allow_html=True)
     
     df_catalogo = get_catalogo_maestro()
