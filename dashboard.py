@@ -208,22 +208,44 @@ def show_private_dashboard():
         id_cuenta_filtro = map_cuentas[cta_label]
 
         # ==========================================
-        # 🚀 BOTÓN DE DISPARO RECUPERADO
+        # 🚀 CENTRO DE OPERACIONES MULTI-CANAL
         # ==========================================
         st.markdown("---")
-        st.subheader("⚡ Centro de Operaciones")
-        if st.button("🚀 DISPARAR BARRIDO AHORA", use_container_width=True):
-            try:
-                # Si tienes el bot y el dashboard en el mismo servidor (Render):
-                import subprocess
-                subprocess.Popen(["python", "megazord_liverpool.py"])
-                
-                # Si usabas un Webhook de GitHub Actions, puedes poner aquí tu requests.post(...)
-                # requests.post("TU_URL_DE_GITHUB_AQUI")
-                
-                st.success("✅ ¡Misil lanzado! El bot está corriendo en segundo plano.")
-            except Exception as e:
-                st.error(f"❌ Error al intentar despertar al bot: {e}")
+        st.subheader("⚡ Centro de Lanzamiento")
+
+        # Creamos dos columnas en el panel lateral para que se vea simétrico
+        col_btn1, col_btn2 = st.columns(2)
+
+        # 🔵 PANEL COPPEL (Disparo Directo)
+        with col_btn1:
+            st.markdown("**🔵 Coppel**")
+            if st.button("🚀 Lanzar", key="btn_coppel", use_container_width=True):
+                try:
+                    # Aquí va la orden a GitHub Actions para megazord-coppel.yml
+                    # requests.post("URL_WEBHOOK_COPPEL", headers=headers, json={"ref": "main"})
+                    st.success("✅ Misil Coppel lanzado.")
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
+
+        # 🔴🟢 PANEL MULTI-TIENDA (Lista Desplegable)
+        with col_btn2:
+            st.markdown("**🔴🟢 Multi-Tienda**")
+            objetivo = st.selectbox(
+                "Objetivo:", 
+                ["LIVERPOOL", "WALMART", "AMBAS"], 
+                label_visibility="collapsed"
+            )
+            
+            # El botón cambia de color según la tienda para darle estilo
+            if st.button("🚀 Disparar", key="btn_multi", type="primary", use_container_width=True):
+                try:
+                    # Aquí va la orden a GitHub Actions para main.yml
+                    # Le pasamos la variable 'objetivo' para que GitHub sepa qué ejecutar
+                    # payload = {"ref": "main", "inputs": {"tienda": objetivo}}
+                    # requests.post("URL_WEBHOOK_MAIN", headers=headers, json=payload)
+                    st.success(f"✅ Misil {objetivo} en camino.")
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
 
     st.markdown("""<h1 style="color: #1db954;">🔐 SALA DE CONTROL EJECUTIVA - MODO COMANDANTE</h1>""", unsafe_allow_html=True)
     
