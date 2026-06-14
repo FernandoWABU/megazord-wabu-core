@@ -183,9 +183,12 @@ def validar_token_vivo(token, sku_test):
     except: 
         return True 
 
+# ==========================================
+# MÓDULO DE INFILTRACIÓN AUTOMÁTICA (PLAYWRIGHT) - V5.2 STEALTH
+# ==========================================
 def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, cookie_encriptada_actual):
-    """Robot de Playwright que intercepta el 2FA, toma fotos de evidencia y actualiza la BD"""
-    logger.info(f"🤖 [{id_cuenta}] Desplegando Escuadrón Playwright para Extracción de Token...")
+    """Robot de Playwright con Evasión Cloudflare, Resiliencia DOM y Polling Inteligente"""
+    logger.info(f"🤖 [{id_cuenta}] Desplegando Escuadrón Playwright (STEALTH MODE)...")
     token_atrapado = None
     p = None
     browser = None
@@ -194,123 +197,274 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
 
     try:
         p = sync_playwright().start()
+        
+        # 1. STEALTH ANTI-CLOUDFLARE (Navegador indetectable)
         browser = p.chromium.launch(
-            headless=True, 
-            args=['--disable-dev-shm-usage', '--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-blink-features=AutomationControlled']
+            headless=True,
+            args=[
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-gpu',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-web-resources',
+                '--disable-component-extensions-with-background-pages',
+            ]
         )
-        # Pantalla más grande para evitar versiones móviles raras
+        
         context = browser.new_context(
-            viewport={'width': 1366, 'height': 768}, 
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            viewport={'width': 1366, 'height': 768},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            extra_http_headers={
+                'Accept-Language': 'es-MX,es;q=0.9,en;q=0.8',
+                'Referer': 'https://www.google.com/',
+            }
         )
+        
+        page = context.new_page()
+        
+        # 2. INYECCIÓN DE CÓDIGO NINJA (Ocultar propiedades de robot)
+        stealth_script = """
+        Object.defineProperty(navigator, 'webdriver', { get: () => false });
+        Object.defineProperty(navigator, 'chromeFlags', { get: () => undefined });
+        const originalQuery = window.chrome.runtime.sendMessage;
+        window.chrome.runtime.sendMessage = (msg) => ('response' in msg) ? Promise.resolve() : originalQuery(msg);
+        """
+        await_script = """
+        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+        Object.defineProperty(navigator, 'languages', { get: () => ['es-MX', 'es', 'en'] });
+        """
+        
+        try:
+            page.add_init_script(stealth_script)
+            page.add_init_script(await_script)
+            logger.info(f"✅ Scripts de invisibilidad inyectados exitosamente.")
+        except Exception as e:
+            logger.warning(f"⚠️ Error inyectando stealth scripts: {e}")
+        
+        page.set_extra_http_headers({
+            'Sec-CH-UA': '"Not A(Brand";v="99", "Google Chrome";v="120"',
+            'Sec-CH-UA-Mobile': '?0',
+            'Sec-CH-UA-Platform': '"Windows"',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+        })
         
         if cookie_encriptada_actual and cookie_encriptada_actual != "NaN":
             try:
-                if cipher: context.add_cookies(json.loads(cipher.decrypt(cookie_encriptada_actual.encode()).decode()))
-                else: context.add_cookies(json.loads(cookie_encriptada_actual))
-            except: pass
+                if cipher: 
+                    cookies_data = json.loads(cipher.decrypt(cookie_encriptada_actual.encode()).decode())
+                else: 
+                    cookies_data = json.loads(cookie_encriptada_actual)
+                context.add_cookies(cookies_data)
+                logger.info(f"🍪 Gafete VIP restaurado en memoria.")
+            except Exception as e:
+                logger.warning(f"⚠️ Error restaurando cookies: {e}")
 
-        page = context.new_page()
-
+        # 3. RASTREADOR DE RED
         def rastrear_red(request):
             nonlocal token_atrapado
             if "pro-api.liverpool.com.mx" in request.url:
                 auth = request.headers.get("authorization", "")
-                if "Bearer " in auth: token_atrapado = auth.replace("Bearer ", "")
+                if "Bearer " in auth:
+                    token_atrapado = auth.replace("Bearer ", "")
 
         page.on("request", rastrear_red)
-        page.goto("https://marketplace.liverpool.com.mx/")
+        
+        logger.info(f"🌐 Navegando a Liverpool Marketplace...")
+        page.goto("https://marketplace.liverpool.com.mx/", wait_until="networkidle")
 
         necesita_login = True
         try:
-            page.wait_for_selector('input#username, #username, input[name="username"], input[type="email"]', timeout=10000)
-            logger.info(f"🛑 [{id_cuenta}] Nos detectaron. Iniciando protocolo de Login y 2FA...")
-        except:
-            necesita_login = False
-            page.reload()
-            page.wait_for_timeout(8000)
-            if not token_atrapado:
+            # 4. RESILIENCIA DOM: Buscar CUALQUIER selector válido
+            login_selectors = ['input#username', 'input[name="username"]', 'input[name="email"]', 'input[type="email"]:visible']
+            selector_encontrado = None
+            for selector in login_selectors:
+                try:
+                    page.wait_for_selector(selector, timeout=8000)
+                    selector_encontrado = selector
+                    break
+                except: pass
+            
+            if selector_encontrado:
+                logger.info(f"🛑 Formulario de Login detectado.")
                 necesita_login = True
+            else:
+                necesita_login = False
+                
+        except Exception as e:
+            necesita_login = False
 
         if necesita_login:
             page.goto("https://marketplace.liverpool.com.mx/")
-            page.wait_for_selector('input#username, #username, input[name="username"], input[type="email"]', timeout=30000)
             
-            page.locator('input#username').click()
-            page.locator('input#username').type(email_usuario, delay=random.randint(150, 300))
-            page.locator('input#password').click()
-            page.locator('input#password').type(LIVERPOOL_PASS, delay=random.randint(150, 300))
+            # Búsqueda Robusta de Email
+            email_field = None
+            for selector in ['input#username', 'input[name="username"]', 'input[name="email"]', 'input[type="email"]']:
+                try:
+                    locator = page.locator(selector).first
+                    if locator.is_visible():
+                        email_field = locator
+                        break
+                except: pass
             
-            # Tomar foto justo antes de intentar entrar
-            page.screenshot(path="debug_token.png")
+            if not email_field:
+                logger.error(f"❌ DOM Cambió: No se encontró campo de email.")
+                page.screenshot(path="debug_token.png")
+                return None, None
+            
+            try:
+                email_field.scroll_into_view_if_needed()
+                email_field.click(force=True, delay=100)
+                email_field.type(email_usuario, delay=random.randint(100, 200))
+            except Exception as e:
+                logger.error(f"❌ Error tecleando email: {e}")
+                page.screenshot(path="debug_token.png")
+                return None, None
+            
+            # Búsqueda Robusta de Password
+            password_field = None
+            for selector in ['input#password', 'input[name="password"]', 'input[type="password"]']:
+                try:
+                    locator = page.locator(selector).first
+                    if locator.is_visible():
+                        password_field = locator
+                        break
+                except: pass
+            
+            if not password_field:
+                page.screenshot(path="debug_token.png")
+                return None, None
+            
+            try:
+                password_field.scroll_into_view_if_needed()
+                password_field.click(force=True, delay=100)
+                password_field.type(LIVERPOOL_PASS, delay=random.randint(100, 200))
+            except Exception as e:
+                page.screenshot(path="debug_token.png")
+                return None, None
+            
+            # Búsqueda Robusta del Botón Submit
+            try:
+                submit_button = None
+                try: submit_button = page.locator('button[type="submit"]:has-text("Continuar")').first
+                except: pass
+                
+                if not submit_button or not submit_button.is_visible():
+                    submit_button = page.locator('button[type="submit"]').first
+                
+                if not submit_button or not submit_button.is_visible():
+                    page.screenshot(path="debug_token.png")
+                    return None, None
+                
+                submit_button.scroll_into_view_if_needed()
+                submit_button.click(force=True, delay=100)
+            except Exception as e:
+                page.screenshot(path="debug_token.png")
+                return None, None
+            
+            page.wait_for_timeout(2000)
+            
+            # 5. POLLING 2FA INTELIGENTE (Timeout absoluto)
+            logger.info(f"⏳ Interceptando código 2FA de Google Sheets (Timeout: 180s)...")
+            tiempo_inicio_2fa = time.time()
+            timeout_total_2fa = 180 
             
             try: hoja_config = gc_client.open_by_key(GOOGLE_SHEET_ID).worksheet("Config")
             except: hoja_config = None
 
-            page.click('button[type="submit"]')
-            logger.info("⏳ Botón de login presionado. Esperando 15 seg para que llegue el correo...")
-            time.sleep(15)
-
             codigo_antiguo = ""
             codigo_exitoso = False
 
-            for i in range(18):
-                time.sleep(10)
+            while (time.time() - tiempo_inicio_2fa) < timeout_total_2fa:
                 codigo_nuevo = ""
                 if hoja_config:
                     try: codigo_nuevo = str(hoja_config.acell("B1").value).replace("'", "").strip()
                     except: pass
                 
-                # ESTE LOG ES CRÍTICO: Nos dirá si está leyendo Google Sheets correctamente
-                logger.info(f"🔄 Intento {i+1}/18 | Código detectado en Excel: '{codigo_nuevo}'")
-
-                if codigo_nuevo != codigo_antiguo and len(codigo_nuevo) == 6:
-                    logger.info(f"✅ ¡Código FRESCO interceptado!: {codigo_nuevo}")
+                tiempo_transcurrido = int(time.time() - tiempo_inicio_2fa)
+                
+                if codigo_nuevo != codigo_antiguo or tiempo_transcurrido % 20 == 0:
+                    logger.info(f"🔄 [{tiempo_transcurrido}s] Celda B1: '{codigo_nuevo}'")
+                
+                if codigo_nuevo != codigo_antiguo and len(codigo_nuevo) == 6 and codigo_nuevo.isdigit():
+                    logger.info(f"✅ ¡Código FRESCO detectado!: {codigo_nuevo}")
                     codigo_antiguo = codigo_nuevo
                     
                     try:
-                        caja_codigo = page.locator('input:not([disabled]):not([readonly]):not([type="checkbox"]):not([type="hidden"]):visible').first
-                        caja_codigo.click(force=True)
-                        page.keyboard.type(codigo_nuevo, delay=random.randint(200, 400))
-                        page.wait_for_timeout(1500)
-                        page.locator('button:has-text("Continuar")').first.click(force=True)
-                    except Exception as e:
-                        logger.error(f"❌ Error tecleando el código 2FA: {e}")
-
-                    tiempo_inicio = time.time()
-                    while time.time() - tiempo_inicio < 60:
-                        time.sleep(1)
-                        if token_atrapado:
-                            logger.info(f"🔑 [{id_cuenta}] ¡TOKEN BEARER ATRAPADO CON ÉXITO!")
-                            codigo_exitoso = True
-                            break
-                        if time.time() - tiempo_inicio == 20:
-                            try: page.reload(); page.wait_for_timeout(3000)
+                        codigo_input = None
+                        for selector in ['input[name="code"]', 'input[name="otp"]', 'input[name="2fa"]', 'input[maxlength="6"]', 'input:not([disabled]):not([readonly]):not([type="hidden"]):visible']:
+                            try:
+                                locator = page.locator(selector).first
+                                if locator.is_visible():
+                                    codigo_input = locator
+                                    break
                             except: pass
-                    if codigo_exitoso: break
-
+                        
+                        if not codigo_input: continue
+                        
+                        codigo_input.scroll_into_view_if_needed()
+                        codigo_input.click(force=True)
+                        codigo_input.clear()
+                        codigo_input.type(codigo_nuevo, delay=random.randint(150, 250))
+                        
+                        page.wait_for_timeout(800)
+                        
+                        continuar_button = None
+                        try: continuar_button = page.locator('button:has-text("Continuar")').first
+                        except: continuar_button = page.locator('button[type="submit"]').first
+                        
+                        if continuar_button and continuar_button.is_visible():
+                            continuar_button.click(force=True)
+                        
+                        tiempo_espera_token = time.time()
+                        while (time.time() - tiempo_espera_token) < 60:
+                            time.sleep(1)
+                            if token_atrapado:
+                                logger.info(f"🔑 [{id_cuenta}] ¡TOKEN BEARER ATRAPADO CON ÉXITO!")
+                                codigo_exitoso = True
+                                break
+                        
+                        if codigo_exitoso: break
+                        
+                    except Exception as e:
+                        logger.error(f"❌ Error inyectando código 2FA: {e}")
+                        page.screenshot(path="debug_token.png")
+                
+                time.sleep(5) # Refresco ágil cada 5 segundos
+            
             if not codigo_exitoso:
-                # Si falló, tomamos foto de evidencia para ver si Liverpool nos mandó error
+                logger.error(f"❌ [{id_cuenta}] Timeout 2FA. Abortando misión.")
                 page.screenshot(path="debug_token.png")
-                logger.error(f"❌ [{id_cuenta}] Misión Abortada. No soltaron el token. ¡Revisa la foto en GitHub Actions!")
                 return None, None
 
-        page.wait_for_timeout(3000)
+        else:
+            logger.info(f"ℹ️ Sesión ya estaba activa. Esperando token...")
+            page.wait_for_timeout(8000)
         
+        # 6. GUARDADO EN BASE DE DATOS
         if token_atrapado:
-            logger.info(f"💾 [{id_cuenta}] Guardando llaves maestras en PostgreSQL...")
+            logger.info(f"💾 [{id_cuenta}] Escribiendo llaves en PostgreSQL...")
             cookies_json = json.dumps(context.cookies())
             cookie_final = cipher.encrypt(cookies_json.encode()).decode() if cipher else cookies_json
             
             try:
                 with psycopg2.connect(DATABASE_URL) as conn:
                     with conn.cursor() as cursor:
-                        cursor.execute("UPDATE cuentas_liverpool SET token_autorizacion=%s, cookie_vip=%s WHERE id_cuenta=%s", 
-                                       (token_atrapado, cookie_final, id_cuenta))
+                        cursor.execute("""
+                            UPDATE cuentas_liverpool 
+                            SET token_autorizacion=%s, cookie_vip=%s
+                            WHERE id_cuenta=%s
+                        """, (token_atrapado, cookie_final, id_cuenta))
+                logger.info(f"✅ Token asegurado en BD.")
             except Exception as e:
-                logger.error(f"Error guardando token en DB: {e}")
+                logger.error(f"❌ Error guardando token en BD: {e}")
 
             return token_atrapado, cookie_final
+        else:
+            logger.error(f"❌ No se capturó Token en la red.")
+            return None, None
 
     except Exception as e:
         logger.error(f"❌ Fallo crítico en Playwright: {e}")
@@ -318,8 +472,9 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
             try: page.screenshot(path="debug_token.png")
             except: pass
         return None, None
+        
     finally:
-        logger.info("🧹 Limpiando Playwright...")
+        logger.info("🧹 Retirando escuadrón Playwright...")
         if browser:
             try: browser.close()
             except: pass
