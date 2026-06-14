@@ -184,16 +184,25 @@ def validar_token_vivo(token, sku_test):
         return True 
 
 def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, cookie_encriptada_actual):
+    """Robot de Playwright que intercepta el 2FA, toma fotos de evidencia y actualiza la BD"""
     logger.info(f"🤖 [{id_cuenta}] Desplegando Escuadrón Playwright para Extracción de Token...")
     token_atrapado = None
     p = None
     browser = None
+    page = None
     cipher = obtener_cipher()
 
     try:
         p = sync_playwright().start()
-        browser = p.chromium.launch(headless=True, args=['--disable-dev-shm-usage', '--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'])
-        context = browser.new_context(viewport={'width': 600, 'height': 400}, user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
+        browser = p.chromium.launch(
+            headless=True, 
+            args=['--disable-dev-shm-usage', '--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-blink-features=AutomationControlled']
+        )
+        # Pantalla más grande para evitar versiones móviles raras
+        context = browser.new_context(
+            viewport={'width': 1366, 'height': 768}, 
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
         
         if cookie_encriptada_actual and cookie_encriptada_actual != "NaN":
             try:
@@ -214,7 +223,7 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
 
         necesita_login = True
         try:
-            page.wait_for_selector('input#username, #username, input[name="username"], input[type="email"]', timeout=8000)
+            page.wait_for_selector('input#username, #username, input[name="username"], input[type="email"]', timeout=10000)
             logger.info(f"🛑 [{id_cuenta}] Nos detectaron. Iniciando protocolo de Login y 2FA...")
         except:
             necesita_login = False
@@ -226,15 +235,20 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
         if necesita_login:
             page.goto("https://marketplace.liverpool.com.mx/")
             page.wait_for_selector('input#username, #username, input[name="username"], input[type="email"]', timeout=30000)
+            
             page.locator('input#username').click()
-            page.locator('input#username').type(email_usuario, delay=random.randint(100, 250))
+            page.locator('input#username').type(email_usuario, delay=random.randint(150, 300))
             page.locator('input#password').click()
-            page.locator('input#password').type(LIVERPOOL_PASS, delay=random.randint(100, 250))
+            page.locator('input#password').type(LIVERPOOL_PASS, delay=random.randint(150, 300))
+            
+            # Tomar foto justo antes de intentar entrar
+            page.screenshot(path="debug_token.png")
             
             try: hoja_config = gc_client.open_by_key(GOOGLE_SHEET_ID).worksheet("Config")
             except: hoja_config = None
 
             page.click('button[type="submit"]')
+            logger.info("⏳ Botón de login presionado. Esperando 15 seg para que llegue el correo...")
             time.sleep(15)
 
             codigo_antiguo = ""
@@ -247,18 +261,27 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                     try: codigo_nuevo = str(hoja_config.acell("B1").value).replace("'", "").strip()
                     except: pass
                 
+                # ESTE LOG ES CRÍTICO: Nos dirá si está leyendo Google Sheets correctamente
+                logger.info(f"🔄 Intento {i+1}/18 | Código detectado en Excel: '{codigo_nuevo}'")
+
                 if codigo_nuevo != codigo_antiguo and len(codigo_nuevo) == 6:
+                    logger.info(f"✅ ¡Código FRESCO interceptado!: {codigo_nuevo}")
                     codigo_antiguo = codigo_nuevo
-                    caja_codigo = page.locator('input:not([disabled]):not([readonly]):not([type="checkbox"]):not([type="hidden"]):visible').first
-                    caja_codigo.click(force=True)
-                    page.keyboard.type(codigo_nuevo, delay=random.randint(200, 400))
-                    page.wait_for_timeout(1500)
-                    page.locator('button:has-text("Continuar")').first.click(force=True)
+                    
+                    try:
+                        caja_codigo = page.locator('input:not([disabled]):not([readonly]):not([type="checkbox"]):not([type="hidden"]):visible').first
+                        caja_codigo.click(force=True)
+                        page.keyboard.type(codigo_nuevo, delay=random.randint(200, 400))
+                        page.wait_for_timeout(1500)
+                        page.locator('button:has-text("Continuar")').first.click(force=True)
+                    except Exception as e:
+                        logger.error(f"❌ Error tecleando el código 2FA: {e}")
 
                     tiempo_inicio = time.time()
                     while time.time() - tiempo_inicio < 60:
                         time.sleep(1)
                         if token_atrapado:
+                            logger.info(f"🔑 [{id_cuenta}] ¡TOKEN BEARER ATRAPADO CON ÉXITO!")
                             codigo_exitoso = True
                             break
                         if time.time() - tiempo_inicio == 20:
@@ -267,7 +290,9 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                     if codigo_exitoso: break
 
             if not codigo_exitoso:
-                logger.error(f"❌ [{id_cuenta}] Misión Abortada. No soltaron el token.")
+                # Si falló, tomamos foto de evidencia para ver si Liverpool nos mandó error
+                page.screenshot(path="debug_token.png")
+                logger.error(f"❌ [{id_cuenta}] Misión Abortada. No soltaron el token. ¡Revisa la foto en GitHub Actions!")
                 return None, None
 
         page.wait_for_timeout(3000)
@@ -277,7 +302,6 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
             cookies_json = json.dumps(context.cookies())
             cookie_final = cipher.encrypt(cookies_json.encode()).decode() if cipher else cookies_json
             
-            # 🛡️ ALTO #1: Fuga de Conexión parchada con context manager (with)
             try:
                 with psycopg2.connect(DATABASE_URL) as conn:
                     with conn.cursor() as cursor:
@@ -290,8 +314,12 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
 
     except Exception as e:
         logger.error(f"❌ Fallo crítico en Playwright: {e}")
+        if page:
+            try: page.screenshot(path="debug_token.png")
+            except: pass
         return None, None
     finally:
+        logger.info("🧹 Limpiando Playwright...")
         if browser:
             try: browser.close()
             except: pass
