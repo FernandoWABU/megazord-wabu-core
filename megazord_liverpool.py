@@ -207,7 +207,6 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                 '--disable-setuid-sandbox',
                 '--disable-gpu',
                 '--disable-blink-features=AutomationControlled',
-                '--disable-web-resources',
                 '--disable-component-extensions-with-background-pages',
             ]
         )
@@ -437,6 +436,10 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
             if not codigo_exitoso:
                 logger.error(f"❌ [{id_cuenta}] Timeout 2FA. Abortando misión.")
                 page.screenshot(path="debug_token.png")
+                try:
+                    with open("debug_dom.html", "w", encoding="utf-8") as f:
+                        f.write(page.content())
+                except: pass
                 return None, None
 
         else:
