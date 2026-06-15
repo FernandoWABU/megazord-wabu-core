@@ -77,4 +77,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: evidencia-login
-          path: debug_token.png
+          path: |
+            debug_token.png
+            debug_dom.html
