@@ -184,16 +184,15 @@ def validar_token_vivo(token, sku_test):
         return True 
 
 # ==========================================
-# 🕵️‍♂️ FUNCIÓN RENOVACIÓN DE CREDENCIALES - V5.2 HARDENED STEALTH
+# 🕵️‍♂️ FUNCIÓN RENOVACIÓN DE CREDENCIALES - V5.3 HYBRID FALLBACK
 # ==========================================
 def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, cookie_encriptada_actual):
     """
-    🛡️ EVASIÓN HARDENED CONTRA DATADOME/CLOUDFLARE
-    - Stealth API spoofing (WebGL, Canvas, Plugins)
-    - GitHub Actions fingerprinting evasion
-    - Timezone CDMX y Locales reales
+    🛡️ V5.3 HYBRID FALLBACK + STEALTH
+    NIVEL 1: Intenta usar cookies previas y fuerza una llamada API rápida.
+    NIVEL 2: Si el Nivel 1 falla, limpia cookies, hace Login Fresco + 2FA.
     """
-    logger.info(f"🤖 [{id_cuenta}] Desplegando Escuadrón Playwright (HARDENED STEALTH V5.2)...")
+    logger.info(f"🤖 [{id_cuenta}] Desplegando Escuadrón Playwright (V5.3 HYBRID FALLBACK)...")
     token_atrapado = None
     p = None
     browser = None
@@ -203,7 +202,7 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
     try:
         p = sync_playwright().start()
         
-        # 1️⃣ CONFIGURACIÓN ANTI-DETECCIÓN (Sin flags que rompan el renderizado)
+        # 1️⃣ CONFIGURACIÓN ANTI-DETECCIÓN
         browser = p.chromium.launch(
             headless=True,
             args=[
@@ -218,12 +217,11 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
             ]
         )
         
-        # 2️⃣ SPOOFING DE LOCALIZACIÓN Y HARDWARE
         context = browser.new_context(
             viewport={'width': 1920, 'height': 1080},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             locale='es-MX',
-            timezone_id='America/Mexico_City',  # 🇲🇽 CRÍTICO: Hora de México
+            timezone_id='America/Mexico_City',
             extra_http_headers={
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
                 'Accept-Encoding': 'gzip, deflate, br',
@@ -239,207 +237,220 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
         
         page = context.new_page()
         
-        # 3️⃣ INYECCIÓN DE STEALTH SCRIPTS (Falsificación de GPU, Plugins y WebGL)
-        script_basic_stealth = """
+        # 2️⃣ INYECCIÓN STEALTH
+        script_basic = """
         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
         Object.defineProperty(navigator, 'chromeFlags', { get: () => undefined });
         Object.defineProperty(navigator, 'vendor', { get: () => 'Google Inc.' });
-        Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
-        Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
-        Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 10 });
         """
-        
-        script_plugins = """
-        Object.defineProperty(navigator, 'plugins', {
-            get: () => [{name: 'Chrome PDF Plugin'}, {name: 'Chrome PDF Viewer'}, {name: 'Native Client Executable'}],
-        });
-        """
-        
-        script_webgl = """
-        const canvas = document.createElement('canvas');
-        const webglContext = canvas.getContext('webgl');
-        if (webglContext) {
-            const extension = webglContext.getExtension('WEBGL_debug_renderer_info');
-            if (extension) {
-                const originalGetParameter = webglContext.getParameter.bind(webglContext);
-                webglContext.getParameter = function(pname) {
-                    if (pname === extension.UNMASKED_RENDERER_WEBGL) return 'Intel(R) UHD Graphics 630';
-                    if (pname === extension.UNMASKED_VENDOR_WEBGL) return 'Intel Inc.';
-                    return originalGetParameter(pname);
-                };
-            }
-        }
-        """
-
         try:
-            page.add_init_script(script_basic_stealth)
-            page.add_init_script(script_plugins)
-            page.add_init_script(script_webgl)
-            logger.debug("✅ Scripts de Hardware y WebGL inyectados")
+            page.add_init_script(script_basic)
         except: pass
 
-        # 4️⃣ LIBRERÍA PLAYWRIGHT-STEALTH
         try:
             from playwright_stealth import stealth_sync
             stealth_sync(page)
-            logger.info("🥷 Módulo Playwright-Stealth activado exitosamente.")
-        except ImportError:
-            logger.warning("⚠️ Módulo playwright-stealth no encontrado. Usando solo evasión nativa.")
+        except ImportError: pass
 
-        if cookie_encriptada_actual and cookie_encriptada_actual != "NaN":
-            try:
-                if cipher: context.add_cookies(json.loads(cipher.decrypt(cookie_encriptada_actual.encode()).decode()))
-                else: context.add_cookies(json.loads(cookie_encriptada_actual))
-            except: pass
-
-        # 5️⃣ RASTREADOR DE RED
+        # 3️⃣ RASTREADOR DE RED (El Atrapa-Tokens)
         def rastrear_red(request):
             nonlocal token_atrapado
             if "pro-api.liverpool.com.mx" in request.url:
                 auth = request.headers.get("authorization", "")
-                if "Bearer " in auth: token_atrapado = auth.replace("Bearer ", "")
+                if "Bearer " in auth: 
+                    token_atrapado = auth.replace("Bearer ", "")
 
         page.on("request", rastrear_red)
+
+        # ==============================================================
+        # ⚡ NIVEL 1: FAST PATH (Intento con Cookies)
+        # ==============================================================
+        cookies_inyectadas = False
+        if cookie_encriptada_actual and cookie_encriptada_actual != "NaN":
+            try:
+                if cipher: 
+                    cookies_data = json.loads(cipher.decrypt(cookie_encriptada_actual.encode()).decode())
+                else: 
+                    cookies_data = json.loads(cookie_encriptada_actual)
+                context.add_cookies(cookies_data)
+                cookies_inyectadas = True
+                logger.info("🍪 Gafete VIP restaurado en memoria.")
+            except: pass
+
+        necesita_login = True
+
+        if cookies_inyectadas:
+            logger.info("⚡ [NIVEL 1] Ejecutando Fast Path con cookies previas...")
+            # Navegar a la raíz primero
+            page.goto("https://marketplace.liverpool.com.mx/", wait_until="commit")
+            page.wait_for_timeout(3000)
+
+            # Validar si nos pidió login
+            login_form_visible = False
+            for selector in ['input#username', 'input[name="username"]']:
+                try:
+                    if page.locator(selector).first.is_visible():
+                        login_form_visible = True
+                        break
+                except: pass
+
+            if not login_form_visible:
+                logger.info("ℹ️ Sesión activa. Forzando llamada API a /dashboard/offers ...")
+                # 🚀 EL TRUCO MAESTRO: Navegar al dashboard para obligar a React a pedir datos
+                page.goto("https://marketplace.liverpool.com.mx/dashboard/offers", wait_until="networkidle")
+                
+                # Esperar hasta 10 segundos por el token
+                tiempo_espera = time.time()
+                while (time.time() - tiempo_espera) < 12:
+                    if token_atrapado:
+                        logger.info("✅ [NIVEL 1 EXITOSO] Token interceptado vía Fast Path (0 logins).")
+                        # Guardar la nueva cookie refrescada
+                        cookies_json = json.dumps(context.cookies())
+                        cookie_final = cipher.encrypt(cookies_json.encode()).decode() if cipher else cookies_json
+                        
+                        try:
+                            with psycopg2.connect(DATABASE_URL) as conn:
+                                with conn.cursor() as cursor:
+                                    cursor.execute("""
+                                        UPDATE cuentas_liverpool 
+                                        SET token_autorizacion=%s, cookie_vip=%s, timestamp_token=CURRENT_TIMESTAMP
+                                        WHERE id_cuenta=%s
+                                    """, (token_atrapado, cookie_final, id_cuenta))
+                        except Exception as e:
+                            logger.error(f"❌ Error guardando token (Nivel 1): {e}")
+
+                        return token_atrapado, cookie_final
+                    time.sleep(1)
+                
+                logger.warning("⚠️ [NIVEL 1 FALLÓ] El token no viajó por la red. Forzando Nivel 2.")
+            else:
+                logger.info("ℹ️ Las cookies caducaron (se detectó form de login). Pasando a Nivel 2.")
+
+        # ==============================================================
+        # 🛡️ NIVEL 2: ROBUST PATH (Fallback: Login Fresco + 2FA)
+        # ==============================================================
+        logger.info("🛡️ [NIVEL 2] Ejecutando Fallback Robusto (Login + 2FA)...")
         
-        # 6️⃣ NAVEGACIÓN Y LOGIN
-        logger.info("🌐 Navegando a Liverpool (Network Idle)...")
+        # Limpiar cookies viejas para no confundir al sistema
+        context.clear_cookies()
         page.goto("https://marketplace.liverpool.com.mx/", wait_until="networkidle")
         
-        necesita_login = True
-        try:
-            selector_encontrado = None
-            for selector in ['input#username', 'input[name="username"]', 'input[name="email"]', 'input[type="email"]']:
-                try:
-                    page.wait_for_selector(selector, timeout=8000)
-                    selector_encontrado = selector
+        # Validar formulario
+        email_field = None
+        for selector in ['input#username', 'input[name="username"]', 'input[name="email"]', 'input[type="email"]']:
+            try:
+                locator = page.locator(selector).first
+                if locator.is_visible(timeout=5000):
+                    email_field = locator
                     break
-                except: pass
-            if not selector_encontrado: necesita_login = False
-        except: necesita_login = False
-
-        if necesita_login:
-            # Email
-            email_field = None
-            for selector in ['input#username', 'input[name="username"]', 'input[name="email"]', 'input[type="email"]']:
-                try:
-                    locator = page.locator(selector).first
-                    if locator.is_visible():
-                        email_field = locator
-                        break
-                except: pass
-            
-            if not email_field:
-                page.screenshot(path="debug_token.png")
-                return None, None
-            
-            email_field.scroll_into_view_if_needed()
-            email_field.click(force=True, delay=100)
-            email_field.type(email_usuario, delay=random.randint(100, 200))
-            
-            # Password
-            password_field = None
-            for selector in ['input#password', 'input[name="password"]', 'input[type="password"]']:
-                try:
-                    locator = page.locator(selector).first
-                    if locator.is_visible():
-                        password_field = locator
-                        break
-                except: pass
-            
-            if not password_field:
-                page.screenshot(path="debug_token.png")
-                return None, None
-            
+            except: pass
+        
+        if not email_field:
+            logger.error("❌ No se encontró campo de email (Nivel 2)")
+            page.screenshot(path="debug_token.png")
+            return None, None
+        
+        # Escribir Credenciales
+        email_field.scroll_into_view_if_needed()
+        email_field.click(force=True, delay=100)
+        email_field.type(email_usuario, delay=random.randint(100, 200))
+        
+        password_field = None
+        for selector in ['input#password', 'input[name="password"]', 'input[type="password"]']:
+            try:
+                locator = page.locator(selector).first
+                if locator.is_visible():
+                    password_field = locator
+                    break
+            except: pass
+        
+        if password_field:
             password_field.scroll_into_view_if_needed()
             password_field.click(force=True, delay=100)
             password = os.getenv("LIVERPOOL_PASS")
             password_field.type(password, delay=random.randint(100, 200))
-            
-            # Submit
-            try:
-                submit_button = page.locator('button[type="submit"]').first
-                submit_button.scroll_into_view_if_needed()
-                submit_button.click(force=True, delay=100)
-            except:
-                page.screenshot(path="debug_token.png")
-                return None, None
-            
-            page.wait_for_timeout(3000)
-            
-            # 7️⃣ POLLING 2FA INTELIGENTE
-            logger.info("⏳ Interceptando código 2FA...")
-            tiempo_inicio_2fa = time.time()
-            timeout_total_2fa = 180 
-            
-            try: hoja_config = gc_client.open_by_key(os.getenv("GOOGLE_SHEET_ID")).worksheet("Config")
-            except: hoja_config = None
-
-            codigo_antiguo = ""
-            codigo_exitoso = False
-
-            while (time.time() - tiempo_inicio_2fa) < timeout_total_2fa:
-                codigo_nuevo = ""
-                if hoja_config:
-                    try: codigo_nuevo = str(hoja_config.acell("B1").value).replace("'", "").strip()
-                    except: pass
-                
-                tiempo_transcurrido = int(time.time() - tiempo_inicio_2fa)
-                
-                if codigo_nuevo != codigo_antiguo and len(codigo_nuevo) == 6 and codigo_nuevo.isdigit():
-                    logger.info(f"✅ Código detectado: {codigo_nuevo}")
-                    codigo_antiguo = codigo_nuevo
-                    
-                    try:
-                        codigo_input = None
-                        for selector in ['input[name="code"]', 'input[name="otp"]', 'input[maxlength="6"]', 'input:not([disabled]):not([readonly]):visible']:
-                            try:
-                                locator = page.locator(selector).first
-                                if locator.is_visible():
-                                    codigo_input = locator
-                                    break
-                            except: pass
-                        
-                        if codigo_input:
-                            codigo_input.scroll_into_view_if_needed()
-                            codigo_input.click(force=True)
-                            codigo_input.clear()
-                            codigo_input.type(codigo_nuevo, delay=random.randint(150, 250))
-                            page.wait_for_timeout(1000)
-                            
-                            continuar_button = page.locator('button:has-text("Continuar"), button[type="submit"]').first
-                            if continuar_button and continuar_button.is_visible():
-                                continuar_button.click(force=True)
-                            
-                            tiempo_espera_token = time.time()
-                            while (time.time() - tiempo_espera_token) < 60:
-                                time.sleep(1)
-                                if token_atrapado:
-                                    logger.info("🔑 ¡TOKEN BEARER ATRAPADO! Datadome Evasión Exitosa.")
-                                    codigo_exitoso = True
-                                    break
-                            
-                            if codigo_exitoso: break
-                    except Exception as e:
-                        logger.error(f"❌ Error en inyección 2FA: {e}")
-                
-                time.sleep(5)
-            
-            if not codigo_exitoso:
-                logger.error("❌ Timeout 2FA o Ghost Ban detectado. Guardando evidencia.")
-                page.screenshot(path="debug_token.png")
-                try:
-                    with open("debug_dom.html", "w", encoding="utf-8") as f:
-                        f.write(page.content())
-                except: pass
-                return None, None
-
-        else:
-            logger.info("ℹ️ Sesión activa. Esperando token...")
-            page.wait_for_timeout(8000)
         
-        # 8️⃣ GUARDADO EN POSTGRESQL
+        # Submit
+        try:
+            submit_button = page.locator('button[type="submit"]').first
+            submit_button.scroll_into_view_if_needed()
+            submit_button.click(force=True, delay=100)
+        except:
+            page.screenshot(path="debug_token.png")
+            return None, None
+        
+        page.wait_for_timeout(3000)
+        
+        # Polling 2FA
+        logger.info("⏳ Interceptando código 2FA de Google Sheets...")
+        tiempo_inicio_2fa = time.time()
+        timeout_total_2fa = 180 
+        
+        try: hoja_config = gc_client.open_by_key(os.getenv("GOOGLE_SHEET_ID")).worksheet("Config")
+        except: hoja_config = None
+
+        codigo_antiguo = ""
+        codigo_exitoso = False
+
+        while (time.time() - tiempo_inicio_2fa) < timeout_total_2fa:
+            codigo_nuevo = ""
+            if hoja_config:
+                try: codigo_nuevo = str(hoja_config.acell("B1").value).replace("'", "").strip()
+                except: pass
+            
+            tiempo_transcurrido = int(time.time() - tiempo_inicio_2fa)
+            
+            if codigo_nuevo != codigo_antiguo and len(codigo_nuevo) == 6 and codigo_nuevo.isdigit():
+                logger.info(f"✅ Código detectado: {codigo_nuevo}")
+                codigo_antiguo = codigo_nuevo
+                
+                try:
+                    codigo_input = None
+                    for selector in ['input[name="code"]', 'input[name="otp"]', 'input[maxlength="6"]', 'input:not([disabled]):not([readonly]):visible']:
+                        try:
+                            locator = page.locator(selector).first
+                            if locator.is_visible():
+                                codigo_input = locator
+                                break
+                        except: pass
+                    
+                    if codigo_input:
+                        codigo_input.scroll_into_view_if_needed()
+                        codigo_input.click(force=True)
+                        codigo_input.clear()
+                        codigo_input.type(codigo_nuevo, delay=random.randint(150, 250))
+                        page.wait_for_timeout(1000)
+                        
+                        continuar_button = page.locator('button:has-text("Continuar"), button[type="submit"]').first
+                        if continuar_button and continuar_button.is_visible():
+                            continuar_button.click(force=True)
+                        
+                        tiempo_espera_token = time.time()
+                        while (time.time() - tiempo_espera_token) < 60:
+                            time.sleep(1)
+                            if token_atrapado:
+                                logger.info("✅ [NIVEL 2 EXITOSO] Token Bearer interceptado post-2FA.")
+                                codigo_exitoso = True
+                                break
+                        
+                        if codigo_exitoso: break
+                except Exception as e:
+                    logger.error(f"❌ Error en inyección 2FA: {e}")
+            
+            time.sleep(5)
+        
+        if not codigo_exitoso:
+            logger.error("❌ Timeout 2FA o Ghost Ban detectado en Nivel 2. Guardando evidencia.")
+            page.screenshot(path="debug_token.png")
+            try:
+                with open("debug_dom.html", "w", encoding="utf-8") as f:
+                    f.write(page.content())
+            except: pass
+            return None, None
+        
+        # Guardado en PostgreSQL (Nivel 2)
         if token_atrapado:
-            logger.info("💾 Guardando token en PostgreSQL...")
+            logger.info("💾 Guardando token en PostgreSQL (Generado en Nivel 2)...")
             cookies_json = json.dumps(context.cookies())
             cookie_final = cipher.encrypt(cookies_json.encode()).decode() if cipher else cookies_json
             
