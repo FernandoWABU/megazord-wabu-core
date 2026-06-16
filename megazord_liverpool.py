@@ -184,11 +184,16 @@ def validar_token_vivo(token, sku_test):
         return True 
 
 # ==========================================
-# MÓDULO DE INFILTRACIÓN AUTOMÁTICA (PLAYWRIGHT) - V5.2 STEALTH
+# 🕵️‍♂️ FUNCIÓN RENOVACIÓN DE CREDENCIALES - V5.2 HARDENED STEALTH
 # ==========================================
 def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, cookie_encriptada_actual):
-    """Robot de Playwright con Evasión Cloudflare, Resiliencia DOM y Polling Inteligente"""
-    logger.info(f"🤖 [{id_cuenta}] Desplegando Escuadrón Playwright (STEALTH MODE)...")
+    """
+    🛡️ EVASIÓN HARDENED CONTRA DATADOME/CLOUDFLARE
+    - Stealth API spoofing (WebGL, Canvas, Plugins)
+    - GitHub Actions fingerprinting evasion
+    - Timezone CDMX y Locales reales
+    """
+    logger.info(f"🤖 [{id_cuenta}] Desplegando Escuadrón Playwright (HARDENED STEALTH V5.2)...")
     token_atrapado = None
     p = None
     browser = None
@@ -198,107 +203,122 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
     try:
         p = sync_playwright().start()
         
-        # 1. STEALTH ANTI-CLOUDFLARE (Navegador indetectable)
+        # 1️⃣ CONFIGURACIÓN ANTI-DETECCIÓN (Sin flags que rompan el renderizado)
         browser = p.chromium.launch(
             headless=True,
             args=[
                 '--disable-dev-shm-usage',
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
-                '--disable-gpu',
                 '--disable-blink-features=AutomationControlled',
-                '--disable-component-extensions-with-background-pages',
+                '--disable-features=TranslateUI',
+                '--disable-component-update',
+                '--disable-sync',
+                '--metrics-recording-only',
             ]
         )
         
+        # 2️⃣ SPOOFING DE LOCALIZACIÓN Y HARDWARE
         context = browser.new_context(
-            viewport={'width': 1366, 'height': 768},
+            viewport={'width': 1920, 'height': 1080},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            locale='es-MX',
+            timezone_id='America/Mexico_City',  # 🇲🇽 CRÍTICO: Hora de México
             extra_http_headers={
-                'Accept-Language': 'es-MX,es;q=0.9,en;q=0.8',
-                'Referer': 'https://www.google.com/',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Accept-Language': 'es-MX,es;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Cache-Control': 'max-age=0',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
             }
         )
         
         page = context.new_page()
         
-        # 2. INYECCIÓN DE CÓDIGO NINJA (Ocultar propiedades de robot)
-        stealth_script = """
-        Object.defineProperty(navigator, 'webdriver', { get: () => false });
+        # 3️⃣ INYECCIÓN DE STEALTH SCRIPTS (Falsificación de GPU, Plugins y WebGL)
+        script_basic_stealth = """
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
         Object.defineProperty(navigator, 'chromeFlags', { get: () => undefined });
-        const originalQuery = window.chrome.runtime.sendMessage;
-        window.chrome.runtime.sendMessage = (msg) => ('response' in msg) ? Promise.resolve() : originalQuery(msg);
-        """
-        await_script = """
-        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-        Object.defineProperty(navigator, 'languages', { get: () => ['es-MX', 'es', 'en'] });
+        Object.defineProperty(navigator, 'vendor', { get: () => 'Google Inc.' });
+        Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+        Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+        Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 10 });
         """
         
+        script_plugins = """
+        Object.defineProperty(navigator, 'plugins', {
+            get: () => [{name: 'Chrome PDF Plugin'}, {name: 'Chrome PDF Viewer'}, {name: 'Native Client Executable'}],
+        });
+        """
+        
+        script_webgl = """
+        const canvas = document.createElement('canvas');
+        const webglContext = canvas.getContext('webgl');
+        if (webglContext) {
+            const extension = webglContext.getExtension('WEBGL_debug_renderer_info');
+            if (extension) {
+                const originalGetParameter = webglContext.getParameter.bind(webglContext);
+                webglContext.getParameter = function(pname) {
+                    if (pname === extension.UNMASKED_RENDERER_WEBGL) return 'Intel(R) UHD Graphics 630';
+                    if (pname === extension.UNMASKED_VENDOR_WEBGL) return 'Intel Inc.';
+                    return originalGetParameter(pname);
+                };
+            }
+        }
+        """
+
         try:
-            page.add_init_script(stealth_script)
-            page.add_init_script(await_script)
-            logger.info(f"✅ Scripts de invisibilidad inyectados exitosamente.")
-        except Exception as e:
-            logger.warning(f"⚠️ Error inyectando stealth scripts: {e}")
-        
-        page.set_extra_http_headers({
-            'Sec-CH-UA': '"Not A(Brand";v="99", "Google Chrome";v="120"',
-            'Sec-CH-UA-Mobile': '?0',
-            'Sec-CH-UA-Platform': '"Windows"',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-        })
-        
+            page.add_init_script(script_basic_stealth)
+            page.add_init_script(script_plugins)
+            page.add_init_script(script_webgl)
+            logger.debug("✅ Scripts de Hardware y WebGL inyectados")
+        except: pass
+
+        # 4️⃣ LIBRERÍA PLAYWRIGHT-STEALTH
+        try:
+            from playwright_stealth import stealth_sync
+            stealth_sync(page)
+            logger.info("🥷 Módulo Playwright-Stealth activado exitosamente.")
+        except ImportError:
+            logger.warning("⚠️ Módulo playwright-stealth no encontrado. Usando solo evasión nativa.")
+
         if cookie_encriptada_actual and cookie_encriptada_actual != "NaN":
             try:
-                if cipher: 
-                    cookies_data = json.loads(cipher.decrypt(cookie_encriptada_actual.encode()).decode())
-                else: 
-                    cookies_data = json.loads(cookie_encriptada_actual)
-                context.add_cookies(cookies_data)
-                logger.info(f"🍪 Gafete VIP restaurado en memoria.")
-            except Exception as e:
-                logger.warning(f"⚠️ Error restaurando cookies: {e}")
+                if cipher: context.add_cookies(json.loads(cipher.decrypt(cookie_encriptada_actual.encode()).decode()))
+                else: context.add_cookies(json.loads(cookie_encriptada_actual))
+            except: pass
 
-        # 3. RASTREADOR DE RED
+        # 5️⃣ RASTREADOR DE RED
         def rastrear_red(request):
             nonlocal token_atrapado
             if "pro-api.liverpool.com.mx" in request.url:
                 auth = request.headers.get("authorization", "")
-                if "Bearer " in auth:
-                    token_atrapado = auth.replace("Bearer ", "")
+                if "Bearer " in auth: token_atrapado = auth.replace("Bearer ", "")
 
         page.on("request", rastrear_red)
         
-        logger.info(f"🌐 Navegando a Liverpool Marketplace...")
+        # 6️⃣ NAVEGACIÓN Y LOGIN
+        logger.info("🌐 Navegando a Liverpool (Network Idle)...")
         page.goto("https://marketplace.liverpool.com.mx/", wait_until="networkidle")
-
+        
         necesita_login = True
         try:
-            # 4. RESILIENCIA DOM: Buscar CUALQUIER selector válido
-            login_selectors = ['input#username', 'input[name="username"]', 'input[name="email"]', 'input[type="email"]:visible']
             selector_encontrado = None
-            for selector in login_selectors:
+            for selector in ['input#username', 'input[name="username"]', 'input[name="email"]', 'input[type="email"]']:
                 try:
                     page.wait_for_selector(selector, timeout=8000)
                     selector_encontrado = selector
                     break
                 except: pass
-            
-            if selector_encontrado:
-                logger.info(f"🛑 Formulario de Login detectado.")
-                necesita_login = True
-            else:
-                necesita_login = False
-                
-        except Exception as e:
-            necesita_login = False
+            if not selector_encontrado: necesita_login = False
+        except: necesita_login = False
 
         if necesita_login:
-            page.goto("https://marketplace.liverpool.com.mx/")
-            
-            # Búsqueda Robusta de Email
+            # Email
             email_field = None
             for selector in ['input#username', 'input[name="username"]', 'input[name="email"]', 'input[type="email"]']:
                 try:
@@ -309,20 +329,14 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                 except: pass
             
             if not email_field:
-                logger.error(f"❌ DOM Cambió: No se encontró campo de email.")
                 page.screenshot(path="debug_token.png")
                 return None, None
             
-            try:
-                email_field.scroll_into_view_if_needed()
-                email_field.click(force=True, delay=100)
-                email_field.type(email_usuario, delay=random.randint(100, 200))
-            except Exception as e:
-                logger.error(f"❌ Error tecleando email: {e}")
-                page.screenshot(path="debug_token.png")
-                return None, None
+            email_field.scroll_into_view_if_needed()
+            email_field.click(force=True, delay=100)
+            email_field.type(email_usuario, delay=random.randint(100, 200))
             
-            # Búsqueda Robusta de Password
+            # Password
             password_field = None
             for selector in ['input#password', 'input[name="password"]', 'input[type="password"]']:
                 try:
@@ -336,41 +350,28 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                 page.screenshot(path="debug_token.png")
                 return None, None
             
-            try:
-                password_field.scroll_into_view_if_needed()
-                password_field.click(force=True, delay=100)
-                password_field.type(LIVERPOOL_PASS, delay=random.randint(100, 200))
-            except Exception as e:
-                page.screenshot(path="debug_token.png")
-                return None, None
+            password_field.scroll_into_view_if_needed()
+            password_field.click(force=True, delay=100)
+            password = os.getenv("LIVERPOOL_PASS")
+            password_field.type(password, delay=random.randint(100, 200))
             
-            # Búsqueda Robusta del Botón Submit
+            # Submit
             try:
-                submit_button = None
-                try: submit_button = page.locator('button[type="submit"]:has-text("Continuar")').first
-                except: pass
-                
-                if not submit_button or not submit_button.is_visible():
-                    submit_button = page.locator('button[type="submit"]').first
-                
-                if not submit_button or not submit_button.is_visible():
-                    page.screenshot(path="debug_token.png")
-                    return None, None
-                
+                submit_button = page.locator('button[type="submit"]').first
                 submit_button.scroll_into_view_if_needed()
                 submit_button.click(force=True, delay=100)
-            except Exception as e:
+            except:
                 page.screenshot(path="debug_token.png")
                 return None, None
             
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(3000)
             
-            # 5. POLLING 2FA INTELIGENTE (Timeout absoluto)
-            logger.info(f"⏳ Interceptando código 2FA de Google Sheets (Timeout: 180s)...")
+            # 7️⃣ POLLING 2FA INTELIGENTE
+            logger.info("⏳ Interceptando código 2FA...")
             tiempo_inicio_2fa = time.time()
             timeout_total_2fa = 180 
             
-            try: hoja_config = gc_client.open_by_key(GOOGLE_SHEET_ID).worksheet("Config")
+            try: hoja_config = gc_client.open_by_key(os.getenv("GOOGLE_SHEET_ID")).worksheet("Config")
             except: hoja_config = None
 
             codigo_antiguo = ""
@@ -384,16 +385,13 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                 
                 tiempo_transcurrido = int(time.time() - tiempo_inicio_2fa)
                 
-                if codigo_nuevo != codigo_antiguo or tiempo_transcurrido % 20 == 0:
-                    logger.info(f"🔄 [{tiempo_transcurrido}s] Celda B1: '{codigo_nuevo}'")
-                
                 if codigo_nuevo != codigo_antiguo and len(codigo_nuevo) == 6 and codigo_nuevo.isdigit():
-                    logger.info(f"✅ ¡Código FRESCO detectado!: {codigo_nuevo}")
+                    logger.info(f"✅ Código detectado: {codigo_nuevo}")
                     codigo_antiguo = codigo_nuevo
                     
                     try:
                         codigo_input = None
-                        for selector in ['input[name="code"]', 'input[name="otp"]', 'input[name="2fa"]', 'input[maxlength="6"]', 'input:not([disabled]):not([readonly]):not([type="hidden"]):visible']:
+                        for selector in ['input[name="code"]', 'input[name="otp"]', 'input[maxlength="6"]', 'input:not([disabled]):not([readonly]):visible']:
                             try:
                                 locator = page.locator(selector).first
                                 if locator.is_visible():
@@ -401,40 +399,33 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                                     break
                             except: pass
                         
-                        if not codigo_input: continue
-                        
-                        codigo_input.scroll_into_view_if_needed()
-                        codigo_input.click(force=True)
-                        codigo_input.clear()
-                        codigo_input.type(codigo_nuevo, delay=random.randint(150, 250))
-                        
-                        page.wait_for_timeout(800)
-                        
-                        continuar_button = None
-                        try: continuar_button = page.locator('button:has-text("Continuar")').first
-                        except: continuar_button = page.locator('button[type="submit"]').first
-                        
-                        if continuar_button and continuar_button.is_visible():
-                            continuar_button.click(force=True)
-                        
-                        tiempo_espera_token = time.time()
-                        while (time.time() - tiempo_espera_token) < 60:
-                            time.sleep(1)
-                            if token_atrapado:
-                                logger.info(f"🔑 [{id_cuenta}] ¡TOKEN BEARER ATRAPADO CON ÉXITO!")
-                                codigo_exitoso = True
-                                break
-                        
-                        if codigo_exitoso: break
-                        
+                        if codigo_input:
+                            codigo_input.scroll_into_view_if_needed()
+                            codigo_input.click(force=True)
+                            codigo_input.clear()
+                            codigo_input.type(codigo_nuevo, delay=random.randint(150, 250))
+                            page.wait_for_timeout(1000)
+                            
+                            continuar_button = page.locator('button:has-text("Continuar"), button[type="submit"]').first
+                            if continuar_button and continuar_button.is_visible():
+                                continuar_button.click(force=True)
+                            
+                            tiempo_espera_token = time.time()
+                            while (time.time() - tiempo_espera_token) < 60:
+                                time.sleep(1)
+                                if token_atrapado:
+                                    logger.info("🔑 ¡TOKEN BEARER ATRAPADO! Datadome Evasión Exitosa.")
+                                    codigo_exitoso = True
+                                    break
+                            
+                            if codigo_exitoso: break
                     except Exception as e:
-                        logger.error(f"❌ Error inyectando código 2FA: {e}")
-                        page.screenshot(path="debug_token.png")
+                        logger.error(f"❌ Error en inyección 2FA: {e}")
                 
-                time.sleep(5) # Refresco ágil cada 5 segundos
+                time.sleep(5)
             
             if not codigo_exitoso:
-                logger.error(f"❌ [{id_cuenta}] Timeout 2FA. Abortando misión.")
+                logger.error("❌ Timeout 2FA o Ghost Ban detectado. Guardando evidencia.")
                 page.screenshot(path="debug_token.png")
                 try:
                     with open("debug_dom.html", "w", encoding="utf-8") as f:
@@ -443,12 +434,12 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                 return None, None
 
         else:
-            logger.info(f"ℹ️ Sesión ya estaba activa. Esperando token...")
+            logger.info("ℹ️ Sesión activa. Esperando token...")
             page.wait_for_timeout(8000)
         
-        # 6. GUARDADO EN BASE DE DATOS
+        # 8️⃣ GUARDADO EN POSTGRESQL
         if token_atrapado:
-            logger.info(f"💾 [{id_cuenta}] Escribiendo llaves en PostgreSQL...")
+            logger.info("💾 Guardando token en PostgreSQL...")
             cookies_json = json.dumps(context.cookies())
             cookie_final = cipher.encrypt(cookies_json.encode()).decode() if cipher else cookies_json
             
@@ -457,27 +448,25 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                     with conn.cursor() as cursor:
                         cursor.execute("""
                             UPDATE cuentas_liverpool 
-                            SET token_autorizacion=%s, cookie_vip=%s
+                            SET token_autorizacion=%s, cookie_vip=%s, timestamp_token=CURRENT_TIMESTAMP
                             WHERE id_cuenta=%s
                         """, (token_atrapado, cookie_final, id_cuenta))
-                logger.info(f"✅ Token asegurado en BD.")
             except Exception as e:
-                logger.error(f"❌ Error guardando token en BD: {e}")
+                logger.error(f"❌ Error guardando token: {e}")
 
             return token_atrapado, cookie_final
         else:
-            logger.error(f"❌ No se capturó Token en la red.")
             return None, None
 
     except Exception as e:
-        logger.error(f"❌ Fallo crítico en Playwright: {e}")
+        logger.error(f"❌ Fallo crítico Playwright: {e}")
         if page:
             try: page.screenshot(path="debug_token.png")
             except: pass
         return None, None
         
     finally:
-        logger.info("🧹 Retirando escuadrón Playwright...")
+        logger.info("🧹 Limpiando Playwright...")
         if browser:
             try: browser.close()
             except: pass
