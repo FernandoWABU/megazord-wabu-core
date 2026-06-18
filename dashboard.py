@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ==========================================
-# MEGAZORD WAR ROOM - DASHBOARD ENTERPRISE V2.0
+# MEGAZORD WAR ROOM - DASHBOARD ENTERPRISE V2.1
 # Centro de Comando Ejecutivo con BI Real-Time
 # MULTI-TENANT ARCHITECTURE INTEGRATED
 # ==========================================
@@ -18,6 +18,8 @@ import logging
 from typing import Dict, List, Tuple, Optional
 import time
 import requests
+import hashlib
+import hmac
 
 # ==========================================
 # 🔧 CONFIGURACIÓN & LOGGING
@@ -37,7 +39,7 @@ st.set_page_config(
 )
 
 # ==========================================
-# 🎨 DARK MODE CSS (Corregido para visibilidad)
+# 🎨 DARK MODE CSS
 # ==========================================
 
 DARK_MODE_CSS = """
@@ -90,14 +92,20 @@ st.markdown(DARK_MODE_CSS, unsafe_allow_html=True)
 
 class AuthManager:
     def __init__(self):
-        self.password_hash = os.getenv("DASHBOARD_PASSWORD", "megazord2025")
+        # 🛡️ Parche de Seguridad: Hasheo en memoria
+        password_plain = os.getenv("DASHBOARD_PASSWORD", "megazord2025")
+        self.password_hash = hashlib.sha256(password_plain.encode()).hexdigest()
         self.session_timeout = 3600
+
     def login(self, password: str) -> bool:
-        if password == self.password_hash:
+        # 🛡️ Comparación segura contra Timing Attacks
+        input_hash = hashlib.sha256(password.encode()).hexdigest()
+        if hmac.compare_digest(input_hash, self.password_hash):
             st.session_state['authenticated'] = True
             st.session_state['auth_time'] = time.time()
             return True
         return False
+
     def is_authenticated(self) -> bool:
         if 'auth_time' not in st.session_state: return False
         if time.time() - st.session_state['auth_time'] > self.session_timeout:
@@ -110,11 +118,13 @@ class PostgreSQLManager:
         self.database_url = database_url
         self._pool = None
         self._initialize_pool()
+
     def _initialize_pool(self):
         try:
             self._pool = psycopg2.pool.SimpleConnectionPool(1, 10, self.database_url, connect_timeout=5)
         except Exception:
             st.error("❌ No se pudo conectar a PostgreSQL")
+
     def execute_query(self, query: str, params: tuple = None) -> pd.DataFrame:
         try:
             conn = self._pool.getconn()
@@ -128,6 +138,7 @@ class PostgreSQLManager:
             return pd.DataFrame(data, columns=columns)
         except Exception:
             return pd.DataFrame()
+
     def execute_update(self, query: str, params: tuple = None) -> bool:
         try:
             conn = self._pool.getconn()
@@ -217,14 +228,11 @@ def show_private_dashboard():
         st.markdown("---")
         st.subheader("⚡ Centro de Lanzamiento")
 
-        # 🔐 Credenciales de GitHub (Conectado a Streamlit Secrets)
+        # 🔐 Credenciales de GitHub
         try:
             GITHUB_TOKEN = st.secrets["GITHUB_PAT"] 
-            
-            # 👇 REEMPLAZA ESTO CON TUS DATOS REALES DE GITHUB 👇
-            GITHUB_USER = "FernandoWABU"       # Ej. "FernandoW"
-            GITHUB_REPO = "megazord-wabu-core"   # Ej. "Megazord_Liverpool"
-            
+            GITHUB_USER = "FernandoWABU"       
+            GITHUB_REPO = "megazord-wabu-core"   
         except Exception:
             st.error("⚠️ Faltan credenciales en los Secrets de Streamlit.")
             GITHUB_TOKEN = ""
@@ -273,7 +281,7 @@ def show_private_dashboard():
                     if res.status_code == 204:
                         st.success(f"✅ Misil {objetivo} lanzado con éxito.")
                     else:
-                        st.error(f"❌ Error {res.status_code}: Verifica tu GITHUB_PAT o el nombre del repositorio.")
+                        st.error(f"❌ Error {res.status_code}: Verifica tu GITHUB_PAT.")
                 except Exception as e:
                     st.error(f"❌ Error de conexión: {e}")
 
@@ -299,7 +307,7 @@ def show_private_dashboard():
         st.markdown("---")
         
         # =========================================================================
-        # 🎯 2. BUSCADOR PREDICTIVO Y EDITOR DE ESTRATEGIA (CON KILL-SWITCH POR TIENDA)
+        # 🎯 2. BUSCADOR PREDICTIVO Y EDITOR DE ESTRATEGIA
         # =========================================================================
         st.markdown("### 🎯 2. Buscador Predictivo y Editor de Estrategia")
         term = st.text_input(f"🔍 Buscar en {tienda_activa} (SKU Interno, Liverpool, Walmart, etc):", placeholder="Ej: HCK13.3atomizador...")
@@ -325,13 +333,12 @@ def show_private_dashboard():
             sku_data = df_filtrado.iloc[sel_idx]
             row_id = sku_data['id']
             
-            # Traemos los estatus actuales de la base de datos (manejamos por si Walmart/Coppel se llaman diferente en tu BD)
             estatus_lvp_actual = str(sku_data.get('estatus', 'ACTIVO')).strip() == 'ACTIVO'
             estatus_wmt_actual = str(sku_data.get('estatus_walmart', 'ACTIVO')).strip() == 'ACTIVO'
             estatus_cpp_actual = str(sku_data.get('estatus_coppel', 'ACTIVO')).strip() == 'ACTIVO'
             
-            # DISEÑO DE FILAS DE EDICIÓN
-            col_min, col_max, col_regla, col_cta, col_costo = st.columns(5)
+            # 📌 DISEÑO DE FILAS DE EDICIÓN
+            col_min, col_max, col_regla, col_cta = st.columns(4) # Removido el costo para darle más espacio
             with col_min: new_min = st.number_input("P. Mínimo", value=float(sku_data['precio_minimo']), step=0.01)
             with col_max: new_max = st.number_input("P. Máximo", value=float(sku_data['precio_maximo']), step=0.01)
             with col_regla:
@@ -342,10 +349,65 @@ def show_private_dashboard():
             with col_cta:
                 cta_act = str(sku_data.get('id_cuenta', 'LVP_01'))
                 if cta_act not in lista_cuentas: lista_cuentas.append(cta_act)
-                new_cta = st.selectbox("Tienda Asignada (Liverpool)", lista_cuentas, index=lista_cuentas.index(cta_act))
-            with col_costo: st.metric("Costo Odoo Base", f"${float(sku_data['costo_odoo']):.2f}")
-            
-            # SECCIÓN NUEVA: INTERRUPTORES DE ENCENDIDO (ON/OFF) POR MARKETPLACE
+                new_cta = st.selectbox("Tienda Asignada", lista_cuentas, index=lista_cuentas.index(cta_act))
+
+            # =========================================================================
+            # 🧮 SIMULADOR WHAT-IF INTEGRADO (NUEVO)
+            # =========================================================================
+            st.markdown("---")
+            st.markdown("### 🧮 Simulador Financiero en Vivo")
+            st.info("💡 **Nota:** Juega con el costo y precio aquí para ver tu rentabilidad real. **Estos números son simulados y NO alteran tu catálogo al guardar.**")
+
+            # 🤖 Autodetección del precio competidor del historial
+            try:
+                q_last = "SELECT nuestro_precio, precio_rival FROM historial_precios WHERE sku_interno = %s ORDER BY fecha_hora DESC LIMIT 1"
+                df_last = db.execute_query(q_last, (str(sku_data['sku_interno']),))
+                if not df_last.empty:
+                    p_rival_raw = df_last.iloc[0]['precio_rival']
+                    p_nuestro = float(df_last.iloc[0]['nuestro_precio'])
+                    try:
+                        p_rival = float(p_rival_raw)
+                        precio_sim_default = p_rival if p_rival > 0 else p_nuestro
+                    except:
+                        precio_sim_default = p_nuestro
+                else:
+                    precio_sim_default = float(sku_data['precio_maximo'])
+            except:
+                precio_sim_default = float(sku_data['precio_maximo'])
+
+            col_sim1, col_sim2, col_sim3, col_sim4 = st.columns(4)
+            with col_sim1:
+                costo_simulado = st.number_input("Costo Odoo (Simulación)", value=float(sku_data['costo_odoo']), step=10.0, format="%.2f")
+            with col_sim2:
+                precio_simulado = st.number_input(f"Precio Competencia ({tienda_activa})", value=float(precio_sim_default), step=10.0, format="%.2f")
+
+            # Motor Matemático
+            try:
+                costo_con_iva = costo_simulado * 1.16
+                precio_neto_sin_iva = precio_simulado / 1.16
+                retenciones_fiscales = precio_neto_sin_iva * (0.025 + 0.08)
+
+                if tienda_activa == "WALMART":
+                    comision_mkt = precio_simulado * 0.15 + 76
+                elif tienda_activa == "COPPEL":
+                    comision_mkt = precio_simulado * 0.15 + 76
+                else: # LIVERPOOL / TODOS
+                    comision_mkt = precio_simulado * 0.17 + 130
+
+                ingreso_neto = precio_simulado - comision_mkt - retenciones_fiscales
+                ganancia = ingreso_neto - costo_con_iva
+                margen = (ganancia / costo_con_iva) * 100 if costo_con_iva > 0 else 0
+            except:
+                ganancia, margen = 0.0, 0.0
+
+            with col_sim3:
+                st.metric("Utilidad Neta Estimada", f"${ganancia:.2f}")
+            with col_sim4:
+                st.metric("ROI / Margen", f"{margen:.1f}%", delta=f"{margen:.1f}%", delta_color="normal" if margen >= 0 else "inverse")
+
+            st.markdown("---")
+            # =========================================================================
+
             st.markdown("##### 🔌 Interruptores de Referencia (Estatus del SKU por Tienda)")
             col_sw_lvp, col_sw_wmt, col_sw_cpp, _ = st.columns([1, 1, 1, 1])
             
@@ -356,13 +418,12 @@ def show_private_dashboard():
             with col_sw_cpp:
                 new_status_cpp = st.toggle("Estatus COPPEL", value=estatus_cpp_actual, help="Prende o apaga el repricer para esta referencia en Coppel")
             
-            # Convertimos los booleanos de los switches al formato de texto 'ACTIVO'/'INACTIVO' que usa tu base de datos
             val_lvp = 'ACTIVO' if new_status_lvp else 'INACTIVO'
             val_wmt = 'ACTIVO' if new_status_wmt else 'INACTIVO'
             val_cpp = 'ACTIVO' if new_status_cpp else 'INACTIVO'
 
             if st.button("💾 Guardar Configuración de SKU", use_container_width=True):
-                # ¡CORREGIDO! Usamos estatus_wmt exactamente como está en tu BD
+                # NOTE: Costo_simulado NO se guarda en la DB, manteniendo Odoo seguro.
                 query_update_individual = """
                     UPDATE catalogo_maestro_v3 
                     SET precio_minimo=%s, precio_maximo=%s, regla_estrategia=%s, id_cuenta=%s,
@@ -429,10 +490,10 @@ def show_private_dashboard():
                     st.rerun()
         except Exception as e: st.error(f"Error masivo: {e}")
 
-    # ACORDEÓN: CALCULADORA COMPLETA (Corregida)
-    with st.expander("🧮 Simulador de Utilidades y Reglas Financieras", expanded=False):
+    # ACORDEÓN: CALCULADORA COMPLETA (Se mantiene la general por si acaso)
+    with st.expander("🧮 Calculadora General (Independiente)", expanded=False):
         col_calc1, col_calc2, col_calc3, col_calc4 = st.columns(4)
-        with col_calc1: mkt_simular = st.selectbox("Marketplace", ["LIVERPOOL", "WALMART"], key="sim_mkt")
+        with col_calc1: mkt_simular = st.selectbox("Marketplace", ["LIVERPOOL", "WALMART", "COPPEL"], key="sim_mkt")
         with col_calc2: costo_base_sim = st.number_input("Costo Odoo (Sin IVA)", min_value=0.0, value=100.0, step=10.0)
         with col_calc3: precio_venta_sim = st.number_input("Precio Propuesto", min_value=0.0, value=350.0, step=10.0)
             
@@ -463,10 +524,8 @@ def show_private_dashboard():
 
     # ACORDEÓN: BÓVEDA VIP
     with st.expander("🔐 Panel de Administración: Bóveda VIP (Tokens y Cookies)", expanded=False):
-        # 1. Agregamos token_autorizacion al SELECT
         df_b = db.execute_query("SELECT id_cuenta, nombre_descriptivo, email_usuario, is_active, token_autorizacion, cookie_vip FROM cuentas_liverpool ORDER BY id_cuenta ASC")
         
-        # 2. Mostramos el editor configurando los nombres de las columnas para que sea fácil de leer
         df_e = st.data_editor(
             df_b, 
             hide_index=True, 
@@ -483,7 +542,6 @@ def show_private_dashboard():
         
         if st.button("💾 Guardar Bóveda"):
             for _, r in df_e.iterrows():
-                # 3. Agregamos token_autorizacion al UPDATE
                 db.execute_update(
                     "UPDATE cuentas_liverpool SET nombre_descriptivo=%s, email_usuario=%s, is_active=%s, token_autorizacion=%s, cookie_vip=%s WHERE id_cuenta=%s", 
                     (r['nombre_descriptivo'], r['email_usuario'], r['is_active'], r['token_autorizacion'], r['cookie_vip'], r['id_cuenta'])
