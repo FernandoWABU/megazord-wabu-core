@@ -917,7 +917,8 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                     
                     if tipo_regla.startswith('4') and rival_mas_bajo > precio_maximo_regla:
                         mejor_historico = resultados.max_precio_buybox_historico.get(sku_i, 0) if hasattr(resultados, 'max_precio_buybox_historico') else 0
-                        nuevo_precio = mejor_historico if mejor_historico > 0 else round(float(int(precio_maximo_regla) - 1) + 0.09, 2)
+                        # ESTAMOS GANANDO (Rival es más caro que nuestro techo). Nos pegamos a nuestro máximo exacto, sin .09
+                        nuevo_precio = mejor_historico if mejor_historico > 0 else precio_maximo_regla
                         pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
                         if float(precio_actual) != float(nuevo_precio) and disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
                             resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, nuevo_precio, cantidad, pos, bb, id_cuenta])
@@ -934,9 +935,9 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                             baja = round(random.uniform(1.50, 1.95), 2)
                             nuevo_precio_ataque = round(rival_mas_bajo - baja, 2)
                             
-                            # 🛡️ NUEVO PARCHE: Evitar terminación .09 en ataques ganadores
+                            # 🛡️ PARCHE VISUAL: Evitar terminación .09 en ataques ganadores para no confundir con Modo Sombra
                             if str(format(nuevo_precio_ataque, '.2f')).endswith('.09'):
-                                nuevo_precio_ataque = round(nuevo_precio_ataque - 0.01, 2) # Lo bajamos a .08 para no confundir con Modo Sombra
+                                nuevo_precio_ataque = round(nuevo_precio_ataque - 0.01, 2)
                             
                             if nuevo_precio_ataque <= 0:
                                 logger.error(f"❌ ALERTA MATEMÁTICA: Precio negativo calculado para {sku_i}")
@@ -946,24 +947,24 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                             if rival_mas_bajo >= precio_minimo_regla and nuevo_precio_ataque >= precio_minimo_regla:
                                 nuevo_precio = nuevo_precio_ataque
                                 if precio_maximo_regla > 0 and nuevo_precio > precio_maximo_regla: 
-                                    nuevo_precio = round(float(int(precio_maximo_regla) - 1) + 0.09, 2)
+                                    # ESTAMOS GANANDO, pero el ataque se pasó de nuestro máximo. Nos limitamos al máximo exacto, sin .09
+                                    nuevo_precio = precio_maximo_regla
                             else:
-                                # EL FIX: O el rival ya regaló el producto, o nuestro hachazo nos deja bajo el mínimo.
-                                # Pasamos a MODO SOMBRA (.09) buscando al siguiente rival.
+                                # 🦇 MODO SOMBRA (PERDIENDO LA BUYBOX): El rival bajó de nuestro mínimo. Aquí SÍ usamos .09
                                 rivales_viables = [p for p in precios_rivales if p >= precio_minimo_regla]
                                 if rivales_viables:
-                                    # Pegarnos al primer rival viable
+                                    # Nos pegamos al siguiente rival viable con firma .09
                                     nuevo_precio = round(float(int(rivales_viables[0]) - 1) + 0.09, 2)
                                     
-                                    # Si la sombra se pasa del máximo, topar al máximo .09
+                                    # Si esa sombra rebasa el máximo, topamos al máximo con firma .09
                                     if precio_maximo_regla > 0 and nuevo_precio > precio_maximo_regla: 
                                         nuevo_precio = round(float(int(precio_maximo_regla) - 1) + 0.09, 2)
                                     
-                                    # Seguridad por si acaso la matemática falla
+                                    # Seguridad matemática de piso
                                     if nuevo_precio < precio_minimo_regla: 
                                         nuevo_precio = round(float(int(precio_minimo_regla)) + 0.09, 2)
                                 else:
-                                    # Ningún rival es viable (todos rematando). Huimos al máximo con terminación .09
+                                    # Nadie es viable (todos están rematando). Huimos al techo con firma .09
                                     nuevo_precio = round(float(int(precio_maximo_regla) - 1) + 0.09, 2)
                                     
                             if float(precio_actual) != float(nuevo_precio):
@@ -976,8 +977,8 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                                 pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
                                 resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb, id_cuenta])
                 else:
-                    # Sin rivales
-                    nuevo_precio = mejor_historico if (tipo_regla.startswith('4') and (mejor_historico := resultados.max_precio_buybox_historico.get(sku_i, 0)) > 0) else round(float(int(precio_maximo_regla) - 1) + 0.09, 2)
+                    # 👑 ESTAMOS SOLOS (1 de 1). Nos quedamos en el máximo exacto, sin firma de .09
+                    nuevo_precio = mejor_historico if (tipo_regla.startswith('4') and (mejor_historico := resultados.max_precio_buybox_historico.get(sku_i, 0)) > 0) else precio_maximo_regla
                     if float(precio_actual) != float(nuevo_precio) and disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
                         resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, "SIN RIVAL", nuevo_precio, cantidad, "1 de 1", "¡Nosotros! 👑", id_cuenta])
                     else:
