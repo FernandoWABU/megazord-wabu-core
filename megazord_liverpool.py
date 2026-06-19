@@ -184,23 +184,65 @@ def validar_token_vivo(token, sku_test):
         return True 
 
 # ==========================================
-# 🕵️‍♂️ FUNCIÓN RENOVACIÓN DE CREDENCIALES - V5.4 DATADOME PRESERVATION
+# 🕵️‍♂️ FUNCIÓN AUXILIAR - WARM-UP DATADOME
+# ==========================================
+def calentar_datadome(page, logger):
+    """
+    🔥 WARM-UP: Fuerza a Datadome a evaluar stealth scripts y emitir clearance
+    
+    Navega a URLs públicas que:
+    1. No requieren autenticación
+    2. Disparan verificación de Datadome
+    3. Generan cookie de clearance fresca
+    4. Permiten posterior acceso a login sin bloqueo
+    """
+    logger.info(f"🔥 WARM-UP: Calentando Datadome...")
+    
+    # URLs públicas que disparan Datadome sin requerer auth
+    urls_warmup = [
+        ("offers (búsqueda pública)", "https://marketplace.liverpool.com.mx/offers"),
+        ("raíz pública", "https://marketplace.liverpool.com.mx/"),
+    ]
+    
+    for nombre_url, url in urls_warmup:
+        try:
+            logger.info(f"   🌐 Navegando a {nombre_url}...")
+            page.goto(url, wait_until="domcontentloaded", timeout=10000)
+            
+            # Esperar a que Datadome script se ejecute y emita clearance
+            logger.info(f"   ⏳ Esperando que Datadome evalúe...")
+            page.wait_for_timeout(3000)
+            
+            # Verificar que tenemos clearance
+            todas_cookies = page.context.cookies()
+            tiene_datadome = any(
+                x in c.get('name', '').lower() 
+                for c in todas_cookies 
+                for x in ['datadome', 'cf_clearance', '__cf']
+            )
+            
+            if tiene_datadome:
+                logger.info(f"   ✅ Datadome clearance obtenido")
+                return True
+            else:
+                logger.warning(f"   ⚠️ No se obtuvo clearance en {nombre_url}, intentando siguiente...")
+        
+        except Exception as e:
+            logger.warning(f"   ⚠️ Error en warm-up {nombre_url}: {e}")
+            continue
+    
+    logger.warning(f"   ⚠️ WARM-UP completado pero SIN clearance detectado")
+    return False
+
+# ==========================================
+# 🕵️‍♂️ FUNCIÓN RENOVACIÓN DE CREDENCIALES - V5.4 DATADOME PRESERVATION + WARM-UP
 # ==========================================
 def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, cookie_encriptada_actual):
     """
-    🛡️ V5.4 - DATADOME COOKIE PRESERVATION
+    🛡️ V5.4 - DATADOME COOKIE PRESERVATION + WARM-UP
     
     NIVEL 1: Intento eficiente (cookies + múltiples URLs)
-    ├─ /dashboard (raíz)
-    ├─ /dashboard/orders (fuerza GET /api/orders)
-    ├─ /dashboard/inventory (fuerza GET /api/products)
-    └─ Scroll/interact para lazy-load
-    
-    NIVEL 2: Fallback robusto (logout sin destruir Datadome)
-    ├─ Logout en servidor (limpia sesión Liverpool)
-    ├─ PRESERVA cookies de Datadome/Cloudflare
-    ├─ Login fresco + 2FA
-    └─ Token GARANTIZADO
+    NIVEL 2: Fallback robusto (Warm-up público -> Logout -> Re-Warm-up -> Login fresco + 2FA)
     """
     logger.info(f"🤖 [{id_cuenta}] V5.4 DATADOME PRESERVATION iniciando...")
     token_atrapado = None
@@ -385,7 +427,6 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                 cookies_inyectadas = False
 
         if cookies_inyectadas:
-            # ✅ CLAVE V5.4: Intentar múltiples URLs para disparar token
             urls_nivel1 = [
                 ("dashboard (raíz)", "https://marketplace.liverpool.com.mx/dashboard"),
                 ("dashboard/orders", "https://marketplace.liverpool.com.mx/dashboard/orders"),
@@ -398,13 +439,11 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                 try:
                     page.goto(url, wait_until="networkidle", timeout=15000)
                     
-                    # Esperar a que React dispare request
                     logger.info(f"⏳ Esperando 8s a que React dispare API...")
                     tiempo_inicio_intento = time.time()
                     while (time.time() - tiempo_inicio_intento) < 8:
                         if token_atrapado:
                             logger.info(f"✅ NIVEL 1 EXITOSO en {nombre_url}")
-                            # Guardar en BD
                             cookies_json = json.dumps(context.cookies())
                             cookie_final = cipher.encrypt(cookies_json.encode()).decode() if cipher else cookies_json
                             try:
@@ -423,8 +462,7 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                         
                         time.sleep(0.5)
                     
-                    # Intento adicional: Scroll para disparar lazy-load
-                    if nombre_url == urls_nivel1[0][0]:  # Solo en primer intento
+                    if nombre_url == urls_nivel1[0][0]:
                         logger.info(f"↕️ Intentando scroll para lazy-load...")
                         page.evaluate("window.scrollBy(0, 500)")
                         page.wait_for_timeout(3000)
@@ -451,40 +489,56 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
             logger.warning(f"⚠️ NIVEL 1 FALLIDO en todas las URLs, escalando a NIVEL 2...")
 
         # ==========================================
-        # NIVEL 2: FALLBACK ROBUSTO (Logout sin destruir Datadome)
+        # NIVEL 2: FALLBACK ROBUSTO (Logout sin destruir Datadome + WARM-UP)
         # ==========================================
         logger.info(f"📍 [{id_cuenta}] NIVEL 2: Ejecutando fallback...")
         nivel_ejecutado = "NIVEL_2_FALLBACK_LOGOUT_PRESERVE_DATADOME"
         
-        # ✅ CLAVE V5.4: Extraer cookies de Datadome ANTES de hacer logout
+        # ✅ PASO 0: WARM-UP (Obtener clearance de Datadome ANTES de logout)
+        logger.info(f"🔥 Paso 0/6: WARM-UP - Calentando Datadome...")
+        calentar_datadome(page, logger)
+        
+        # ✅ CLAVE V5.4 REVISADA: Extraer cookies de Datadome DESPUÉS del warm-up
         todas_cookies = context.cookies()
         cookies_datadome = [
             cookie for cookie in todas_cookies 
             if any(x in cookie.get('name', '').lower() for x in ['datadome', 'cf_clearance', 'cf_bm', '__cf'])
         ]
         
-        logger.info(f"🔐 Preservando {len(cookies_datadome)} cookies de seguridad:")
+        logger.info(f"🔐 Después de warm-up, preservando {len(cookies_datadome)} cookies de seguridad:")
         for c in cookies_datadome:
-            logger.info(f"   - {c['name']}")
+            logger.info(f"   - {c['name']} (expira: {c.get('expires', 'session')})")
+        
+        # Si aún NO tenemos clearance después del warm-up, es un problema grave
+        if len(cookies_datadome) == 0:
+            logger.error(f"❌ NIVEL 2 CRÍTICO: Datadome NO emitió clearance después de warm-up")
+            logger.warning(f"   Intentando sin clearance (probable fallo)...")
         
         # Paso 1: Logout en servidor (limpia sesión Liverpool)
-        logger.info(f"🔓 Paso 1/5: Logout en servidor (preservando Datadome)...")
+        logger.info(f"🔓 Paso 1/6: Logout en servidor (preservando Datadome)...")
         try:
-            page.goto("https://marketplace.liverpool.com.mx/logout", wait_until="networkidle", timeout=10000)
+            page.goto("https://marketplace.liverpool.com.mx/logout", wait_until="domcontentloaded", timeout=10000)
             page.wait_for_timeout(2000)
             logger.info(f"✅ Logout ejecutado")
         except Exception as e:
             logger.warning(f"⚠️ Logout falló: {e}")
         
-        # Paso 2: Navegar a login (Liverpool ve que NO hay sesión válida)
-        logger.info(f"🌐 Paso 2/5: Navegando a login...")
-        page.goto("https://marketplace.liverpool.com.mx/", wait_until="networkidle", timeout=15000)
+        # Paso 2: Re-calentar Datadome DESPUÉS del logout (por si acaso se invalidó)
+        logger.info(f"🔥 Paso 2/6: Re-calentamiento post-logout...")
+        calentar_datadome(page, logger)
         
-        # ✅ CLAVE V5.4: NO hacer context.clear_cookies()
-        # Las cookies de Datadome se preservan automáticamente en el contexto
+        # Paso 3: Navegar a login (cookies Datadome aún en contexto)
+        logger.info(f"🌐 Paso 3/6: Navegando a login...")
+        try:
+            page.goto("https://marketplace.liverpool.com.mx/", wait_until="domcontentloaded", timeout=15000)
+            logger.info(f"✅ Login page cargada")
+        except Exception as e:
+            logger.error(f"❌ NIVEL 2 FALLÓ: Error navegando a login: {e}")
+            page.screenshot(path="debug_nivel2_v5_4_login_nav.png")
+            return None, None
         
-        # Paso 3: Ingresando credenciales
-        logger.info(f"⌨️ Paso 3/5: Ingresando credenciales...")
+        # Paso 4: Ingresando credenciales
+        logger.info(f"⌨️ Paso 4/6: Ingresando credenciales...")
         
         email_field = None
         for selector in ['input#username', 'input[name="username"]', 'input[name="email"]', 'input[type="email"]']:
@@ -557,8 +611,8 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
         
         page.wait_for_timeout(2000)
         
-        # Paso 4: 2FA
-        logger.info(f"📱 Paso 4/5: Interceptando código 2FA...")
+        # Paso 5: 2FA
+        logger.info(f"📱 Paso 5/6: Interceptando código 2FA...")
         tiempo_inicio_2fa = time.time()
         timeout_total_2fa = 180
         
@@ -630,8 +684,8 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
             page.screenshot(path="debug_nivel2_v5_4_timeout.png")
             return None, None
         
-        # Paso 5: Guardar en BD
-        logger.info(f"💾 Paso 5/5: Guardando token en BD...")
+        # Paso 6: Guardar en BD
+        logger.info(f"💾 Paso 6/6: Guardando token en BD...")
         if token_atrapado:
             cookies_json = json.dumps(context.cookies())
             cookie_final = cipher.encrypt(cookies_json.encode()).decode() if cipher else cookies_json
