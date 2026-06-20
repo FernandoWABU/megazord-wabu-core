@@ -255,6 +255,168 @@ def calentar_datadome(page, context, logger):
     return False
 
 # ==========================================
+# 🕵️‍♂️ FUNCIÓN AUXILIAR - DIAGNÓSTICO WHITE SCREEN
+# ==========================================
+def diagnosticar_white_screen(page, logger):
+    """
+    🔍 RUTA 1: Analiza si es White Screen real o página de bloqueo
+    Captura HTML completo para análisis forense
+    """
+    try:
+        html = page.content()
+        titulo = page.title()
+        
+        logger.error(f"📄 DIAGNÓSTICO DE PÁGINA:")
+        logger.error(f"   - Título: {titulo}")
+        logger.error(f"   - HTML Length: {len(html)} caracteres")
+        logger.error(f"   - URL actual: {page.url}")
+        
+        # Buscar indicios de bloqueo Datadome/Cloudflare
+        indicios_bloqueo = {
+            "503 Service Unavailable": "Servicio no disponible",
+            "Access Denied": "Acceso denegado",
+            "blocked": "Bloqueado",
+            "captcha": "CAPTCHA detectado",
+            "verify": "Verificación requerida",
+            "robot": "Detección de bot",
+            "automated": "Tráfico automatizado",
+            "datadome": "Datadome bloqueo",
+            "perimeter": "PerimeterX bloqueo",
+            "challenge": "Desafío de seguridad",
+        }
+        
+        indicios_encontrados = []
+        for indicio, descripcion in indicios_bloqueo.items():
+            if indicio.lower() in html.lower():
+                indicios_encontrados.append(descripcion)
+                logger.error(f"   🚨 {descripcion}")
+        
+        # Análisis de estructura HTML
+        tiene_inputs = "input" in html.lower()
+        tiene_forms = "form" in html.lower()
+        tiene_buttons = "button" in html.lower()
+        tiene_react = "react" in html.lower() or "__NEXT_DATA__" in html
+        
+        logger.error(f"   ✓ Tiene <input>: {tiene_inputs}")
+        logger.error(f"   ✓ Tiene <form>: {tiene_forms}")
+        logger.error(f"   ✓ Tiene <button>: {tiene_buttons}")
+        logger.error(f"   ✓ Detectado React/Next: {tiene_react}")
+        
+        # Diagnóstico final
+        if indicios_encontrados:
+            return "BLOQUEADO_POR_SEGURIDAD", indicios_encontrados
+        elif len(html) < 500:
+            return "WHITE_SCREEN", ["HTML muy pequeño"]
+        elif not tiene_inputs and not tiene_forms:
+            return "PAGINA_SIN_FORM", ["No hay campos de entrada"]
+        elif tiene_react and not tiene_inputs:
+            return "REACT_NO_RENDERIZADO", ["React cargado pero sin contenido"]
+        else:
+            return "DESCONOCIDO", []
+    
+    except Exception as e:
+        logger.error(f"❌ Error diagnosticando: {e}")
+        return "ERROR_DIAGNOSTICO", [str(e)]
+
+# ==========================================
+# 🕵️‍♂️ FUNCIÓN AUXILIAR - MOBILE API FALLBACK
+# ==========================================
+def intentar_login_mobile_api(email_usuario, password, logger):
+    """
+    🔄 RUTA 2: Fallback via Mobile API si Datadome bloquea web
+    Las APIs mobile tienen menos protección que web
+    """
+    
+    logger.info(f"📱 RUTA 2: Intentando login via Mobile API...")
+    
+    # Endpoints mobile hipotéticos (ajustar según Liverpool real)
+    endpoints_mobile = [
+        ("GraphQL API", "https://mobile-api.liverpool.com.mx/graphql", "graphql"),
+        ("REST Auth", "https://api.liverpool.com.mx/v1/auth/login", "rest"),
+        ("Legacy Mobile", "https://m.liverpool.com.mx/api/login", "legacy"),
+    ]
+    
+    session = crear_session_con_retry()
+    
+    for nombre_endpoint, url, tipo in endpoints_mobile:
+        try:
+            logger.info(f"   🔄 Intentando {nombre_endpoint}...")
+            
+            if tipo == "graphql":
+                # GraphQL query
+                payload = {
+                    "query": """
+                    mutation Login($email: String!, $password: String!) {
+                        login(email: $email, password: $password) {
+                            token
+                            bearer
+                            accessToken
+                        }
+                    }
+                    """,
+                    "variables": {
+                        "email": email_usuario,
+                        "password": password
+                    }
+                }
+                headers = {
+                    "Content-Type": "application/json",
+                    "User-Agent": "Liverpool-Mobile/2.0",
+                }
+            else:
+                # REST API
+                payload = {
+                    "email": email_usuario,
+                    "password": password,
+                    "device_id": "megazord_v54",
+                    "client_id": "mobile_app"
+                }
+                headers = {
+                    "Content-Type": "application/json",
+                    "User-Agent": "Liverpool-Mobile/2.0 (Android)",
+                }
+            
+            response = session.post(url, json=payload, headers=headers, timeout=15)
+            
+            logger.info(f"   📊 Status: {response.status_code}")
+            
+            if response.status_code in [200, 201]:
+                data = response.json()
+                logger.info(f"   ✓ Response keys: {list(data.keys())}")
+                
+                # Buscar token en diferentes campos posibles
+                token_campos = ["token", "bearer", "accessToken", "access_token", 
+                               "authorization", "auth_token", "jwt"]
+                
+                for campo in token_campos:
+                    if campo in data:
+                        token = data[campo]
+                        if token and len(str(token)) > 20:
+                            logger.info(f"   🔑 ✅ TOKEN ENCONTRADO en '{campo}'")
+                            return token
+                    
+                    # Buscar en nested objects
+                    if "data" in data and isinstance(data["data"], dict):
+                        if campo in data["data"]:
+                            token = data["data"][campo]
+                            if token and len(str(token)) > 20:
+                                logger.info(f"   🔑 ✅ TOKEN ENCONTRADO en data.{campo}")
+                                return token
+                
+                logger.warning(f"   ⚠️ Response OK pero token no encontrado en campos esperados")
+                logger.debug(f"   Full response: {data}")
+            
+            else:
+                logger.warning(f"   ❌ {nombre_endpoint} devolvió {response.status_code}")
+        
+        except Exception as e:
+            logger.warning(f"   ⚠️ Error en {nombre_endpoint}: {e}")
+            continue
+    
+    logger.error(f"❌ RUTA 2 FALLIDA: No se pudo obtener token via Mobile API")
+    return None
+
+# ==========================================
 # 🕵️‍♂️ FUNCIÓN RENOVACIÓN DE CREDENCIALES - V5.4 DATADOME PRESERVATION + WARM-UP
 # ==========================================
 def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, cookie_encriptada_actual):
@@ -571,9 +733,46 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                 pass
         
         if not email_field:
-            logger.error(f"❌ NIVEL 2 FALLÓ: No se encontró campo email")
+            logger.error(f"❌ NIVEL 2: No se encontró campo email - ACTIVANDO DIAGNÓSTICO")
+            
+            # RUTA 1: Diagnosticar qué pasó
+            tipo_problema, indicios = diagnosticar_white_screen(page, logger)
+            logger.error(f"   📋 Tipo de problema: {tipo_problema}")
+            logger.error(f"   📋 Indicios: {indicios}")
+            
+            # Captura screenshot para análisis
             page.screenshot(path="debug_nivel2_v5_4_email.png")
-            return None, None
+            logger.error(f"   📸 Screenshot guardado: debug_nivel2_v5_4_email.png")
+            
+            # RUTA 2: Intentar Mobile API como fallback
+            logger.error(f"❌ NIVEL 2 WEB FALLIDO ({tipo_problema}) - Escalando a RUTA 2 (Mobile API)")
+            
+            token_mobile = intentar_login_mobile_api(email_usuario, os.getenv("LIVERPOOL_PASS"), logger)
+            
+            if token_mobile:
+                logger.info(f"✅ ¡TOKEN OBTENIDO VIA RUTA 2 (MOBILE API)!")
+                
+                # Guardar en BD con la cookie que tenemos
+                cookies_json = json.dumps(context.cookies())
+                cookie_final = cipher.encrypt(cookies_json.encode()).decode() if cipher else cookies_json
+                
+                try:
+                    with psycopg2.connect(DATABASE_URL) as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("""
+                                UPDATE cuentas_liverpool 
+                                SET token_autorizacion=%s, cookie_vip=%s, timestamp_token=NOW()
+                                WHERE id_cuenta=%s
+                            """, (token_mobile, cookie_final, id_cuenta))
+                    logger.info(f"💾 Token Mobile guardado en BD")
+                except Exception as e:
+                    logger.error(f"❌ Error guardando token: {e}")
+                
+                return token_mobile, cookie_final
+            
+            else:
+                logger.error(f"❌ RUTA 2 TAMBIÉN FALLÓ - NIVEL 2 COMPLETAMENTE FALLIDO")
+                return None, None
         
         try:
             email_field.scroll_into_view_if_needed()
