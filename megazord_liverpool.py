@@ -186,52 +186,72 @@ def validar_token_vivo(token, sku_test):
 # ==========================================
 # 🕵️‍♂️ FUNCIÓN AUXILIAR - WARM-UP DATADOME
 # ==========================================
-def calentar_datadome(page, logger):
+def calentar_datadome(page, context, logger):
     """
-    🔥 WARM-UP: Fuerza a Datadome a evaluar stealth scripts y emitir clearance
+    🔥 V5.5: WARM-UP AGRESIVO CON URLS DINÁMICAS + INTERACCIÓN HUMANA + DIAGNÓSTICO
     
-    Navega a URLs públicas que:
-    1. No requieren autenticación
-    2. Disparan verificación de Datadome
-    3. Generan cookie de clearance fresca
-    4. Permiten posterior acceso a login sin bloqueo
+    Datadome puede ignorar navegación pasiva. Forzamos interacción humana.
+    Loguea TODAS las cookies para diagnóstico.
     """
-    logger.info(f"🔥 WARM-UP: Calentando Datadome...")
     
-    # URLs públicas que disparan Datadome sin requerer auth
-    urls_warmup = [
-        ("offers (búsqueda pública)", "https://marketplace.liverpool.com.mx/offers"),
-        ("raíz pública", "https://marketplace.liverpool.com.mx/"),
+    logger.info(f"🔥 WARM-UP V5.5: Calentamiento agresivo con interacción...")
+    
+    urls_warmup_dinamicas = [
+        ("marketplace search", "https://marketplace.liverpool.com.mx/?search=test&sort=relevance"),
+        ("product list", "https://marketplace.liverpool.com.mx/offers?category=electronics&page=1"),
+        ("raíz con session", "https://marketplace.liverpool.com.mx/?nocache=" + str(int(time.time()))),
     ]
     
-    for nombre_url, url in urls_warmup:
+    for nombre_url, url in urls_warmup_dinamicas:
         try:
             logger.info(f"   🌐 Navegando a {nombre_url}...")
             page.goto(url, wait_until="domcontentloaded", timeout=10000)
             
-            # Esperar a que Datadome script se ejecute y emita clearance
-            logger.info(f"   ⏳ Esperando que Datadome evalúe...")
+            # Simular actividad humana
+            logger.info(f"   👆 Simular scroll y clic...")
+            page.evaluate("window.scrollBy(0, 300)")
+            page.wait_for_timeout(500)
+            
+            # Buscar elemento clicable
+            try:
+                enlaces = page.locator("a").all()
+                if enlaces:
+                    enlaces[0].click(force=True, delay=100)
+                    logger.info(f"   ✅ Clic ejecutado")
+            except:
+                pass
+            
             page.wait_for_timeout(3000)
             
-            # Verificar que tenemos clearance
-            todas_cookies = page.context.cookies()
+            # Verificar cookies
+            todas_cookies = context.cookies()
             tiene_datadome = any(
                 x in c.get('name', '').lower() 
                 for c in todas_cookies 
-                for x in ['datadome', 'cf_clearance', '__cf']
+                for x in ['datadome', 'cf_clearance', '__cf', 'cf_bm']
             )
+            
+            # DEBUG: Listar TODAS las cookies
+            logger.info(f"   📦 Cookies después de {nombre_url}:")
+            if todas_cookies:
+                for c in todas_cookies:
+                    logger.info(f"      - {c['name']} (domain: {c.get('domain', 'N/A')})")
+            else:
+                logger.warning(f"   ⚠️ NO HAY COOKIES - Datadome BLOQUEANDO")
             
             if tiene_datadome:
                 logger.info(f"   ✅ Datadome clearance obtenido")
                 return True
             else:
-                logger.warning(f"   ⚠️ No se obtuvo clearance en {nombre_url}, intentando siguiente...")
+                logger.warning(f"   ⚠️ Sin clearance en {nombre_url}, intentando siguiente...")
         
         except Exception as e:
             logger.warning(f"   ⚠️ Error en warm-up {nombre_url}: {e}")
             continue
     
-    logger.warning(f"   ⚠️ WARM-UP completado pero SIN clearance detectado")
+    logger.warning(f"   ⚠️ WARM-UP V5.5 completado SIN clearance")
+    logger.error(f"   🚨 DIAGNÓSTICO: Datadome parece estar HARD BLOQUEANDO desde GitHub Actions")
+    
     return False
 
 # ==========================================
@@ -496,7 +516,7 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
         
         # ✅ PASO 0: WARM-UP (Obtener clearance de Datadome ANTES de logout)
         logger.info(f"🔥 Paso 0/6: WARM-UP - Calentando Datadome...")
-        calentar_datadome(page, logger)
+        calentar_datadome(page, context, logger)
         
         # ✅ CLAVE V5.4 REVISADA: Extraer cookies de Datadome DESPUÉS del warm-up
         todas_cookies = context.cookies()
@@ -525,7 +545,7 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
         
         # Paso 2: Re-calentar Datadome DESPUÉS del logout (por si acaso se invalidó)
         logger.info(f"🔥 Paso 2/6: Re-calentamiento post-logout...")
-        calentar_datadome(page, logger)
+        calentar_datadome(page, context, logger)
         
         # Paso 3: Navegar a login (cookies Datadome aún en contexto)
         logger.info(f"🌐 Paso 3/6: Navegando a login...")
