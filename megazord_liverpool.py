@@ -31,6 +31,7 @@ from cryptography.fernet import Fernet
 import json
 import psycopg2 
 from db_manager import DbManager
+import datetime
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -417,6 +418,93 @@ def intentar_login_mobile_api(email_usuario, password, logger):
     return None
 
 # ==========================================
+# 🔄 FUNCIÓN RENOVAR TOKEN VIA REFRESH TOKEN
+# ==========================================
+def renovar_token_con_refresh_token(refresh_token_guardado, logger):
+    """
+    🔄 RUTA FAST: Renovar token usando refresh_token
+    Rápido, sin Playwright, sin credenciales
+    """
+    
+    logger.info(f"🔄 Intentando renovar token con refresh_token...")
+    
+    url = "https://login-entradaunica.liverpool.com.mx/oauth/token"
+    
+    payload = {
+        "client_id": "vX4c873p5H4hWLBiLAFYqT9K491fLbTm",
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token_guardado,
+        "scope": "openid profile email offline_access"
+    }
+    
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    }
+    
+    try:
+        session = crear_session_con_retry()
+        response = session.post(url, json=payload, headers=headers, timeout=15)
+        
+        logger.info(f"   📊 Status: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            if "access_token" in data:
+                nuevo_token = data["access_token"]
+                nuevo_refresh = data.get("refresh_token", refresh_token_guardado)  # A veces devuelve nuevo
+                expires_in = data.get("expires_in", 86400)  # Default 24h
+                
+                logger.info(f"   ✅ TOKEN RENOVADO EXITOSAMENTE")
+                logger.info(f"   ⏰ Expira en: {expires_in} segundos ({expires_in/3600:.1f} horas)")
+                
+                return {
+                    "access_token": nuevo_token,
+                    "refresh_token": nuevo_refresh,
+                    "expires_in": expires_in,
+                    "success": True
+                }
+            else:
+                logger.error(f"   ❌ Token no en response")
+                return {"success": False, "error": "Token not in response"}
+        
+        elif response.status_code == 401:
+            logger.error(f"   ❌ Refresh token expirado o inválido (401)")
+            return {"success": False, "error": "Refresh token expired"}
+        
+        else:
+            logger.error(f"   ❌ Error {response.status_code}: {response.text}")
+            return {"success": False, "error": f"Status {response.status_code}"}
+    
+    except Exception as e:
+        logger.error(f"   ❌ Exception: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# ==========================================
+# 🔐 FUNCIÓN LOGIN AUTH0 DIRECTO (Para primer login)
+# ==========================================
+def intentar_login_auth0_directo_completo(email_usuario, password, logger):
+    """
+    🔐 RUTA 3: Authorization Code Flow completo de Auth0
+    Solo se usa UNA VEZ cuando falla Playwright
+    
+    NOTA: Esta es una función stub. El flujo real requiere:
+    1. Obtener authorization_code de Auth0
+    2. Intercambiar por access_token + refresh_token
+    
+    Por ahora, retorna None indicando que necesita setup manual.
+    """
+    
+    logger.info(f"🔐 RUTA 3: Intento de login Auth0 directo...")
+    logger.error(f"   ⚠️ Esta ruta requiere flujo MANUAL en navegador")
+    logger.error(f"   ⚠️ No puede automatizarse sin capturar authorization_code")
+    logger.error(f"❌ RUTA 3: Requiere manual setup - ver documentación")
+    
+    return None
+
+# ==========================================
 # 🕵️‍♂️ FUNCIÓN RENOVACIÓN DE CREDENCIALES - V5.4 DATADOME PRESERVATION + WARM-UP
 # ==========================================
 def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, cookie_encriptada_actual):
@@ -759,11 +847,18 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                 try:
                     with psycopg2.connect(DATABASE_URL) as conn:
                         with conn.cursor() as cursor:
+                            # Calcular cuándo expira el token (por si lo tienes)
+                            token_expira_en = datetime.datetime.now() + datetime.timedelta(hours=24)
+
                             cursor.execute("""
                                 UPDATE cuentas_liverpool 
-                                SET token_autorizacion=%s, cookie_vip=%s, timestamp_token=NOW()
+                                SET token_autorizacion=%s, 
+                                    cookie_vip=%s, 
+                                    timestamp_token=NOW(),
+                                    refresh_token=%s,
+                                    token_expira_en=%s
                                 WHERE id_cuenta=%s
-                            """, (token_mobile, cookie_final, id_cuenta))
+                            """, (token_mobile, cookie_final, None, token_expira_en, id_cuenta))
                     logger.info(f"💾 Token Mobile guardado en BD")
                 except Exception as e:
                     logger.error(f"❌ Error guardando token: {e}")
@@ -1329,14 +1424,106 @@ def ejecutar_bot():
         sku_muestra = next(iter(reglas_cuenta.values()))['sku_interno']
         token_valido = True
         
-        if token_cuenta:
-            token_valido = validar_token_vivo(token_cuenta, sku_muestra)
-            if not token_valido: logger.warning(f"💀 El Ping devolvió 401. Token MUERTO.")
-
-        if not token_cuenta or not token_valido:
-            nuevo_token, nueva_cookie = renovar_credenciales_postgresql(db, gc_connection, id_cuenta, email_usuario, cookie_vip)
-            if nuevo_token: token_cuenta = nuevo_token
-            else: continue
+        # ✅ PING INICIAL PARA VALIDAR TOKEN
+        if not SHOP_ID_INTERNO:
+            logger.warning(f"⚠️ SHOP_ID_INTERNO no configurado - saltando validación de token")
+            token_valido = True  # Asumir que está bien
+        else:
+            url_ping = f"https://pro-api.liverpool.com.mx/api/offermanagement/offers?shop_id={SHOP_ID_INTERNO}&sku={urllib.parse.quote(sku_muestra)}"
+            headers_ping = {"Authorization": f"Bearer {token_cuenta}", "Content-Type": "application/json"}
+            
+            try:
+                response = crear_session_con_retry().get(url_ping, headers=headers_ping, timeout=10)
+            except:
+                response = None
+            
+            if not response or response.status_code == 401:
+                logger.warning(f"💀 El Ping devolvió 401. Token MUERTO.")
+                logger.info(f"🔄 INTENTANDO RENOVAR TOKEN CON REFRESH TOKEN...")
+            
+            # Obtener refresh token de BD
+            try:
+                with psycopg2.connect(DATABASE_URL) as conn:
+                    with conn.cursor() as cursor:
+                        cursor.execute("""
+                            SELECT refresh_token, token_expira_en 
+                            FROM cuentas_liverpool 
+                            WHERE id_cuenta = %s
+                        """, (id_cuenta,))
+                        resultado = cursor.fetchone()
+                        
+                        if resultado:
+                            refresh_token_guardado, token_expira_en = resultado
+                            
+                            if refresh_token_guardado:
+                                logger.info(f"   ✓ Refresh token encontrado en BD")
+                                
+                                # Intentar renovar
+                                resultado_renovacion = renovar_token_con_refresh_token(
+                                    refresh_token_guardado, 
+                                    logger
+                                )
+                                
+                                if resultado_renovacion["success"]:
+                                    nuevo_token = resultado_renovacion["access_token"]
+                                    nuevo_refresh = resultado_renovacion["refresh_token"]
+                                    expires_in = resultado_renovacion["expires_in"]
+                                    
+                                    # Guardar nuevos tokens en BD
+                                    token_expira_en = datetime.datetime.now() + datetime.timedelta(seconds=expires_in)
+                                    
+                                    with psycopg2.connect(DATABASE_URL) as conn2:
+                                        with conn2.cursor() as cursor2:
+                                            cursor2.execute("""
+                                                UPDATE cuentas_liverpool 
+                                                SET token_autorizacion=%s, 
+                                                    refresh_token=%s, 
+                                                    timestamp_token=NOW(),
+                                                    token_expira_en=%s
+                                                WHERE id_cuenta=%s
+                                            """, (nuevo_token, nuevo_refresh, token_expira_en, id_cuenta))
+                                    
+                                    logger.info(f"✅ Token renovado y guardado en BD")
+                                    token_cuenta = nuevo_token  # Actualizar para el resto del procesamiento
+                                    token_valido = True
+                                
+                                else:
+                                    logger.error(f"❌ Error renovando token: {resultado_renovacion.get('error')}")
+                                    logger.error(f"⚠️ Refresh token expiró - necesitas hacer login manual")
+                                    token_nuevo, cookie_nueva = renovar_credenciales_postgresql(db, gc_connection, id_cuenta, email_usuario, cookie_vip)
+                                    if token_nuevo:
+                                        token_cuenta = token_nuevo
+                                        token_valido = True
+                                    else:
+                                        token_valido = False
+                            
+                            else:
+                                logger.error(f"❌ No hay refresh token guardado - haciendo login completo")
+                                token_nuevo, cookie_nueva = renovar_credenciales_postgresql(db, gc_connection, id_cuenta, email_usuario, cookie_vip)
+                                if token_nuevo:
+                                    token_cuenta = token_nuevo
+                                    token_valido = True
+                                else:
+                                    token_valido = False
+                        
+                        else:
+                            logger.error(f"❌ Cuenta no encontrada en BD")
+                            token_valido = False
+            
+            except Exception as e:
+                logger.error(f"❌ Error renovando token: {e}")
+                logger.info(f"🤖 Escalando a login manual...")
+                token_nuevo, cookie_nueva = renovar_credenciales_postgresql(db, gc_connection, id_cuenta, email_usuario, cookie_vip)
+                if token_nuevo:
+                    token_cuenta = token_nuevo
+                    token_valido = True
+                else:
+                    token_valido = False
+        
+        # ✅ Si el token no es válido incluso después de intentos, saltamos esta cuenta
+        if not token_valido:
+            logger.error(f"❌ No se pudo obtener token válido para {id_cuenta}. Saltando...")
+            continue
 
         total_skus_procesados += len(reglas_cuenta)
         with ThreadPoolExecutor(max_workers=3) as executor:
