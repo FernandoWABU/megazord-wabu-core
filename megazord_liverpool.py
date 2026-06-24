@@ -31,7 +31,6 @@ from cryptography.fernet import Fernet
 import json
 import psycopg2 
 from db_manager import DbManager
-import datetime
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -919,7 +918,7 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                     with psycopg2.connect(DATABASE_URL) as conn:
                         with conn.cursor() as cursor:
                             # Calcular cuándo expira el token (por si lo tienes)
-                            token_expira_en = datetime.datetime.now() + datetime.timedelta(hours=24)
+                            token_expira_en = datetime.now() + timedelta(seconds=expires_in)
 
                             cursor.execute("""
                                 UPDATE cuentas_liverpool 
@@ -1501,7 +1500,7 @@ def token_aun_valido_por_intento(token_expira_en):
         return True  # Sin información, asumir que está bien
     
     try:
-        tiempo_faltante = token_expira_en - datetime.datetime.now()
+        tiempo_faltante = token_expira_en - datetime.now()
         minutos_faltantes = tiempo_faltante.total_seconds() / 60
         
         if minutos_faltantes > 30:
@@ -1621,7 +1620,7 @@ def ejecutar_bot():
                                         nuevo_refresh = resultado_renovacion["refresh_token"]
                                         expires_in = resultado_renovacion["expires_in"]
                                         
-                                        token_expira_en = datetime.datetime.now() + datetime.timedelta(seconds=expires_in)
+                                        token_expira_en = datetime.now() + timedelta(seconds=expires_in)
                                         
                                         with psycopg2.connect(DATABASE_URL) as conn2:
                                             with conn2.cursor() as cursor2:
