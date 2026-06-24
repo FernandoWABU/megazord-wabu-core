@@ -474,6 +474,9 @@ def renovar_token_con_refresh_token(refresh_token_guardado, logger, gc_client=No
         elif response.status_code == 403:
             # 🔴 MFA REQUERIDA
             data = response.json()
+
+            logger.error(f"   📋 RESPUESTA 403 COMPLETA:")
+            logger.error(f"   {json.dumps(data, indent=2)}")  # ← LOGUEA TODO
             
             if data.get("error") == "mfa_required":
                 logger.warning(f"   ⚠️ Auth0 requiere MFA para renovar token")
