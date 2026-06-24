@@ -418,14 +418,17 @@ def intentar_login_mobile_api(email_usuario, password, logger):
     return None
 
 # ==========================================
-# 🔄 FUNCIÓN RENOVAR TOKEN VIA REFRESH TOKEN (CON MFA)
+# 🔄 FUNCIÓN RENOVAR TOKEN VIA REFRESH TOKEN (CON MFA - CORREGIDO)
 # ==========================================
 def renovar_token_con_refresh_token(refresh_token_guardado, logger, gc_client=None, timeout_2fa=180):
     """
     🔄 RUTA FAST: Renovar token usando refresh_token
-    INCLUYE: Manejo de MFA si Auth0 lo requiere
+    INCLUYE: Manejo de MFA con flujo Auth0 correcto
     
-    Rápido, sin Playwright, sin credenciales (excepto MFA)
+    Auth0 MFA Flow:
+    1. POST /oauth/token con refresh_token
+    2. Si 403 mfa_required, capturar mfa_token
+    3. POST /oauth/token con grant_type=mfa-otp + otp + mfa_token
     """
     
     logger.info(f"🔄 Intentando renovar token con refresh_token...")
@@ -455,7 +458,13 @@ def renovar_token_con_refresh_token(refresh_token_guardado, logger, gc_client=No
             
             if "access_token" in data:
                 nuevo_token = data["access_token"]
-                nuevo_refresh = data.get("refresh_token", refresh_token_guardado)
+                nuevo_refresh = data.get("refresh_token")
+                if not nuevo_refresh:
+                    nuevo_refresh = refresh_token_guardado
+                    logger.info(f"   ℹ️ Auth0 no devolvió nuevo refresh_token, manteniendo el actual")
+                else:
+                    logger.info(f"   🔄 Nuevo refresh_token recibido de Auth0")
+                
                 expires_in = data.get("expires_in", 86400)
                 
                 logger.info(f"   ✅ TOKEN RENOVADO EXITOSAMENTE")
@@ -474,9 +483,9 @@ def renovar_token_con_refresh_token(refresh_token_guardado, logger, gc_client=No
         elif response.status_code == 403:
             # 🔴 MFA REQUERIDA
             data = response.json()
-
+            
             logger.error(f"   📋 RESPUESTA 403 COMPLETA:")
-            logger.error(f"   {json.dumps(data, indent=2)}")  # ← LOGUEA TODO
+            logger.error(f"   {json.dumps(data, indent=2)}")
             
             if data.get("error") == "mfa_required":
                 logger.warning(f"   ⚠️ Auth0 requiere MFA para renovar token")
@@ -488,7 +497,7 @@ def renovar_token_con_refresh_token(refresh_token_guardado, logger, gc_client=No
                     return {"success": False, "error": "MFA required but no mfa_token"}
                 
                 # Obtener código 2FA de Google Sheets
-                logger.info(f"   📱 Esperando código 2FA de Google Sheets...")
+                logger.info(f"   📱 Esperando código 2FA de Google Sheets (timeout: {timeout_2fa}s)...")
                 
                 if not gc_client:
                     logger.error(f"   ❌ gc_client no disponible para leer 2FA")
@@ -520,29 +529,39 @@ def renovar_token_con_refresh_token(refresh_token_guardado, logger, gc_client=No
                     time.sleep(2)
                 
                 if not codigo_2fa:
-                    logger.error(f"   ❌ Timeout esperando código 2FA")
+                    logger.error(f"   ❌ Timeout esperando código 2FA ({timeout_2fa}s)")
                     return {"success": False, "error": "2FA timeout"}
                 
-                # Hacer POST a MFA endpoint
-                logger.info(f"   🔐 Validando código 2FA con Auth0...")
+                # 🔴 AHORA: POST al MISMO endpoint con grant_type mfa-otp
+                logger.info(f"   🔐 Enviando código 2FA a Auth0 con MFA grant_type...")
                 
-                url_mfa = "https://login-entradaunica.liverpool.com.mx/oauth/mfa/authenticate"
                 payload_mfa = {
                     "client_id": "vX4c873p5H4hWLBiLAFYqT9K491fLbTm",
+                    "grant_type": "http://auth0.com/oauth/grant-type/mfa-otp",
                     "mfa_token": mfa_token,
-                    "otp_code": codigo_2fa
+                    "otp": codigo_2fa
                 }
                 
-                response_mfa = session.post(url_mfa, json=payload_mfa, headers=headers, timeout=15)
+                logger.info(f"   📤 Payload MFA: grant_type=mfa-otp, otp={codigo_2fa}")
+                
+                response_mfa = session.post(url, json=payload_mfa, headers=headers, timeout=15)
                 
                 logger.info(f"   📊 MFA Response Status: {response_mfa.status_code}")
                 
                 if response_mfa.status_code == 200:
                     data_mfa = response_mfa.json()
                     
+                    logger.info(f"   ✅ MFA VERIFICADA EXITOSAMENTE")
+                    
                     if "access_token" in data_mfa:
                         nuevo_token = data_mfa["access_token"]
-                        nuevo_refresh = data_mfa.get("refresh_token", refresh_token_guardado)
+                        nuevo_refresh = data_mfa.get("refresh_token")
+                        if not nuevo_refresh:
+                            nuevo_refresh = refresh_token_guardado
+                            logger.info(f"   ℹ️ Auth0 no devolvió nuevo refresh_token, manteniendo el actual")
+                        else:
+                            logger.info(f"   🔄 Nuevo refresh_token recibido de Auth0 (via MFA)")
+                        
                         expires_in = data_mfa.get("expires_in", 86400)
                         
                         logger.info(f"   ✅ TOKEN RENOVADO CON MFA EXITOSAMENTE")
@@ -556,15 +575,21 @@ def renovar_token_con_refresh_token(refresh_token_guardado, logger, gc_client=No
                         }
                     else:
                         logger.error(f"   ❌ Token no en MFA response")
+                        logger.error(f"   Response: {data_mfa}")
                         return {"success": False, "error": "MFA: Token not in response"}
+                
+                elif response_mfa.status_code == 401:
+                    logger.error(f"   ❌ Código 2FA inválido o expirado (401)")
+                    return {"success": False, "error": "Invalid or expired 2FA code"}
                 
                 else:
                     logger.error(f"   ❌ MFA falló: Status {response_mfa.status_code}")
+                    logger.error(f"   Response: {response_mfa.text}")
                     return {"success": False, "error": f"MFA status {response_mfa.status_code}"}
             
             else:
-                logger.error(f"   ❌ Error 403: {data}")
-                return {"success": False, "error": f"403: {data}"}
+                logger.error(f"   ❌ Error 403 desconocido: {data.get('error')}")
+                return {"success": False, "error": f"403: {data.get('error')}"}
         
         elif response.status_code == 401:
             logger.error(f"   ❌ Refresh token expirado o inválido (401)")
@@ -576,6 +601,8 @@ def renovar_token_con_refresh_token(refresh_token_guardado, logger, gc_client=No
     
     except Exception as e:
         logger.error(f"   ❌ Exception: {e}")
+        import traceback
+        traceback.print_exc()
         return {"success": False, "error": str(e)}
 
 
