@@ -418,12 +418,14 @@ def intentar_login_mobile_api(email_usuario, password, logger):
     return None
 
 # ==========================================
-# 🔄 FUNCIÓN RENOVAR TOKEN VIA REFRESH TOKEN
+# 🔄 FUNCIÓN RENOVAR TOKEN VIA REFRESH TOKEN (CON MFA)
 # ==========================================
-def renovar_token_con_refresh_token(refresh_token_guardado, logger):
+def renovar_token_con_refresh_token(refresh_token_guardado, logger, gc_client=None, timeout_2fa=180):
     """
     🔄 RUTA FAST: Renovar token usando refresh_token
-    Rápido, sin Playwright, sin credenciales
+    INCLUYE: Manejo de MFA si Auth0 lo requiere
+    
+    Rápido, sin Playwright, sin credenciales (excepto MFA)
     """
     
     logger.info(f"🔄 Intentando renovar token con refresh_token...")
@@ -453,8 +455,8 @@ def renovar_token_con_refresh_token(refresh_token_guardado, logger):
             
             if "access_token" in data:
                 nuevo_token = data["access_token"]
-                nuevo_refresh = data.get("refresh_token", refresh_token_guardado)  # A veces devuelve nuevo
-                expires_in = data.get("expires_in", 86400)  # Default 24h
+                nuevo_refresh = data.get("refresh_token", refresh_token_guardado)
+                expires_in = data.get("expires_in", 86400)
                 
                 logger.info(f"   ✅ TOKEN RENOVADO EXITOSAMENTE")
                 logger.info(f"   ⏰ Expira en: {expires_in} segundos ({expires_in/3600:.1f} horas)")
@@ -468,6 +470,98 @@ def renovar_token_con_refresh_token(refresh_token_guardado, logger):
             else:
                 logger.error(f"   ❌ Token no en response")
                 return {"success": False, "error": "Token not in response"}
+        
+        elif response.status_code == 403:
+            # 🔴 MFA REQUERIDA
+            data = response.json()
+            
+            if data.get("error") == "mfa_required":
+                logger.warning(f"   ⚠️ Auth0 requiere MFA para renovar token")
+                
+                mfa_token = data.get("mfa_token")
+                
+                if not mfa_token:
+                    logger.error(f"   ❌ No se recibió mfa_token")
+                    return {"success": False, "error": "MFA required but no mfa_token"}
+                
+                # Obtener código 2FA de Google Sheets
+                logger.info(f"   📱 Esperando código 2FA de Google Sheets...")
+                
+                if not gc_client:
+                    logger.error(f"   ❌ gc_client no disponible para leer 2FA")
+                    return {"success": False, "error": "MFA required but no gc_client"}
+                
+                try:
+                    hoja_config = gc_client.open_by_key(os.getenv("GOOGLE_SHEET_ID")).worksheet("Config")
+                except Exception as e:
+                    logger.error(f"   ❌ Error accediendo Google Sheets: {e}")
+                    return {"success": False, "error": f"Google Sheets error: {e}"}
+                
+                codigo_antiguo = ""
+                tiempo_inicio_2fa = time.time()
+                codigo_2fa = None
+                
+                while (time.time() - tiempo_inicio_2fa) < timeout_2fa:
+                    try:
+                        codigo_nuevo = str(hoja_config.acell("B1").value).replace("'", "").strip()
+                        
+                        if codigo_nuevo != codigo_antiguo and len(codigo_nuevo) == 6 and codigo_nuevo.isdigit():
+                            logger.info(f"   ✅ Código 2FA detectado: {codigo_nuevo}")
+                            codigo_2fa = codigo_nuevo
+                            break
+                        
+                        codigo_antiguo = codigo_nuevo
+                    except:
+                        pass
+                    
+                    time.sleep(2)
+                
+                if not codigo_2fa:
+                    logger.error(f"   ❌ Timeout esperando código 2FA")
+                    return {"success": False, "error": "2FA timeout"}
+                
+                # Hacer POST a MFA endpoint
+                logger.info(f"   🔐 Validando código 2FA con Auth0...")
+                
+                url_mfa = "https://login-entradaunica.liverpool.com.mx/oauth/mfa/authenticate"
+                payload_mfa = {
+                    "client_id": "vX4c873p5H4hWLBiLAFYqT9K491fLbTm",
+                    "mfa_token": mfa_token,
+                    "otp_code": codigo_2fa
+                }
+                
+                response_mfa = session.post(url_mfa, json=payload_mfa, headers=headers, timeout=15)
+                
+                logger.info(f"   📊 MFA Response Status: {response_mfa.status_code}")
+                
+                if response_mfa.status_code == 200:
+                    data_mfa = response_mfa.json()
+                    
+                    if "access_token" in data_mfa:
+                        nuevo_token = data_mfa["access_token"]
+                        nuevo_refresh = data_mfa.get("refresh_token", refresh_token_guardado)
+                        expires_in = data_mfa.get("expires_in", 86400)
+                        
+                        logger.info(f"   ✅ TOKEN RENOVADO CON MFA EXITOSAMENTE")
+                        logger.info(f"   ⏰ Expira en: {expires_in} segundos ({expires_in/3600:.1f} horas)")
+                        
+                        return {
+                            "access_token": nuevo_token,
+                            "refresh_token": nuevo_refresh,
+                            "expires_in": expires_in,
+                            "success": True
+                        }
+                    else:
+                        logger.error(f"   ❌ Token no en MFA response")
+                        return {"success": False, "error": "MFA: Token not in response"}
+                
+                else:
+                    logger.error(f"   ❌ MFA falló: Status {response_mfa.status_code}")
+                    return {"success": False, "error": f"MFA status {response_mfa.status_code}"}
+            
+            else:
+                logger.error(f"   ❌ Error 403: {data}")
+                return {"success": False, "error": f"403: {data}"}
         
         elif response.status_code == 401:
             logger.error(f"   ❌ Refresh token expirado o inválido (401)")
@@ -1461,7 +1555,9 @@ def ejecutar_bot():
                                 # Intentar renovar
                                 resultado_renovacion = renovar_token_con_refresh_token(
                                     refresh_token_guardado, 
-                                    logger
+                                    logger,
+                                    gc_client=gc_connection,
+                                    timeout_2fa=180
                                 )
                                 
                                 if resultado_renovacion["success"]:
