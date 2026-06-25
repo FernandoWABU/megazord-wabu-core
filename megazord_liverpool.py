@@ -417,6 +417,164 @@ def intentar_login_mobile_api(email_usuario, password, logger):
     return None
 
 # ==========================================
+# 🔄 FUNCIÓN RENOVAR TOKEN VIA REFRESH TOKEN (OPCIÓN 2 - FALLBACK)
+# ==========================================
+def renovar_token_con_refresh_token(refresh_token_guardado, logger, gc_client=None, timeout_2fa=180):
+    """
+    🔄 Intentar renovar token via refresh_token
+    
+    SI FUNCIONA: Retorna nuevo token + refresh_token
+    SI FALLA POR MFA: Retorna error pero permite continuar
+    SI REFRESH EXPIRÓ: Requiere intervención manual
+    """
+    
+    logger.info(f"🔄 Intentando renovar token con refresh_token...")
+    
+    url = "https://login-entradaunica.liverpool.com.mx/oauth/token"
+    
+    payload = {
+        "client_id": "vX4c873p5H4hWLBiLAFYqT9K491fLbTm",
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token_guardado,
+        "scope": "openid profile email offline_access"
+    }
+    
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    }
+    
+    try:
+        session = crear_session_con_retry()
+        response = session.post(url, json=payload, headers=headers, timeout=15)
+        
+        logger.info(f"   📊 Status: {response.status_code}")
+        
+        # ✅ ÉXITO: Token renovado
+        if response.status_code == 200:
+            data = response.json()
+            
+            if "access_token" in data:
+                nuevo_token = data["access_token"]
+                nuevo_refresh = data.get("refresh_token", refresh_token_guardado)
+                expires_in = data.get("expires_in", 86400)
+                
+                logger.info(f"   ✅ TOKEN RENOVADO EXITOSAMENTE")
+                logger.info(f"   ⏰ Expira en: {expires_in} segundos ({expires_in/3600:.1f} horas)")
+                
+                return {
+                    "access_token": nuevo_token,
+                    "refresh_token": nuevo_refresh,
+                    "expires_in": expires_in,
+                    "success": True,
+                    "error_type": None
+                }
+            else:
+                logger.error(f"   ❌ Token no en response")
+                return {
+                    "success": False, 
+                    "error": "Token not in response",
+                    "error_type": "response_malformed",
+                    "can_continue": False
+                }
+        
+        # 🔴 MFA REQUERIDA - No podemos resolver
+        elif response.status_code == 403:
+            data = response.json()
+            
+            logger.error(f"   📋 RESPUESTA 403:")
+            logger.error(f"   Error: {data.get('error')}")
+            logger.error(f"   Descripción: {data.get('error_description')}")
+            
+            if data.get("error") == "mfa_required":
+                logger.warning(f"   ⚠️ MFA REQUERIDA - No se puede renovar automáticamente")
+                logger.warning(f"   💡 Soluciones:")
+                logger.warning(f"      1. Desactiva MFA en marketplace.liverpool.com.mx")
+                logger.warning(f"      2. O captura token manualmente cada 29 días")
+                
+                return {
+                    "success": False,
+                    "error": "MFA required - grant_type not allowed",
+                    "error_type": "mfa_required",
+                    "can_continue": True  # ← PERMITE CONTINUAR CON TOKEN VIEJO
+                }
+            
+            elif data.get("error") == "unauthorized_client":
+                logger.error(f"   ❌ Grant type 'mfa-otp' no permitido para este cliente")
+                
+                return {
+                    "success": False,
+                    "error": "MFA grant_type not allowed",
+                    "error_type": "mfa_required",
+                    "can_continue": True  # ← PERMITE CONTINUAR
+                }
+            
+            else:
+                logger.error(f"   ❌ Error 403 desconocido: {data.get('error')}")
+                return {
+                    "success": False,
+                    "error": f"403: {data.get('error')}",
+                    "error_type": "unknown_403",
+                    "can_continue": False
+                }
+        
+        # 🔴 REFRESH TOKEN EXPIRÓ
+        elif response.status_code == 401:
+            token_valido = False  # ← AQUÍ estaba el problema
+            data = response.json()
+            logger.error(f"   ❌ Refresh token expirado o inválido (401)")
+            logger.error(f"   Error: {data.get('error')}")
+            
+            return {
+                "success": False,
+                "error": "Refresh token expired",
+                "error_type": "refresh_token_expired",
+                "can_continue": False  # ← NO PERMITE CONTINUAR
+            }
+        
+        # 🔴 OTROS ERRORES
+        else:
+            logger.error(f"   ❌ Error {response.status_code}: {response.text}")
+            return {
+                "success": False,
+                "error": f"Status {response.status_code}",
+                "error_type": "http_error",
+                "can_continue": False
+            }
+    
+    except Exception as e:
+        logger.error(f"   ❌ Exception: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "error_type": "exception",
+            "can_continue": False
+        }
+
+
+# ==========================================
+# 🔐 FUNCIÓN LOGIN AUTH0 DIRECTO (Para primer login)
+# ==========================================
+def intentar_login_auth0_directo_completo(email_usuario, password, logger):
+    """
+    🔐 RUTA 3: Authorization Code Flow completo de Auth0
+    Solo se usa UNA VEZ cuando falla Playwright
+    
+    NOTA: Esta es una función stub. El flujo real requiere:
+    1. Obtener authorization_code de Auth0
+    2. Intercambiar por access_token + refresh_token
+    
+    Por ahora, retorna None indicando que necesita setup manual.
+    """
+    
+    logger.info(f"🔐 RUTA 3: Intento de login Auth0 directo...")
+    logger.error(f"   ⚠️ Esta ruta requiere flujo MANUAL en navegador")
+    logger.error(f"   ⚠️ No puede automatizarse sin capturar authorization_code")
+    logger.error(f"❌ RUTA 3: Requiere manual setup - ver documentación")
+    
+    return None
+
+# ==========================================
 # 🕵️‍♂️ FUNCIÓN RENOVACIÓN DE CREDENCIALES - V5.4 DATADOME PRESERVATION + WARM-UP
 # ==========================================
 def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, cookie_encriptada_actual):
@@ -759,11 +917,18 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                 try:
                     with psycopg2.connect(DATABASE_URL) as conn:
                         with conn.cursor() as cursor:
+                            # Calcular cuándo expira el token (por si lo tienes)
+                            token_expira_en = datetime.now() + timedelta(seconds=expires_in)
+
                             cursor.execute("""
                                 UPDATE cuentas_liverpool 
-                                SET token_autorizacion=%s, cookie_vip=%s, timestamp_token=NOW()
+                                SET token_autorizacion=%s, 
+                                    cookie_vip=%s, 
+                                    timestamp_token=NOW(),
+                                    refresh_token=%s,
+                                    token_expira_en=%s
                                 WHERE id_cuenta=%s
-                            """, (token_mobile, cookie_final, id_cuenta))
+                            """, (token_mobile, cookie_final, None, token_expira_en, id_cuenta))
                     logger.info(f"💾 Token Mobile guardado en BD")
                 except Exception as e:
                     logger.error(f"❌ Error guardando token: {e}")
@@ -1274,6 +1439,78 @@ def guardar_en_sql(filas):
     except Exception as e: logger.error(f"❌ CRÍTICO: Error guardando en BD: {e}")
 
 # ==========================================
+# 🚨 FUNCIÓN AUXILIAR - MANEJO DE RENOVACIÓN FALLIDA
+# ==========================================
+def manejar_renovacion_fallida(id_cuenta, error_tipo, logger):
+    """
+    Maneja las diferentes razones por las que falló la renovación de token
+    
+    error_tipo puede ser:
+    - "mfa_required": MFA habilitada (no podemos resolver automáticamente)
+    - "refresh_token_expired": refresh_token expiró (necesita login manual)
+    - "other": Otro error
+    """
+    
+    if "mfa" in error_tipo.lower():
+        logger.warning(f"⚠️ MFA REQUERIDA - No se puede renovar automáticamente")
+        mensaje = (
+            f"⚠️ *ATENCIÓN: RENOVACIÓN DE TOKEN FALLIDA ({id_cuenta})*\n\n"
+            f"*Motivo:* MFA habilitada en cuenta Liverpool\n\n"
+            f"*Estado actual:* Token vigente por ~24 horas más\n\n"
+            f"*Acción requerida en ~24h:*\n"
+            f"1️⃣ Ve a https://marketplace.liverpool.com.mx/dashboard\n"
+            f"2️⃣ Abre DevTools (F12) → Network\n"
+            f"3️⃣ Busca request a `pro-api.liverpool.com.mx`\n"
+            f"4️⃣ Copia el `Authorization: Bearer eyJ...`\n"
+            f"5️⃣ Manda el token a @bot_megazord\n\n"
+            f"*Solución permanente:*\n"
+            f"Contacta al Admin de Liverpool para desactivar MFA"
+        )
+        enviar_alerta_telegram(mensaje)
+        return True  # Continuar con token viejo
+    
+    elif "refresh_token_expired" in error_tipo:
+        logger.error(f"❌ REFRESH TOKEN EXPIRADO - Login manual requerido AHORA")
+        mensaje = (
+            f"🚨 *CRÍTICO: REFRESH TOKEN EXPIRADO ({id_cuenta})*\n\n"
+            f"*Estado:* No se puede renovar automáticamente\n\n"
+            f"*Acción INMEDIATA:*\n"
+            f"1️⃣ Ve a https://marketplace.liverpool.com.mx/dashboard\n"
+            f"2️⃣ Haz login manualmente (si no está ya)\n"
+            f"3️⃣ Abre DevTools (F12) → Network\n"
+            f"4️⃣ Busca request a `pro-api.liverpool.com.mx`\n"
+            f"5️⃣ Copia el `Authorization: Bearer eyJ...`\n"
+            f"6️⃣ Manda el token URGENTE\n\n"
+            f"*Bot está PAUSADO hasta recibir nuevo token*"
+        )
+        enviar_alerta_telegram(mensaje)
+        return False  # NO continuar - token está muerto
+    
+    else:
+        logger.error(f"❌ RENOVACIÓN FALLÓ (Motivo desconocido): {error_tipo}")
+        return False
+
+
+def token_aun_valido_por_intento(token_expira_en):
+    """
+    Verifica si el token tiene margen de validez para procesamiento
+    Retorna True si faltan MÁS de 30 minutos
+    """
+    if not token_expira_en:
+        return True  # Sin información, asumir que está bien
+    
+    try:
+        tiempo_faltante = token_expira_en - datetime.now()
+        minutos_faltantes = tiempo_faltante.total_seconds() / 60
+        
+        if minutos_faltantes > 30:
+            return True
+        else:
+            return False
+    except:
+        return True
+
+# ==========================================
 # FUNCIÓN PRINCIPAL MULTI-TENANT
 # ==========================================
 def ejecutar_bot():
@@ -1328,16 +1565,118 @@ def ejecutar_bot():
 
         sku_muestra = next(iter(reglas_cuenta.values()))['sku_interno']
         token_valido = True
+            
+        # ✅ PING INICIAL PARA VALIDAR TOKEN
+        if not SHOP_ID_INTERNO:
+            logger.warning(f"⚠️ SHOP_ID_INTERNO no configurado - saltando validación de token")
+            token_valido = True  # Asumir que está bien
+        else:
+            url_ping = f"https://pro-api.liverpool.com.mx/api/offermanagement/offers?shop_id={SHOP_ID_INTERNO}&sku={urllib.parse.quote(sku_muestra)}"
+            headers_ping = {"Authorization": f"Bearer {token_cuenta}", "Content-Type": "application/json"}
+            
+            try:
+                response = crear_session_con_retry().get(url_ping, headers=headers_ping, timeout=10)
+            except:
+                response = None
+            
+            # ✅ VALIDAR RESPUESTA
+            if not response or response.status_code == 401:
+                token_valido = False
+            else:
+                token_valido = True
+            
+            # ✅ SI EL TOKEN NO ES VÁLIDO, INTENTAR RENOVAR
+            if not token_valido:
+                logger.warning(f"💀 El Ping devolvió 401. Token MUERTO.")
+                logger.info(f"🔄 INTENTANDO RENOVAR TOKEN CON REFRESH TOKEN...")
+                
+                try:
+                    with psycopg2.connect(DATABASE_URL) as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("""
+                                SELECT refresh_token, token_expira_en 
+                                FROM cuentas_liverpool 
+                                WHERE id_cuenta = %s
+                            """, (id_cuenta,))
+                            resultado = cursor.fetchone()
+                            
+                            if resultado:
+                                refresh_token_guardado, token_expira_en = resultado
+                                
+                                if refresh_token_guardado:
+                                    logger.info(f"   ✓ Refresh token encontrado en BD")
+                                    
+                                    # INTENTAR RENOVACIÓN
+                                    resultado_renovacion = renovar_token_con_refresh_token(
+                                        refresh_token_guardado, 
+                                        logger,
+                                        gc_client=gc_connection,
+                                        timeout_2fa=180
+                                    )
+                                    
+                                    if resultado_renovacion["success"]:
+                                        # ✅ RENOVACIÓN EXITOSA
+                                        nuevo_token = resultado_renovacion["access_token"]
+                                        nuevo_refresh = resultado_renovacion["refresh_token"]
+                                        expires_in = resultado_renovacion["expires_in"]
+                                        
+                                        token_expira_en = datetime.now() + timedelta(seconds=expires_in)
+                                        
+                                        with psycopg2.connect(DATABASE_URL) as conn2:
+                                            with conn2.cursor() as cursor2:
+                                                cursor2.execute("""
+                                                    UPDATE cuentas_liverpool 
+                                                    SET token_autorizacion=%s, 
+                                                        refresh_token=%s, 
+                                                        timestamp_token=NOW(),
+                                                        token_expira_en=%s
+                                                    WHERE id_cuenta=%s
+                                                """, (nuevo_token, nuevo_refresh, token_expira_en, id_cuenta))
+                                        
+                                        logger.info(f"✅ Token renovado y guardado en BD")
+                                        token_cuenta = nuevo_token
+                                        token_valido = True
+                                    
+                                    else:
+                                        # ❌ RENOVACIÓN FALLÓ
+                                        error_tipo = resultado_renovacion.get("error_type", "unknown")
+                                        puede_continuar = resultado_renovacion.get("can_continue", False)
+                                        
+                                        logger.error(f"❌ Error renovando token: {resultado_renovacion.get('error')}")
+                                        
+                                        # Manejar el error
+                                        debe_continuar = manejar_renovacion_fallida(
+                                            id_cuenta, 
+                                            error_tipo, 
+                                            logger
+                                        )
+                                        
+                                        if debe_continuar and token_aun_valido_por_intento(token_expira_en):
+                                            # 🟡 FALLBACK: Continuar con token viejo
+                                            logger.warning(f"🟡 [{id_cuenta}] Continuando con token antiguo (MFA bloqueando renovación)")
+                                            token_valido = True  # Asumir que sigue siendo válido
+                                        else:
+                                            # 🔴 NO PODEMOS CONTINUAR
+                                            logger.error(f"❌ No se pudo obtener token válido para {id_cuenta}. Saltando...")
+                                            token_valido = False
+                                
+                                else:
+                                    logger.error(f"❌ No hay refresh token guardado - necesitas login manual")
+                                    token_valido = False
+                            
+                            else:
+                                logger.error(f"❌ Cuenta no encontrada en BD")
+                                token_valido = False
+                
+                except Exception as e:
+                    logger.error(f"❌ Error renovando token: {e}")
+                    token_valido = False
         
-        if token_cuenta:
-            token_valido = validar_token_vivo(token_cuenta, sku_muestra)
-            if not token_valido: logger.warning(f"💀 El Ping devolvió 401. Token MUERTO.")
-
-        if not token_cuenta or not token_valido:
-            nuevo_token, nueva_cookie = renovar_credenciales_postgresql(db, gc_connection, id_cuenta, email_usuario, cookie_vip)
-            if nuevo_token: token_cuenta = nuevo_token
-            else: continue
-
+        # ✅ SECURITY CHECK: Token debe ser válido para procesar
+        if not token_valido:
+            logger.error(f"❌ No se pudo obtener token válido para {id_cuenta}. Saltando...")
+            continue
+            
         total_skus_procesados += len(reglas_cuenta)
         with ThreadPoolExecutor(max_workers=3) as executor:
             futures = {executor.submit(procesar_sku_threadsafe, token_cuenta, sku_lp, regla, resultados, gc_connection, None, sesion_compartida, id_cuenta): sku_lp for sku_lp, regla in reglas_cuenta.items()}
