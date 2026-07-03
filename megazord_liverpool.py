@@ -1174,7 +1174,9 @@ def obtener_info_rivales_nuevo_endpoint(liverpool_sku):
             
             return sorted(rivales, key=lambda x: x["precio"]) if rivales else None
     except Exception as e:
-        logger.debug(f"❌ Nuevo endpoint falló: {e}")
+        logger.warning(f"❌ NUEVO ENDPOINT ERROR: {type(e).__name__}: {e}")
+        import traceback
+        logger.debug(traceback.format_exc())
     return None
 
 
