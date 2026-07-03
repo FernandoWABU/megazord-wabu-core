@@ -1135,149 +1135,25 @@ def cazar_oferta_especifica(token, sku_interno, sku_liverpool):
         except: pass
     return None
 
-def obtener_info_rivales_nuevo_endpoint(liverpool_sku):
-    """Nuevo endpoint: www.liverpool.com.mx/tienda/mirakl/offerListing"""
+def obtener_info_rivales(liverpool_sku):
+    url = f"https://shoppapp.liverpool.com.mx/appclienteservices/services/v2/marketplace/pdp/getSellersOfferDetailsPdp?skuId={liverpool_sku}"
     try:
-        url = f"https://www.liverpool.com.mx/tienda/mirakl/offerListing?productId={liverpool_sku}&skuId={liverpool_sku}"
-        res = crear_session_con_retry().get(
-            url, 
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, 
-            timeout=30
-        )
-        if res.status_code == 200:
-            rivales = []
-            # Ajusta el parsing según la estructura que vimos en el JSON
-            ofertas = res.json().get("offers", []) or res.json().get("sellersOfferDetails", [])
-            
-            for oferta in ofertas:
-                seller_id = str(oferta.get("sellerId") or oferta.get("seller", {}).get("id", ""))
-                if seller_id != str(SHOP_ID_PUBLICO):
-                    # Intentar múltiples campos de precio
-                    precio = (
-                        oferta.get("price") or 
-                        oferta.get("promoPrice") or 
-                        oferta.get("salePrice") or
-                        oferta.get("currentPrice") or
-                        0
-                    )
-                    
-                    try:
-                        precio_float = float(precio) if precio else 0.0
-                        if precio_float > 0:
-                            rivales.append({
-                                "precio": precio_float,
-                                "nombre": str(oferta.get("sellerName") or oferta.get("seller", {}).get("name", "Desconocido")),
-                                "source": "NUEVO"  # FLAG para tracking
-                            })
-                    except (ValueError, TypeError):
-                        pass
-            
-            return sorted(rivales, key=lambda x: x["precio"]) if rivales else None
-    except Exception as e:
-        logger.warning(f"❌ NUEVO ENDPOINT ERROR: {type(e).__name__}: {e}")
-        import traceback
-        logger.debug(traceback.format_exc())
-    return None
-
-
-def obtener_info_rivales_viejo_endpoint(liverpool_sku):
-    """Viejo endpoint: shoppapp.liverpool.com.mx (fallback)"""
-    try:
-        url = f"https://shoppapp.liverpool.com.mx/appclienteservices/services/v2/marketplace/pdp/getSellersOfferDetailsPdp?skuId={liverpool_sku}"
-        res = crear_session_con_retry().get(
-            url, 
-            headers={"User-Agent": "Liverpool/2.2.0"}, 
-            timeout=30
-        )
+        res = crear_session_con_retry().get(url, headers={"User-Agent": "Liverpool/2.2.0"}, timeout=30)
         if res.status_code == 200:
             rivales = []
             for v in res.json().get("sellersOfferDetails", []):
                 if str(v.get("sellerId")) != str(SHOP_ID_PUBLICO):
+                    # 🛡️ ALTO #3: JSON Parsing Frágil parchado
                     precio_raw = v.get("promoPrice") or v.get("salePrice")
                     try:
                         precio = float(precio_raw) if precio_raw else 0.0
                         if precio > 0:
-                            rivales.append({
-                                "precio": precio,
-                                "nombre": str(v.get("sellerName", "Desconocido")),
-                                "source": "VIEJO"  # FLAG para tracking
-                            })
+                            rivales.append({"precio": precio, "nombre": str(v.get("sellerName"))})
                     except (ValueError, TypeError):
                         pass
-            
-            return sorted(rivales, key=lambda x: x["precio"]) if rivales else None
-    except Exception as e:
-        logger.debug(f"❌ Viejo endpoint falló: {e}")
-    return None
-
-
-def comparar_rivales(nuevos, viejos):
-    """Detecta discrepancias entre endpoints."""
-    if not nuevos or not viejos:
-        return False  # No hay discrepancia si uno está vacío
-    
-    if len(nuevos) != len(viejos):
-        return True  # Diferente cantidad de rivales = discrepancia
-    
-    # Comparar precios del rival #1
-    precio_nuevo = nuevos[0]["precio"]
-    precio_viejo = viejos[0]["precio"]
-    
-    discrepancia = abs(precio_nuevo - precio_viejo) > 0.01  # Mayor a 1 centavo
-    
-    if discrepancia:
-        logger.warning(
-            f"⚠️ DISCREPANCIA DETECTADA - Rival #1: "
-            f"Nuevo=${precio_nuevo} vs Viejo=${precio_viejo} | "
-            f"Diferencia: ${abs(precio_nuevo - precio_viejo):.2f}"
-        )
-    
-    return discrepancia
-
-
-def obtener_info_rivales(liverpool_sku):
-    """
-    🔄 HYBRID DUAL-ENDPOINT
-    
-    Intenta obtener datos de AMBOS endpoints en paralelo.
-    Prefiere datos nuevos, usa viejo como fallback.
-    Detecta discrepancias para auditoría.
-    """
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    
-    # PASO 1: Llamar ambos endpoints en paralelo
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        future_nuevo = executor.submit(obtener_info_rivales_nuevo_endpoint, liverpool_sku)
-        future_viejo = executor.submit(obtener_info_rivales_viejo_endpoint, liverpool_sku)
-        
-        nuevos = future_nuevo.result(timeout=35)
-        viejos = future_viejo.result(timeout=35)
-    
-    # PASO 2: Decidir qué datos usar
-    if nuevos:
-        # Nuevo endpoint tiene prioridad (es más fresco)
-        datos_confiables = nuevos
-        source = "NUEVO"
-    elif viejos:
-        # Fallback al viejo si el nuevo falló
-        datos_confiables = viejos
-        source = "VIEJO (FALLBACK)"
-        logger.warning(f"⚠️ Usando viejo endpoint como fallback para {liverpool_sku}")
-    else:
-        # Ambos fallaron
-        logger.error(f"❌ AMBOS endpoints fallaron para {liverpool_sku}")
-        return []
-    
-    # PASO 3: Detectar discrepancias (si ambos devolvieron datos)
-    if nuevos and viejos:
-        hay_discrepancia = comparar_rivales(nuevos, viejos)
-        if hay_discrepancia:
-            logger.info(
-                f"📊 Usando datos NUEVOS (más confiables). "
-                f"Descarte: viejo endpoint detectado stale."
-            )
-    
-    return datos_confiables
+            return sorted(rivales, key=lambda x: x["precio"])
+    except: pass
+    return []
 
 def calcular_posicion_buybox(precios_rivales, nuestro_precio):
     if not precios_rivales:
