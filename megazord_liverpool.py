@@ -1229,48 +1229,31 @@ def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notifi
 # ==========================================
 # CEREBRO ESTRATÉGICO MULTI-CUENTA
 # ==========================================
-def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_config, session):
-    """
-    Procesa un SKU con TODA la lógica de combate.
-    ✅ OPTIMIZADO: Solo guarda registros de SKUs ACTIVOS con STOCK
-    """
+def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_config, session, id_cuenta):
     try:
         sku_i = str(regla.get('sku') or regla.get('sku_interno') or regla.get('SKU_Interno') or regla.get('SKU') or 'Sin SKU')
         estatus_regla = str(regla.get('estatus', '')).strip().upper()
         tipo_regla = str(regla.get('regla_estrategia', '1. Gladiador')).strip()
         fila_excel = regla.get('fila_excel', 0)
 
-        # 🛡️ FILTRO #1: Solo procesar si estatus es ACTIVO en catalogo
-        if estatus_regla != 'ACTIVO':
-            # NO guardar nada - SKU no está activo
-            logger.debug(f"⏭️ SKU {sku_i} saltado (estatus: {estatus_regla})")
-            return
-
-        # Cazar oferta
         prod = cazar_oferta_especifica(token, sku_i, sku_lp)
 
-        # 🛡️ FILTRO #2: Solo procesar si el producto existe y está ACTIVE en Liverpool
         if not prod or str(prod.get("state_code", "")).upper() != "ACTIVE":
-            # NO guardar nada - producto no disponible en Liverpool
-            logger.debug(f"⏭️ SKU {sku_i} no disponible en Liverpool")
+            resultados.agregar_historial([(datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"), str(sku_i), str(sku_lp), "Oculto/Agotado", 0, 0, "N/A", "N/A", id_cuenta])
             return
 
-        cantidad = int(prod.get("quantity", 0))
-        
-        # 🛡️ FILTRO #3: Solo procesar si tiene STOCK
-        if cantidad == 0:
-            # NO guardar nada - sin stock
-            logger.debug(f"⏭️ SKU {sku_i} sin stock")
-            return
-
+        # 🛡️ ALTO #4: JSON Parsing quantity parchado
+        cantidad = int(prod.get("quantity") or 0)
         offer_id = prod.get("offerId")
         base_price = float(prod.get("basePrice", 0))
         precio_actual = float(prod.get("discountPrice") or base_price)
-
-        # 🟢 INICIALIZAR NUEVO_PRECIO COMO SEGURO
         nuevo_precio = precio_actual
 
-        # Obtener info de rivales
+        if cantidad == 0:
+            resultados.agregar_historial([(datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"), str(sku_i), str(sku_lp), "Agotado", precio_actual, 0, "N/A", "N/A", id_cuenta])
+            if estatus_regla == 'ACTIVO': resultados.apagar_sku_liverpool(fila_excel, sku_i)
+            return
+
         info_rivales = obtener_info_rivales(sku_lp)
         precios_rivales = [r["precio"] for r in info_rivales]
 
@@ -1278,23 +1261,20 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
         precio_maximo_regla = safe_float(regla.get('precio_maximo', base_price) or base_price)
         costo_odoo_sheet = safe_float(regla.get('costo_odoo', 0))
 
-        # ✅ LOGS PÚBLICOS - ENMASCARADOS
         sku_display = enmascarar_sku(sku_lp)
-        logger.info(f"🔍 Escaneando {sku_display} | BB: {enmascarar_vendedor(info_rivales[0]['nombre'] if info_rivales else 'N/A')}")
+        logger.info(f"🔍 [{id_cuenta}] Escaneando {sku_display} | BB: {enmascarar_vendedor(info_rivales[0]['nombre'] if info_rivales else 'N/A')}")
 
-        # Registro de rivales (Historial)
         hora_actual_str = (datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
-        for r in info_rivales[:5]:
-            resultados.agregar_archivo_negro([hora_actual_str, sku_i, r["nombre"], r["precio"]])
+        
+        catalogo_id = regla.get('id')
+        if catalogo_id:
+            for idx, r in enumerate(info_rivales[:5]): resultados.agregar_archivo_negro((catalogo_id, 'LIVERPOOL', r["nombre"], r["precio"], idx + 1))
 
-        # Alerta anti-dumping
         if precios_rivales:
             rival_mas_bajo = precios_rivales[0]
-            precio_viejo = resultados.ultimo_precio_conocido.get(sku_i, rival_mas_bajo) if hasattr(resultados, 'ultimo_precio_conocido') else rival_mas_bajo
-            caida = precio_viejo - rival_mas_bajo
-            if caida >= 100:
-                culpable = info_rivales[0]["nombre"]
-                resultados.agregar_alerta(f"🚨 *ALERTA ANTI-DUMPING*\nEl vendedor _{culpable}_ acaba de desplomar el mercado en *{sku_i}*.\n📉 Anterior: `${precio_viejo}` | 🩸 Nuevo: `${rival_mas_bajo}`")
+            precio_viejo = resultados.obtener_precio_conocido(sku_i, rival_mas_bajo)
+            if (precio_viejo - rival_mas_bajo) >= 100:
+                resultados.agregar_alerta(f"🚨 *ALERTA ANTI-DUMPING ({id_cuenta})*\nEl vendedor _{info_rivales[0]['nombre']}_ desplomó el mercado en *{sku_i}*.\n📉 Anterior: `${precio_viejo}` | 🩸 Nuevo: `${rival_mas_bajo}`")
 
         # ================= LÓGICA DE REGLAS =================
         if estatus_regla == 'INACTIVO':
