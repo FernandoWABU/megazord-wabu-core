@@ -1229,31 +1229,17 @@ def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notifi
 # ==========================================
 # CEREBRO ESTRATÉGICO MULTI-CUENTA
 # ==========================================
-def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_config, session):
+def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_config, session, id_cuenta):
     try:
         sku_i = str(regla.get('sku') or regla.get('sku_interno') or regla.get('SKU_Interno') or regla.get('SKU') or 'Sin SKU')
         estatus_regla = str(regla.get('estatus', '')).strip().upper()
         tipo_regla = str(regla.get('regla_estrategia', '1. Gladiador')).strip()
         fila_excel = regla.get('fila_excel', 0)
 
-        # 🛡️ FILTRO #1: Solo procesar si estatus es ACTIVO
-        if estatus_regla != 'ACTIVO':
-            logger.debug(f"⏭️ SKU {sku_i} saltado (estatus: {estatus_regla})")
-            return
-
-        # Cazar oferta
         prod = cazar_oferta_especifica(token, sku_i, sku_lp)
 
-        # 🛡️ FILTRO #2: Solo procesar si está ACTIVE en Liverpool
         if not prod or str(prod.get("state_code", "")).upper() != "ACTIVE":
-            logger.debug(f"⏭️ SKU {sku_i} no disponible en Liverpool")
-            return
-
-        cantidad = int(prod.get("quantity", 0))
-        
-        # 🛡️ FILTRO #3: Solo procesar si tiene STOCK
-        if cantidad == 0:
-            logger.debug(f"⏭️ SKU {sku_i} sin stock")
+            resultados.agregar_historial([(datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"), str(sku_i), str(sku_lp), "Oculto/Agotado", 0, 0, "N/A", "N/A", id_cuenta])
             return
 
         # 🛡️ ALTO #4: JSON Parsing quantity parchado
@@ -1263,11 +1249,9 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
         precio_actual = float(prod.get("discountPrice") or base_price)
         nuevo_precio = precio_actual
 
-        # 🛡️ FILTRO #3 ya está arriba, no duplicar
-        # Solo dejamos apagar_sku si es necesario
-        if cantidad == 0 and estatus_regla == 'ACTIVO':
-            resultados.apagar_sku_liverpool(fila_excel, sku_i)
-            logger.debug(f"⏹️ SKU {sku_i} apagado (sin stock)")
+        if cantidad == 0:
+            resultados.agregar_historial([(datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S"), str(sku_i), str(sku_lp), "Agotado", precio_actual, 0, "N/A", "N/A", id_cuenta])
+            if estatus_regla == 'ACTIVO': resultados.apagar_sku_liverpool(fila_excel, sku_i)
             return
 
         info_rivales = obtener_info_rivales(sku_lp)
