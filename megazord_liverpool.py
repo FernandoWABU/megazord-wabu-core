@@ -1199,8 +1199,8 @@ class ResultadosThreadSafe:
         with self._lock: self.skus_agotados_a_apagar.append((fila_excel, sku_i))
 
     def obtener_todos(self):
-        with self._lock:
-            return (list(self.historial_rows), list(self.archivo_negro_rows), list(self.alertas))
+    with self._lock:
+        return (list(self.historial_rows), list(self.archivo_negro_rows), list(self.alertas), list(self.skus_agotados_a_apagar))
 
 # ==========================================
 # DISPARAR PRECIO
@@ -1689,13 +1689,35 @@ def ejecutar_bot():
                 completados += 1
                 if completados % 10 == 0: logger.info(f"⏳ [{id_cuenta}] Progreso: {completados}/{len(reglas_cuenta)} SKUs")
 
-    historial_rows, archivo_negro_rows, alertas = resultados.obtener_todos()
+# IMPORTANTE: Aquí agregamos skus_a_apagar al desempaquetado
+    historial_rows, archivo_negro_rows, alertas, skus_a_apagar = resultados.obtener_todos()
+    
     for alerta in alertas: enviar_alerta_telegram(alerta)
     if historial_rows: guardar_en_sql(historial_rows)
     if archivo_negro_rows and db:
         for rival_data in archivo_negro_rows:
             try: db.registrar_rival(*rival_data)
             except: pass
+
+    # 🛑 NUEVO: Apagar SKUs sin stock en PostgreSQL (Correctamente indentado)
+    if skus_a_apagar and db:
+        try:
+            with psycopg2.connect(DATABASE_URL) as conn:
+                with conn.cursor() as cursor:
+                    # Extraemos solo el sku_interno de la tupla (fila_excel, sku_i)
+                    lista_skus_internos = [item[1] for item in skus_a_apagar]
+                    
+                    query_apagar = """
+                        UPDATE catalogo_maestro_v3 
+                        SET estatus = 'INACTIVO' 
+                        WHERE sku_interno = ANY(%s)
+                    """
+                    cursor.execute(query_apagar, (lista_skus_internos,))
+                    # Forzamos el commit para asegurar la escritura en DB
+                    conn.commit() 
+            logger.info(f"🛑 {len(lista_skus_internos)} SKUs apagados automáticamente por falta de stock.")
+        except Exception as e:
+            logger.error(f"❌ Error apagando SKUs agotados en BD: {e}")
 
     gc.collect()
     logger.info("\n🏁 Misión cumplida.")
