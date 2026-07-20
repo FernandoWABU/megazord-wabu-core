@@ -1268,7 +1268,7 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
         
         catalogo_id = regla.get('id')
         if catalogo_id:
-            for idx, r in enumerate(info_rivales[:5]): resultados.agregar_archivo_negro((catalogo_id, 'LIVERPOOL', r["nombre"], r["precio"], idx + 1))
+            for idx, r in enumerate(info_rivales): resultados.agregar_archivo_negro((catalogo_id, 'LIVERPOOL', r["nombre"], r["precio"], idx + 1))
 
         if precios_rivales:
             rival_mas_bajo = precios_rivales[0]
@@ -1363,30 +1363,43 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                         else:
                             resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb, id_cuenta])
                     else:
-                        diferencia_actual = round(float(rival_mas_bajo) - float(precio_actual), 2)
+                        margen_actual = round(float(rival_mas_bajo) - float(precio_actual), 2)
                         
-                        # Si el rival está por encima del mínimo y ya estamos en el margen perfecto de Gladiador
-                        if rival_mas_bajo >= precio_minimo_regla and 1.50 <= diferencia_actual <= 1.95:
+                        # 🎯 SOLUCIÓN PROBLEMA 1: CHECK "YA ESTAMOS GANANDO" (Propuesta mejorada de Gemini)
+                        # Si estamos ganando por centavos o hasta por $2.00, CONGELAMOS EL PRECIO
+                        if 0.01 <= margen_actual <= 2.00:
+                            # ✅ YA ESTAMOS GANANDO CON MARGEN SALUDABLE
                             pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
-                            resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb, id_cuenta])
+                            resultados.agregar_historial([
+                                hora_actual_str, sku_i, sku_lp, rival_mas_bajo, 
+                                precio_actual, cantidad, pos, bb, id_cuenta
+                            ])
+                            with resultados._lock:
+                                resultados.ultimo_estado_conocido[sku_i] = {
+                                    'hay_rivales': True,
+                                    'ciclo_anterior': 'manteniendo_posicion_ganadora'
+                                }
+                        
+                        # ⚔️ ATAQUE: Si estamos más caros, o si la ventaja es mayor a $2.00 (estamos perdiendo dinero a lo tonto)
                         else:
-                            baja = round(random.uniform(1.50, 1.95), 2)
-                            nuevo_precio_ataque = round(rival_mas_bajo - baja, 2)
+                            baja = round(random.uniform(1.50, 1.96), 2)
+                            nuevo_precio = round(rival_mas_bajo - baja, 2)
                             
-                            # 🛡️ PARCHE VISUAL: Evitar terminación .09 en ataques ganadores para no confundir con Modo Sombra
-                            if str(format(nuevo_precio_ataque, '.2f')).endswith('.09'):
-                                nuevo_precio_ataque = round(nuevo_precio_ataque - 0.01, 2)
+                            if precio_maximo_regla > 0 and nuevo_precio > precio_maximo_regla:
+                                nuevo_precio = precio_maximo_regla
                             
-                            if nuevo_precio_ataque <= 0:
-                                logger.error(f"❌ ALERTA MATEMÁTICA: Precio negativo calculado para {sku_i}")
-                                return
-                                
-                            # Si el ataque es viable matemáticamente contra nuestro mínimo
-                            if rival_mas_bajo >= precio_minimo_regla and nuevo_precio_ataque >= precio_minimo_regla:
-                                nuevo_precio = nuevo_precio_ataque
-                                if precio_maximo_regla > 0 and nuevo_precio > precio_maximo_regla: 
-                                    # ESTAMOS GANANDO, pero el ataque se pasó de nuestro máximo. Nos limitamos al máximo exacto, sin .09
-                                    nuevo_precio = precio_maximo_regla
+                            if nuevo_precio >= precio_minimo_regla:
+                                pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
+                                if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
+                                    resultados.agregar_historial([
+                                        hora_actual_str, sku_i, sku_lp, rival_mas_bajo, 
+                                        nuevo_precio, cantidad, pos, bb, id_cuenta
+                                    ])
+                                    with resultados._lock:
+                                        resultados.ultimo_estado_conocido[sku_i] = {
+                                            'hay_rivales': True,
+                                            'ciclo_anterior': 'ataque_ejecutado'
+                                        }
                             else:
                                 # 🦇 MODO SOMBRA (PERDIENDO LA BUYBOX): 
                                 # Si no podemos vencer al #1, buscamos al SIGUIENTE competidor (#2)
@@ -1408,23 +1421,101 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                                     # Seguridad extrema por si el mínimo tenía decimales (ej. 741.99)
                                     if nuevo_precio < precio_minimo_regla:
                                         nuevo_precio = round(nuevo_precio + 1.00, 2)
+                                
+                                with resultados._lock:
+                                    resultados.ultimo_estado_conocido[sku_i] = {
+                                        'hay_rivales': True,
+                                        'ciclo_anterior': 'modo_sombra_activado'
+                                    }
                             
                             if float(precio_actual) != float(nuevo_precio):
                                 pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
                                 if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
-                                    resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, nuevo_precio, cantidad, pos, bb, id_cuenta])
+                                    resultados.agregar_historial([
+                                        hora_actual_str, sku_i, sku_lp, rival_mas_bajo, 
+                                        nuevo_precio, cantidad, pos, bb, id_cuenta
+                                    ])
                                 else:
-                                    resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb, id_cuenta])
+                                    resultados.agregar_historial([
+                                        hora_actual_str, sku_i, sku_lp, rival_mas_bajo, 
+                                        precio_actual, cantidad, pos, bb, id_cuenta
+                                    ])
                             else:
                                 pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
-                                resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo, precio_actual, cantidad, pos, bb, id_cuenta])
+                                resultados.agregar_historial([
+                                    hora_actual_str, sku_i, sku_lp, rival_mas_bajo, 
+                                    precio_actual, cantidad, pos, bb, id_cuenta
+                                ])
                 else:
-                    # 👑 ESTAMOS SOLOS (1 de 1). Nos quedamos en el máximo exacto, sin firma de .09
-                    nuevo_precio = mejor_historico if (tipo_regla.startswith('4') and (mejor_historico := resultados.max_precio_buybox_historico.get(sku_i, 0)) > 0) else precio_maximo_regla
-                    if float(precio_actual) != float(nuevo_precio) and disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
-                        resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, "SIN RIVAL", nuevo_precio, cantidad, "1 de 1", "¡Nosotros! 👑", id_cuenta])
+                    # 🎯 SOLUCIÓN PROBLEMA 2: DEBOUNCING PARA MONOPOLIO FALSO
+                    # SIN RIVALES: Verificar si es monopolio real o falso positivo
+                    
+                    # Obtener estado del ciclo anterior
+                    with resultados._lock:
+                        estado_anterior = resultados.ultimo_estado_conocido.get(sku_i, None)
+                    
+                    # Lógica de Doble Check
+                    if estado_anterior and estado_anterior.get('hay_rivales') == True:
+                        # ⚠️ DOBLE CHECK: En el ciclo anterior SÍ había rivales, ahora NO
+                        # Probabilidad: Es un falso positivo de la API (falla temporal)
+                        # ACCIÓN: Mantener precio actual y esperar confirmación
+                        pos, bb = calcular_posicion_buybox([], precio_actual)
+                        
+                        msg_alerta = (
+                            f"⏳ *DOBLE CHECK: Esperando confirmación de Monopolio ({id_cuenta})*\n\n"
+                            f"📦 *{sku_i}*\n"
+                            f"ℹ️ API no devolvió rivales en este ciclo.\n"
+                            f"💼 Ciclo anterior: Había rivales disponibles.\n"
+                            f"🔄 Acción: Manteniendo precio `${precio_actual}` hasta confirmación.\n"
+                            f"⚠️ Si persiste, consideraremos monopolio real en próximo ciclo."
+                        )
+                        
+                        resultados.agregar_alerta(msg_alerta)
+                        resultados.agregar_historial([
+                            hora_actual_str, sku_i, sku_lp, "DOBLE CHECK - SIN RIVAL", 
+                            precio_actual, cantidad, pos, bb, id_cuenta
+                        ])
+                        
+                        with resultados._lock:
+                            resultados.ultimo_estado_conocido[sku_i] = {
+                                'hay_rivales': False,
+                                'ciclo_anterior': 'doble_check_activado'
+                            }
                     else:
-                        resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, "SIN RIVAL", precio_actual, cantidad, "1 de 1", "¡Nosotros! 👑", id_cuenta])
+                        # ✅ MONOPOLIO CONFIRMADO: Sin rivales ciclo anterior y actual
+                        # Disparar al máximo (es seguro)
+                        if tipo_regla.startswith('4'):
+                            mejor_historico = resultados.max_precio_buybox_historico.get(sku_i, precio_maximo_regla) if hasattr(resultados, 'max_precio_buybox_historico') else precio_maximo_regla
+                            nuevo_precio = mejor_historico if mejor_historico > 0 else precio_maximo_regla
+                        else:
+                            nuevo_precio = precio_maximo_regla
+                        
+                        pos, bb = calcular_posicion_buybox([], nuevo_precio)
+                        
+                        if float(precio_actual) != float(nuevo_precio):
+                            if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
+                                msg_alerta = (
+                                    f"👑 *MONOPOLIO CONFIRMADO ({id_cuenta})*\n\n"
+                                    f"📦 *{sku_i}*\n"
+                                    f"🎯 Somos los únicos vendedores.\n"
+                                    f"💰 Precio ajustado a máximo: `${nuevo_precio}`"
+                                )
+                                resultados.agregar_alerta(msg_alerta)
+                                resultados.agregar_historial([
+                                    hora_actual_str, sku_i, sku_lp, "SIN RIVAL", 
+                                    nuevo_precio, cantidad, pos, bb, id_cuenta
+                                ])
+                        else:
+                            resultados.agregar_historial([
+                                hora_actual_str, sku_i, sku_lp, "SIN RIVAL", 
+                                precio_actual, cantidad, pos, bb, id_cuenta
+                            ])
+                        
+                        with resultados._lock:
+                            resultados.ultimo_estado_conocido[sku_i] = {
+                                'hay_rivales': False,
+                                'ciclo_anterior': 'monopolio_confirmado'
+                            }
 
     except Exception as e:
         logger.error(f"❌ Error en procesar_sku_threadsafe: {e}")
