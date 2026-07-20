@@ -1454,9 +1454,35 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                     with resultados._lock:
                         estado_anterior = resultados.ultimo_estado_conocido.get(sku_i, None)
                     
-                    # Lógica de Doble Check
-                    if estado_anterior and estado_anterior.get('hay_rivales') == True:
-                        # ⚠️ DOBLE CHECK: En el ciclo anterior SÍ había rivales, ahora NO
+                    # =============== LÓGICA DE DOBLE CHECK MEJORADA ===============
+                    if estado_anterior is None:
+                        # 🟡 CASO 1: PRIMERA VEZ SIN RIVALES
+                        # No es monopolio confirmado aún, esperar siguiente ciclo
+                        pos, bb = calcular_posicion_buybox([], precio_actual)
+                        
+                        msg_alerta = (
+                            f"⏳ *PRIMERA DETECCIÓN SIN RIVALES ({id_cuenta})*\n\n"
+                            f"📦 *{sku_i}*\n"
+                            f"ℹ️ API no devolvió competidores en este ciclo.\n"
+                            f"🔄 Acción: Manteniendo precio `${precio_actual}` para confirmación.\n"
+                            f"⚠️ Si persiste en próximo ciclo, consideraremos monopolio real."
+                        )
+                        
+                        resultados.agregar_alerta(msg_alerta)
+                        resultados.agregar_historial([
+                            hora_actual_str, sku_i, sku_lp, "PRIMERA VEZ - SIN RIVAL", 
+                            precio_actual, cantidad, pos, bb, id_cuenta
+                        ])
+                        
+                        with resultados._lock:
+                            resultados.ultimo_estado_conocido[sku_i] = {
+                                'hay_rivales': False,
+                                'ciclo_anterior': 'primera_vez_sin_rivales'
+                            }
+                    
+                    elif estado_anterior.get('hay_rivales') == True:
+                        # ⚠️ CASO 2: DOBLE CHECK
+                        # En el ciclo anterior SÍ había rivales, ahora NO
                         # Probabilidad: Es un falso positivo de la API (falla temporal)
                         # ACCIÓN: Mantener precio actual y esperar confirmación
                         pos, bb = calcular_posicion_buybox([], precio_actual)
@@ -1481,8 +1507,10 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                                 'hay_rivales': False,
                                 'ciclo_anterior': 'doble_check_activado'
                             }
+                    
                     else:
-                        # ✅ MONOPOLIO CONFIRMADO: Sin rivales ciclo anterior y actual
+                        # ✅ CASO 3: MONOPOLIO CONFIRMADO
+                        # Sin rivales ciclo anterior y actual (estado_anterior['hay_rivales'] == False)
                         # Disparar al máximo (es seguro)
                         if tipo_regla.startswith('4'):
                             mejor_historico = resultados.max_precio_buybox_historico.get(sku_i, precio_maximo_regla) if hasattr(resultados, 'max_precio_buybox_historico') else precio_maximo_regla
