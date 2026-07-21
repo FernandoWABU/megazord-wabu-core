@@ -19,7 +19,11 @@ from pydantic import BaseModel
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-WEBHOOK_SECRET_KEY = os.getenv("WEBHOOK_SECRET_KEY", "tu-clave-super-segura")
+WEBHOOK_SECRET_KEY = os.getenv("WEBHOOK_SECRET_KEY")
+
+if not WEBHOOK_SECRET_KEY:
+    raise ValueError("❌ WEBHOOK_SECRET_KEY no configurada en variables de entorno")
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_WMT = os.getenv("TELEGRAM_CHAT_WMT")
 
@@ -39,59 +43,29 @@ app = FastAPI(
 )
 
 # ==========================================
-# CORS MIDDLEWARE - Permitir Chrome Extension
+# CORS MIDDLEWARE
 # ==========================================
-
 from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permite desde cualquier origen (incluyendo Chrome Extension)
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Permite todos los métodos (GET, POST, etc.)
-    allow_headers=["*"],  # Permite todos los headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ==========================================
-# TELEGRAM
+# MODELO PYDANTIC
 # ==========================================
-
-def enviar_telegram(mensaje):
-    """Envía mensaje a Telegram"""
-    try:
-        if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_WMT:
-            logger.warning("⚠️ Telegram no configurado, saltando notificación")
-            return
-        
-        import requests
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(
-            url, 
-            json={
-                "chat_id": TELEGRAM_CHAT_WMT, 
-                "text": mensaje, 
-                "parse_mode": "Markdown"
-            },
-            timeout=5
-        )
-    except Exception as e:
-        logger.error(f"❌ Error enviando Telegram: {e}")
-
-# ==========================================
-# MODELO PYDANTIC PARA REQUEST
-# ==========================================
-
-from pydantic import BaseModel
-
 class BearerTokenRequest(BaseModel):
     token: str
     seller_id: str = "68CAF9EE564AF52E6"
     timestamp: str = None
 
 # ==========================================
-# WEBHOOK: CAPTURA DE BEARER TOKEN
+# WEBHOOK ENDPOINT
 # ==========================================
-
 @app.post("/api/capture-bearer")
 async def capture_bearer_token(
     request: BearerTokenRequest,
@@ -104,8 +78,8 @@ async def capture_bearer_token(
     token = request.token
     seller_id = request.seller_id
     
-    # 1️⃣ VALIDAR SECRET KEY
-    if auth_header != f"Bearer d7QcZxuBEDZ4s7B0TShUeDRb0U0CLK4gZCf7wVgSpnY":
+    # 1️⃣ VALIDAR SECRET KEY ← AQUÍ ESTÁ LA VALIDACIÓN
+    if auth_header != f"Bearer {WEBHOOK_SECRET_KEY}":
         logger.warning(f"🚨 Intento no autorizado desde {seller_id}")
         raise HTTPException(status_code=401, detail="Unauthorized - Invalid secret key")
     
@@ -118,7 +92,7 @@ async def capture_bearer_token(
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor() as cursor:
                 
-                # 3️⃣ VERIFICAR QUE LA CUENTA EXISTE
+                # 3️⃣ VERIFICAR CUENTA
                 cursor.execute("""
                     SELECT id_cuenta, google_encryption_key 
                     FROM cuentas_liverpool 
@@ -127,20 +101,16 @@ async def capture_bearer_token(
                 
                 cuenta = cursor.fetchone()
                 if not cuenta:
-                    logger.error(f"❌ Cuenta {seller_id} no encontrada en cuentas_liverpool")
+                    logger.error(f"❌ Cuenta {seller_id} no encontrada")
                     raise HTTPException(status_code=404, detail=f"Cuenta {seller_id} no existe")
                 
                 id_cuenta, encryption_key = cuenta
                 
                 # 4️⃣ ENCRIPTAR TOKEN
-                try:
-                    cipher = Fernet(encryption_key.encode())
-                    token_encriptado = cipher.encrypt(token.encode()).decode()
-                except Exception as e:
-                    logger.error(f"❌ Error encriptando token: {e}")
-                    raise HTTPException(status_code=500, detail="Error encriptando token")
+                cipher = Fernet(encryption_key.encode())
+                token_encriptado = cipher.encrypt(token.encode()).decode()
                 
-                # 5️⃣ ACTUALIZAR TOKEN EN TABLA PRINCIPAL
+                # 5️⃣ ACTUALIZAR TABLA PRINCIPAL
                 cursor.execute("""
                     UPDATE cuentas_liverpool 
                     SET 
@@ -150,9 +120,9 @@ async def capture_bearer_token(
                     WHERE id_cuenta = %s
                 """, (token_encriptado, id_cuenta))
                 
-                logger.info(f"✅ Token actualizado en cuentas_liverpool para {id_cuenta}")
+                logger.info(f"✅ Token actualizado para {id_cuenta}")
                 
-                # 6️⃣ ROTAR EN BEARER_TOKEN_HISTORY
+                # 6️⃣ ROTAR EN HISTORIAL
                 cursor.execute("""
                     UPDATE bearer_token_history 
                     SET token_order = token_order + 1 
@@ -170,16 +140,14 @@ async def capture_bearer_token(
                     VALUES (%s, %s, NOW(), 1, 'active')
                 """, (id_cuenta, token_encriptado))
                 
-                logger.info(f"✅ Token guardado en historial (order=1)")
-                
                 # 7️⃣ LOG DE AUDITORÍA
                 cursor.execute("""
                     INSERT INTO bearer_capture_log 
                     (id_cuenta, action, timestamp, details)
                     VALUES (%s, 'captured', NOW(), %s)
-                """, (id_cuenta, f"Chrome Extension capturó Bearer. Primeros 30 chars: {token[:30]}..."))
+                """, (id_cuenta, f"Chrome Extension: {token[:30]}..."))
                 
-                # 8️⃣ CONTAR TOKENS EN HISTORIAL
+                # 8️⃣ CONTAR TOKENS
                 cursor.execute("""
                     SELECT COUNT(*) FROM bearer_token_history 
                     WHERE id_cuenta = %s AND status = 'active'
@@ -189,98 +157,29 @@ async def capture_bearer_token(
                 
                 conn.commit()
                 
-                # 9️⃣ NOTIFICACIÓN TELEGRAM
-                timestamp_expira = (datetime.now() + timedelta(hours=24)).strftime('%Y-%m-%d %H:%M:%S')
-                
+                # 9️⃣ TELEGRAM
                 msg = (
-                    f"🔐 *Bearer token capturado*\n\n"
+                    f"🔐 *Bearer capturado*\n\n"
                     f"🏪 Cuenta: `{id_cuenta}`\n"
-                    f"⏰ Capturado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                    f"📦 Tokens en historial: `{num_tokens}/5`\n"
-                    f"✅ Válido por: `24 horas`\n"
-                    f"🔄 Expira: `{timestamp_expira}`"
+                    f"📦 Tokens: `{num_tokens}/5`"
                 )
                 
-                enviar_telegram(msg)
+                try:
+                    enviar_telegram(msg)
+                except Exception as e:
+                    logger.warning(f"⚠️ Error Telegram: {e}")
                 
-                logger.info(f"✅ WEBHOOK EXITOSO | Cuenta: {id_cuenta} | Tokens: {num_tokens}/5")
-                
-                return {
-                    "status": "success",
-                    "message": f"Bearer capturado y guardado para {id_cuenta}",
-                    "tokens_in_history": num_tokens,
-                    "expires_at": timestamp_expira,
-                    "captured_at": datetime.now().isoformat()
-                }
-    
-    except psycopg2.Error as e:
-        logger.error(f"❌ Error de BD: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-    
-    except HTTPException:
-        raise
-    
-    except Exception as e:
-        logger.error(f"❌ Error inesperado: {e}")
-        enviar_telegram(f"🚨 *ERROR CRÍTICO en webhook*\n{str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
-
-# ==========================================
-# DEBUG ENDPOINT: VER TOKENS GUARDADOS
-# ==========================================
-
-@app.get("/api/bearer-history/{id_cuenta}")
-async def get_bearer_history(id_cuenta: str):
-    """
-    🔍 DEBUG: Ver los últimos 5 tokens capturados (sin exponer los tokens reales)
-    
-    Uso: GET /api/bearer-history/68CAF9EE564AF52E6
-    """
-    
-    try:
-        with psycopg2.connect(DATABASE_URL) as conn:
-            with conn.cursor() as cursor:
-                
-                cursor.execute("""
-                    SELECT 
-                        id,
-                        token_order,
-                        captured_at,
-                        status,
-                        LENGTH(token_encriptado) as token_size
-                    FROM bearer_token_history 
-                    WHERE id_cuenta = %s 
-                    ORDER BY token_order ASC
-                    LIMIT 5
-                """, (id_cuenta,))
-                
-                tokens = cursor.fetchall()
-                
-                if not tokens:
-                    return {
-                        "status": "empty",
-                        "message": "No hay tokens guardados aún",
-                        "id_cuenta": id_cuenta
-                    }
+                logger.info(f"✅ ÉXITO | {id_cuenta} | Tokens: {num_tokens}/5")
                 
                 return {
                     "status": "success",
-                    "id_cuenta": id_cuenta,
-                    "total_tokens": len(tokens),
-                    "tokens": [
-                        {
-                            "order": row[1],
-                            "captured_at": row[2].isoformat() if row[2] else None,
-                            "status": row[3],
-                            "encrypted_size_bytes": row[4]
-                        }
-                        for row in tokens
-                    ]
+                    "message": f"Bearer guardado",
+                    "tokens_in_history": num_tokens
                 }
     
     except Exception as e:
         logger.error(f"❌ Error: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ==========================================
 # HEALTH CHECK
