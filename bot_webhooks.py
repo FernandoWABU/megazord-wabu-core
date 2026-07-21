@@ -127,10 +127,10 @@ async def capture_bearer_token(
                 """, (token_encriptado, FERNET_ENCRYPTION_KEY, request.seller_id))
                 
                 # 6. Rotar en historial (últimos 5 tokens)
-                cursor.execute("UPDATE bearer_token_history SET token_order=token_order+1 
-                             WHERE id_cuenta=%s AND token_order<5", (request.seller_id,))
-                cursor.execute("DELETE FROM bearer_token_history 
-                             WHERE id_cuenta=%s AND token_order>5", (request.seller_id,))
+                cursor.execute("""UPDATE bearer_token_history SET token_order=token_order+1 
+                             WHERE id_cuenta=%s AND token_order<5""", (request.seller_id,))
+                cursor.execute("""DELETE FROM bearer_token_history 
+                             WHERE id_cuenta=%s AND token_order>5""", (request.seller_id,))
                 cursor.execute("""
                     INSERT INTO bearer_token_history 
                     (id_cuenta, token_encriptado, captured_at, token_order, status)
