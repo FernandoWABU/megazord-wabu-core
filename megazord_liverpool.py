@@ -1140,6 +1140,9 @@ def obtener_info_rivales(token, liverpool_sku):
     
     url = f"https://pro-api.liverpool.com.mx/api/marketplace/v1/offers?sku={liverpool_sku}"
     
+    logger.info(f"🔍 Llamando a obtener_info_rivales - SKU: {liverpool_sku}")
+    logger.info(f"📍 URL: {url}")
+    
     try:
         headers = {
             "Authorization": f"Bearer {token}",
@@ -1148,12 +1151,17 @@ def obtener_info_rivales(token, liverpool_sku):
         }
         res = crear_session_con_retry().get(url, headers=headers, timeout=30)
         
+        logger.info(f"🔐 Status code: {res.status_code}")
+        logger.info(f"📦 Response: {res.text[:200]}")  # Primeros 200 caracteres
+        
         if res.status_code == 200:
             rivales = []
-            for offer in res.json().get("offers", []):
+            data = res.json()
+            logger.info(f"✅ JSON parseado. Offers: {len(data.get('offers', []))}")
+            
+            for offer in data.get("offers", []):
                 seller_id = str(offer.get("sellerId", ""))
                 
-                # 🛡️ Filtrar: NO incluir tu propia tienda
                 if seller_id and seller_id != str(SHOP_ID_PUBLICO):
                     precio = float(offer.get("price", 0))
                     if precio > 0:
@@ -1161,12 +1169,18 @@ def obtener_info_rivales(token, liverpool_sku):
                             "precio": precio,
                             "nombre": str(offer.get("sellerName", "Desconocido"))
                         })
+                        logger.info(f"  ✅ Rival encontrado: {offer.get('sellerName')} - ${precio}")
             
-            return sorted(rivales, key=lambda x: x["precio"])  # Ordenar por precio ascendente
+            logger.info(f"🎯 Total rivales: {len(rivales)}")
+            return sorted(rivales, key=lambda x: x["precio"])
+        else:
+            logger.error(f"❌ Error en pro-api: {res.status_code}")
+            logger.error(f"📄 Response: {res.text}")
     
     except Exception as e:
-        logger.error(f"❌ Error obteniendo rivales de pro-api: {e}")
+        logger.error(f"❌ Exception en obtener_info_rivales: {e}")
     
+    logger.warning(f"⚠️ Retornando lista vacía para SKU: {liverpool_sku}")
     return []
 
 def calcular_posicion_buybox(precios_rivales, nuestro_precio):
