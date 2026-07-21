@@ -66,6 +66,34 @@ class BearerTokenRequest(BaseModel):
     seller_id: str = "68CAF9EE564AF52E6"
     timestamp: str = None
 
+
+# ==========================================
+# FUNCIÓN: ENVIAR TELEGRAM
+# ==========================================
+# ✅ PRIMERO: DEFINIR LA FUNCIÓN
+def enviar_telegram(mensaje):
+    """Envía mensaje a Telegram"""
+    try:
+        if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_WMT:
+            logger.warning("⚠️ Telegram no configurado")
+            return
+        
+        import requests
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        requests.post(
+            url, 
+            json={
+                "chat_id": TELEGRAM_CHAT_WMT, 
+                "text": mensaje, 
+                "parse_mode": "Markdown"
+            },
+            timeout=5
+        )
+        logger.info("✅ Mensaje enviado a Telegram")
+    except Exception as e:
+        logger.error(f"❌ Error enviando Telegram: {e}")
+
+
 # ==========================================
 # WEBHOOK ENDPOINT
 # ==========================================
@@ -269,40 +297,6 @@ async def capture_bearer_token(
                 
                 conn.commit()
                 
-                # ==========================================
-                # FUNCIÓN: ENVIAR TELEGRAM
-                # ==========================================
-
-                def enviar_telegram(mensaje):
-                    """Envía mensaje a Telegram"""
-                    try:
-                        if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_WMT:
-                            logger.warning("⚠️ Telegram no configurado")
-                            return
-                        
-                        import requests
-                        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-                        requests.post(
-                            url, 
-                            json={
-                                "chat_id": TELEGRAM_CHAT_WMT, 
-                                "text": mensaje, 
-                                "parse_mode": "Markdown"
-                            },
-                            timeout=5                
-                        )                
-                        logger.info("✅ Mensaje enviado a Telegram")
-                    except Exception as e:
-                        logger.error(f"❌ Error enviando Telegram: {e}")
-
-                # ... resto del código                
-                
-                logger.info(f"✅ ÉXITO | {id_cuenta} | Tokens: {num_tokens}/5")
-                
-                return {
-                    "status": "success",
-                    "message": f"Bearer guardado",
-                    "tokens_in_history": num_tokens
                 }
     
     except Exception as e:
