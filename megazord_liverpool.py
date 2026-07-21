@@ -1674,9 +1674,22 @@ def ejecutar_bot():
 
     for cuenta in cuentas_activas:
         id_cuenta, nombre_desc, email_usuario, token_cuenta, cookie_vip = cuenta
+    
+        # ✅ DESENCRIPTAR EL TOKEN (NEW)
+        try:
+            FERNET_ENCRYPTION_KEY = os.getenv("FERNET_ENCRYPTION_KEY")
+            if FERNET_ENCRYPTION_KEY and token_cuenta:
+                cipher = Fernet(FERNET_ENCRYPTION_KEY.encode())
+                token_cuenta = cipher.decrypt(token_cuenta.encode()).decode()
+                logger.info(f"✅ Token desencriptado para {id_cuenta}")
+            else:
+                logger.warning(f"⚠️ No se pudo desencriptar - clave faltante")
+        except Exception as e:
+            logger.error(f"❌ Error desencriptando token: {e}")
+            continue  # Saltar esta cuenta si no se puede desencriptar
+    
         logger.info(f"\n==========================================")
-        logger.info(f"🏪 CARGANDO MOTOR PARA: {nombre_desc} ({id_cuenta})")
-        logger.info(f"==========================================")
+        # ... resto del código igual
 
         reglas_cuenta = {}
         for row in catalogo_completo:
