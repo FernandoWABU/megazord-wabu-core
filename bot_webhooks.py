@@ -38,6 +38,20 @@ app = FastAPI(
 )
 
 # ==========================================
+# CORS MIDDLEWARE - Permitir Chrome Extension
+# ==========================================
+
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Permite desde cualquier origen (incluyendo Chrome Extension)
+    allow_credentials=True,
+    allow_methods=["*"],  # Permite todos los métodos (GET, POST, etc.)
+    allow_headers=["*"],  # Permite todos los headers
+)
+
+# ==========================================
 # TELEGRAM
 # ==========================================
 
