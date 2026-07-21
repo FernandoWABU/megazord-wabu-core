@@ -107,7 +107,7 @@ async def capture_bearer_token(
             with conn.cursor() as cursor:
                 
                 # 3. Verificar cuenta existe
-                cursor.execute("SELECT id_cuenta FROM cuentas_liverpool WHERE id_cuenta = %s", 
+                cursor.execute("""SELECT id_cuenta FROM cuentas_liverpool WHERE id_cuenta = %s""", 
                              (request.seller_id,))
                 if not cursor.fetchone():
                     logger.error(f"❌ Cuenta {request.seller_id} no encontrada")
@@ -144,8 +144,8 @@ async def capture_bearer_token(
                 """, (request.seller_id, f"Extension ID: {x_extension_id} | Token: {request.token[:30]}..."))
                 
                 # 8. Contar tokens
-                cursor.execute("SELECT COUNT(*) FROM bearer_token_history 
-                             WHERE id_cuenta=%s", (request.seller_id,))
+                cursor.execute("""SELECT COUNT(*) FROM bearer_token_history 
+                             WHERE id_cuenta=%s""", (request.seller_id,))
                 num_tokens = cursor.fetchone()[0]
                 
                 conn.commit()
