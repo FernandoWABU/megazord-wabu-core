@@ -18,9 +18,6 @@ from pydantic import BaseModel
 # Al inicio, con las otras variables
 FERNET_ENCRYPTION_KEY = os.getenv("FERNET_ENCRYPTION_KEY")
 
-if not FERNET_ENCRYPTION_KEY:
-    raise ValueError("❌ FERNET_ENCRYPTION_KEY no configurada")
-
 # CARGAR VARIABLES DE ENTORNO
 load_dotenv()
 
@@ -109,17 +106,18 @@ async def capture_bearer_token(
                 
                 # 3️⃣ VERIFICAR CUENTA
                 cursor.execute("""
-                    SELECT id_cuenta, google_encryption_key 
+                    SELECT id_cuenta 
                     FROM cuentas_liverpool 
                     WHERE id_cuenta = %s
                 """, (seller_id,))
-                
+
                 cuenta = cursor.fetchone()
                 if not cuenta:
                     logger.error(f"❌ Cuenta {seller_id} no encontrada")
                     raise HTTPException(status_code=404, detail=f"Cuenta {seller_id} no existe")
-                
-                id_cuenta, encryption_key = cuenta
+
+                id_cuenta = cuenta[0]
+                encryption_key = FERNET_ENCRYPTION_KEY  # Leer de variable de entorno, NO de BD
                 
                 # 4️⃣ ENCRIPTAR TOKEN
                 cipher = Fernet(FERNET_ENCRYPTION_KEY.encode())
