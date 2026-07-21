@@ -15,6 +15,12 @@ from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
+# Al inicio, con las otras variables
+FERNET_ENCRYPTION_KEY = os.getenv("FERNET_ENCRYPTION_KEY")
+
+if not FERNET_ENCRYPTION_KEY:
+    raise ValueError("❌ FERNET_ENCRYPTION_KEY no configurada")
+
 # CARGAR VARIABLES DE ENTORNO
 load_dotenv()
 
@@ -116,7 +122,7 @@ async def capture_bearer_token(
                 id_cuenta, encryption_key = cuenta
                 
                 # 4️⃣ ENCRIPTAR TOKEN
-                cipher = Fernet(encryption_key.encode())
+                cipher = Fernet(FERNET_ENCRYPTION_KEY.encode())
                 token_encriptado = cipher.encrypt(token.encode()).decode()
                 
                 # 5️⃣ ACTUALIZAR TABLA PRINCIPAL
