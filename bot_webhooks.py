@@ -69,7 +69,7 @@ class BearerTokenRequest(BaseModel):
 @app.post("/api/capture-bearer")
 async def capture_bearer_token(
     request: BearerTokenRequest,
-    auth_header: str = Header(None)
+    authorization: str = Header(None)  ← CAMBIADO
 ):
     """
     🔐 WEBHOOK: Recibe Bearer token de Chrome Extension
@@ -79,7 +79,7 @@ async def capture_bearer_token(
     seller_id = request.seller_id
     
     # 1️⃣ VALIDAR SECRET KEY ← AQUÍ ESTÁ LA VALIDACIÓN
-    if auth_header != f"Bearer {WEBHOOK_SECRET_KEY}":
+    if authorization != f"Bearer {WEBHOOK_SECRET_KEY}":
         logger.warning(f"🚨 Intento no autorizado desde {seller_id}")
         raise HTTPException(status_code=401, detail="Unauthorized - Invalid secret key")
     
