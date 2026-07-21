@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException, Header
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
+from pydantic import BaseModel
 
 # CARGAR VARIABLES DE ENTORNO
 load_dotenv()
@@ -77,36 +78,34 @@ def enviar_telegram(mensaje):
         logger.error(f"❌ Error enviando Telegram: {e}")
 
 # ==========================================
+# MODELO PYDANTIC PARA REQUEST
+# ==========================================
+
+from pydantic import BaseModel
+
+class BearerTokenRequest(BaseModel):
+    token: str
+    seller_id: str = "68CAF9EE564AF52E6"
+    timestamp: str = None
+
+# ==========================================
 # WEBHOOK: CAPTURA DE BEARER TOKEN
 # ==========================================
 
 @app.post("/api/capture-bearer")
 async def capture_bearer_token(
-    token: str,
-    seller_id: str = "68CAF9EE564AF52E6",
+    request: BearerTokenRequest,
     auth_header: str = Header(None)
 ):
     """
     🔐 WEBHOOK: Recibe Bearer token de Chrome Extension
-    
-    Pasos:
-    1. Valida Secret Key
-    2. Valida token (mínimo 50 chars)
-    3. Busca cuenta en cuentas_liverpool
-    4. Encripta token con Fernet
-    5. Guarda en tabla principal (actualiza)
-    6. Rota en historial (últimos 5 tokens)
-    7. Log de auditoría
-    8. Notificación Telegram
-    
-    Args:
-        token: Bearer token extraído de Authorization header
-        seller_id: ID de la tienda
-        auth_header: Secret key para validar que viene de Chrome Extension
     """
     
+    token = request.token
+    seller_id = request.seller_id
+    
     # 1️⃣ VALIDAR SECRET KEY
-    if auth_header != f"Bearer {WEBHOOK_SECRET_KEY}":
+    if auth_header != f"Bearer d7QcZxuBEDZ4s7B0TShUeDRb0U0CLK4gZCf7wVgSpnY":
         logger.warning(f"🚨 Intento no autorizado desde {seller_id}")
         raise HTTPException(status_code=401, detail="Unauthorized - Invalid secret key")
     
@@ -154,20 +153,17 @@ async def capture_bearer_token(
                 logger.info(f"✅ Token actualizado en cuentas_liverpool para {id_cuenta}")
                 
                 # 6️⃣ ROTAR EN BEARER_TOKEN_HISTORY
-                # Desplazar órdenes
                 cursor.execute("""
                     UPDATE bearer_token_history 
                     SET token_order = token_order + 1 
                     WHERE id_cuenta = %s AND token_order < 5
                 """, (id_cuenta,))
                 
-                # Eliminar más viejos
                 cursor.execute("""
                     DELETE FROM bearer_token_history 
                     WHERE id_cuenta = %s AND token_order > 5
                 """, (id_cuenta,))
                 
-                # Insertar nuevo como order=1
                 cursor.execute("""
                     INSERT INTO bearer_token_history 
                     (id_cuenta, token_encriptado, captured_at, token_order, status)
