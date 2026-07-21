@@ -1,0 +1,9 @@
+# Configuración de extensión (nunca subir esto)
+chrome-extension-bearer/config.json
+
+# Python
+__pycache__/
+*.pyc
+.env
+.env.local
+venv/
