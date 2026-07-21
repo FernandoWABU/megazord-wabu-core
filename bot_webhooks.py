@@ -72,8 +72,106 @@ class BearerTokenRequest(BaseModel):
 @app.post("/api/capture-bearer")
 async def capture_bearer_token(
     request: BearerTokenRequest,
-    authorization: str = Header(None)
+    authorization: str = Header(None),
+    x_extension_id: str = Header(None)  # ← NUEVA LÍNEA
 ):
+    """
+    Recibe Bearer token de Chrome Extension, valida Extension ID, lo encripta y guarda en BD
+    """
+    
+    # ✅ NUEVA VALIDACIÓN: Verificar Extension ID
+    ALLOWED_EXTENSION_IDS = os.getenv("ALLOWED_EXTENSION_IDS", "").split(",")
+    ALLOWED_EXTENSION_IDS = [id.strip() for id in ALLOWED_EXTENSION_IDS if id.strip()]
+    
+    logger.info(f"🆔 Extension ID recibido: {x_extension_id}")
+    logger.info(f"✅ IDs autorizados: {ALLOWED_EXTENSION_IDS}")
+    
+    if not x_extension_id or x_extension_id not in ALLOWED_EXTENSION_IDS:
+        logger.warning(f"🚨 Extension ID no autorizada: {x_extension_id}")
+        raise HTTPException(status_code=403, detail="Extension not authorized")
+    
+    logger.info(f"✅ Extension ID válida: {x_extension_id}")
+    
+    # 1. Validar autorización (SECRET KEY)
+    if authorization != f"Bearer {WEBHOOK_SECRET_KEY}":
+        logger.warning(f"🚨 Intento no autorizado")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    # 2. Validar token
+    if not request.token or len(request.token) < 50:
+        logger.error(f"❌ Token inválido: len={len(request.token) if request.token else 0}")
+        raise HTTPException(status_code=400, detail="Token inválido")
+    
+    try:
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cursor:
+                
+                # 3. Verificar cuenta existe
+                cursor.execute("SELECT id_cuenta FROM cuentas_liverpool WHERE id_cuenta = %s", 
+                             (request.seller_id,))
+                if not cursor.fetchone():
+                    logger.error(f"❌ Cuenta {request.seller_id} no encontrada")
+                    raise HTTPException(status_code=404, detail="Cuenta no existe")
+                
+                # 4. Encriptar token
+                cipher = Fernet(FERNET_ENCRYPTION_KEY.encode())
+                token_encriptado = cipher.encrypt(request.token.encode()).decode()
+                
+                # 5. Actualizar tabla principal
+                cursor.execute("""
+                    UPDATE cuentas_liverpool 
+                    SET token_autorizacion=%s, timestamp_token=NOW(), 
+                        token_expira_en=NOW()+INTERVAL '24 hours',
+                        fernet_encryption_key=%s
+                    WHERE id_cuenta=%s
+                """, (token_encriptado, FERNET_ENCRYPTION_KEY, request.seller_id))
+                
+                # 6. Rotar en historial (últimos 5 tokens)
+                cursor.execute("UPDATE bearer_token_history SET token_order=token_order+1 
+                             WHERE id_cuenta=%s AND token_order<5", (request.seller_id,))
+                cursor.execute("DELETE FROM bearer_token_history 
+                             WHERE id_cuenta=%s AND token_order>5", (request.seller_id,))
+                cursor.execute("""
+                    INSERT INTO bearer_token_history 
+                    (id_cuenta, token_encriptado, captured_at, token_order, status)
+                    VALUES (%s, %s, NOW(), 1, 'active')
+                """, (request.seller_id, token_encriptado))
+                
+                # 7. Log de auditoría (INCLUIR Extension ID)
+                cursor.execute("""
+                    INSERT INTO bearer_capture_log (id_cuenta, action, timestamp, details)
+                    VALUES (%s, 'captured', NOW(), %s)
+                """, (request.seller_id, f"Extension ID: {x_extension_id} | Token: {request.token[:30]}..."))
+                
+                # 8. Contar tokens
+                cursor.execute("SELECT COUNT(*) FROM bearer_token_history 
+                             WHERE id_cuenta=%s", (request.seller_id,))
+                num_tokens = cursor.fetchone()[0]
+                
+                conn.commit()
+                
+                # 9. Notificar Telegram
+                msg = f"""🔐 *Bearer capturado*
+🆔 Extension: `{x_extension_id[-8:]}`
+🏪 Cuenta: `{request.seller_id}`
+📦 Tokens: `{num_tokens}/5`
+⏰ Válido por: `24 horas`"""
+                enviar_telegram(msg)
+                
+                logger.info(f"✅ ÉXITO | Extension: {x_extension_id[-8:]} | Cuenta: {request.seller_id} | Tokens: {num_tokens}/5")
+                
+                return {
+                    "status": "success",
+                    "message": "Bearer guardado",
+                    "tokens_in_history": num_tokens,
+                    "extension_id_validated": x_extension_id[:8] + "..."
+                }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     """
     🔐 WEBHOOK: Recibe Bearer token de Chrome Extension
     """
