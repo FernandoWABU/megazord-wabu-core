@@ -1135,24 +1135,38 @@ def cazar_oferta_especifica(token, sku_interno, sku_liverpool):
         except: pass
     return None
 
-def obtener_info_rivales(liverpool_sku):
-    url = f"https://shoppapp.liverpool.com.mx/appclienteservices/services/v2/marketplace/pdp/getSellersOfferDetailsPdp?skuId={liverpool_sku}"
+def obtener_info_rivales(token, liverpool_sku):
+    """Obtiene precios REALES de competencia desde pro-api (TIEMPO REAL)"""
+    
+    url = f"https://pro-api.liverpool.com.mx/api/marketplace/v1/offers?sku={liverpool_sku}"
+    
     try:
-        res = crear_session_con_retry().get(url, headers={"User-Agent": "Liverpool/2.2.0"}, timeout=30)
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "shopid": SHOP_ID_INTERNO
+        }
+        res = crear_session_con_retry().get(url, headers=headers, timeout=30)
+        
         if res.status_code == 200:
             rivales = []
-            for v in res.json().get("sellersOfferDetails", []):
-                if str(v.get("sellerId")) != str(SHOP_ID_PUBLICO):
-                    # 🛡️ ALTO #3: JSON Parsing Frágil parchado
-                    precio_raw = v.get("promoPrice") or v.get("salePrice")
-                    try:
-                        precio = float(precio_raw) if precio_raw else 0.0
-                        if precio > 0:
-                            rivales.append({"precio": precio, "nombre": str(v.get("sellerName"))})
-                    except (ValueError, TypeError):
-                        pass
-            return sorted(rivales, key=lambda x: x["precio"])
-    except: pass
+            for offer in res.json().get("offers", []):
+                seller_id = str(offer.get("sellerId", ""))
+                
+                # 🛡️ Filtrar: NO incluir tu propia tienda
+                if seller_id and seller_id != str(SHOP_ID_PUBLICO):
+                    precio = float(offer.get("price", 0))
+                    if precio > 0:
+                        rivales.append({
+                            "precio": precio,
+                            "nombre": str(offer.get("sellerName", "Desconocido"))
+                        })
+            
+            return sorted(rivales, key=lambda x: x["precio"])  # Ordenar por precio ascendente
+    
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo rivales de pro-api: {e}")
+    
     return []
 
 def calcular_posicion_buybox(precios_rivales, nuestro_precio):
@@ -1254,7 +1268,7 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
             if estatus_regla == 'ACTIVO': resultados.apagar_sku_liverpool(fila_excel, sku_i)
             return
 
-        info_rivales = obtener_info_rivales(sku_lp)
+        info_rivales = obtener_info_rivales(token, sku_lp)  # ← Agregar token
         precios_rivales = [r["precio"] for r in info_rivales]
 
         precio_minimo_regla = safe_float(regla.get('precio_minimo', 0))
