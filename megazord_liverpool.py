@@ -1379,6 +1379,12 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                     else:
                         margen_actual = round(float(rival_mas_bajo) - float(precio_actual), 2)
                         
+                        # 🔍 DEBUG: Ver margen y precio
+                        logger.info(f"💰 [SKU: {sku_i}] Rival más bajo: ${rival_mas_bajo} | Tu precio: ${precio_actual} | Margen: ${margen_actual}")
+                        logger.info(f"📊 [SKU: {sku_i}] Rango: min=${precio_minimo_regla} max=${precio_maximo_regla}")
+                        
+                        # 🎯 SOLUCIÓN PROBLEMA 1:
+                        
                         # 🎯 SOLUCIÓN PROBLEMA 1: CHECK "YA ESTAMOS GANANDO" (Propuesta mejorada de Gemini)
                         # Si estamos ganando por centavos o hasta por $2.00, CONGELAMOS EL PRECIO
                         if 0.01 <= margen_actual <= 2.00:
