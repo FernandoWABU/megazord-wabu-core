@@ -165,18 +165,20 @@ async def capture_bearer_token(
                 
                 logger.info(f"✅ Token actualizado en cuentas_liverpool")
                 
-                # 4️⃣ ROTAR EN HISTORIAL (ÚLTIMOS 5 TOKENS)
-                cursor.execute("""
-                    UPDATE bearer_token_history 
-                    SET token_order = token_order + 1 
-                    WHERE id_cuenta = %s AND token_order < 5
-                """, (request.seller_id,))
-                
+                # 4️⃣ ROTAR EN HISTORIAL (MANTENER SOLO LOS ÚLTIMOS 5)
+                # Primero: Borrar todos EXCEPTO los 4 más recientes
                 cursor.execute("""
                     DELETE FROM bearer_token_history 
-                    WHERE id_cuenta = %s AND token_order > 5
-                """, (request.seller_id,))
+                    WHERE id_cuenta = %s 
+                    AND id NOT IN (
+                        SELECT id FROM bearer_token_history 
+                        WHERE id_cuenta = %s 
+                        ORDER BY captured_at DESC 
+                        LIMIT 4
+                    )
+                """, (request.seller_id, request.seller_id))
                 
+                # Segundo: Insertar el nuevo token
                 cursor.execute("""
                     INSERT INTO bearer_token_history 
                     (id_cuenta, token_encriptado, captured_at, token_order, status)
