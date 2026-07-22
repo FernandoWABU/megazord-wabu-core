@@ -1274,17 +1274,46 @@ def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notifi
         "quantity": int(stock),
         "offerPriceManagement": [{"discountPrice": float(nuevo_precio), "updatedAt": datetime.now(timezone.utc).isoformat(), "userModified": "MEGAZORD_API", "index": 0}]
     }]
+    
+    # 🔍 DEBUG: Ver qué se va a enviar
+    print(f"🚀 DISPARAR_PRECIO LLAMADO:", flush=True)
+    print(f"   📍 URL: {url}", flush=True)
+    print(f"   🎫 Offer ID: {offer_id}", flush=True)
+    print(f"   💰 Nuevo precio: ${nuevo_precio}", flush=True)
+    print(f"   📦 Stock: {stock}", flush=True)
+    print(f"   🔐 Token (primeros 20): {token[:20]}...", flush=True)
+    logger.info(f"🚀 DISPARAR_PRECIO LLAMADO - Offer: {offer_id}, Precio: ${nuevo_precio}, Stock: {stock}")
+    
     try:
         if MODO_SIMULACION:
             imprimir_simulacion(f"DISPARAR_PRECIO | SKU: {sku_notificacion} | Bajaría a: ${nuevo_precio}")
             return True
         liverpool_rate_limiter.wait()
+        
+        # 📤 Hacer el request
+        print(f"📤 Enviando PUT a pro-api...", flush=True)
         response = crear_session_con_retry().put(url, headers=headers, json=payload, timeout=30)
+        
+        # 🔍 DEBUG: Ver la respuesta
+        print(f"📤 Response Status: {response.status_code}", flush=True)
+        print(f"📤 Response Body (primeros 300 chars): {response.text[:300]}", flush=True)
+        logger.info(f"📤 PUT Response: {response.status_code} - {response.text[:100]}")
+        
         if response.status_code in [200, 204]:
+            print(f"✅ Ajuste ejecutado: ${nuevo_precio}", flush=True)
             logger.info(f"✅ Ajuste ejecutado: {enmascarar_precio(nuevo_precio)}")
             return True
-        else: return False
-    except: return False
+        else:
+            print(f"❌ Error disparar_precio: Status {response.status_code} - {response.text[:200]}", flush=True)
+            logger.error(f"❌ Error disparar_precio: Status {response.status_code} - {response.text[:200]}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Exception en disparar_precio: {e}", flush=True)
+        print(f"❌ Traceback: {traceback.format_exc()}", flush=True)
+        logger.error(f"❌ disparar_precio exception: {e}")
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        return False
 
 # ==========================================
 # CEREBRO ESTRATÉGICO MULTI-CUENTA
