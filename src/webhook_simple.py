@@ -184,7 +184,7 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     try:
         # Railway asigna PORT automáticamente
-        port = int(os.environ.get("PORT", "8000"))
+        port = int(os.environ.get("PORT") or "8000")
         log_and_flush(f"🚀 Servidor en puerto: {port}")
         log_and_flush(f"🔍 Variable PORT del sistema: {os.environ.get('PORT', 'NO ENCONTRADA')}")
         
