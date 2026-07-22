@@ -40,6 +40,9 @@ jobs:
           pip install -r requirements.txt
           python -m playwright install chromium
           python -m playwright install-deps chromium
+          
+      - name: Install Playwright browsers
+        run: playwright install    
 
       - name: 🟣 Desplegar Megazord Liverpool
         # Se ejecuta SI le das al botón manual O SI el reloj que lo despertó fue el de 15,35,55
