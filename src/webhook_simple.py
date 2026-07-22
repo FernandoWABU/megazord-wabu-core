@@ -1,22 +1,14 @@
 #!/usr/bin/env python3
-
-"""
-WEBHOOK SIMPLE - CORS FIXED
-Servidor HTTP básico para capturar Bearer tokens
-Manejo robusto de CORS para Chrome Extensions
-"""
-
 import os
 import json
 import logging
-import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 import psycopg
 import requests
+import threading
 
-# CARGAR VARIABLES DE ENTORNO
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -24,249 +16,168 @@ WEBHOOK_SECRET_KEY = os.getenv("WEBHOOK_SECRET_KEY")
 FERNET_ENCRYPTION_KEY = os.getenv("FERNET_ENCRYPTION_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_WMT = os.getenv("TELEGRAM_CHAT_WMT")
-ALLOWED_EXTENSION_IDS = os.getenv("ALLOWED_EXTENSION_IDS", "").split(",")
-ALLOWED_EXTENSION_IDS = [id.strip() for id in ALLOWED_EXTENSION_IDS if id.strip()]
+ALLOWED_EXTENSION_IDS = [id.strip() for id in os.getenv("ALLOWED_EXTENSION_IDS", "").split(",") if id.strip()]
 
-# SETUP LOGGING
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s | %(levelname)-8s | %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(message)s')
 logger = logging.getLogger(__name__)
 
-# ==========================================
-# FUNCIÓN: ENVIAR TELEGRAM
-# ==========================================
-
-def enviar_telegram(mensaje):
-    """Envía mensaje a Telegram"""
+def send_telegram(msg):
     try:
         if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_WMT:
-            logger.warning("⚠️ Telegram no configurado")
             return
-        
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         requests.post(
-            url, 
-            json={
-                "chat_id": TELEGRAM_CHAT_WMT, 
-                "text": mensaje, 
-                "parse_mode": "Markdown"
-            },
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            json={"chat_id": TELEGRAM_CHAT_WMT, "text": msg, "parse_mode": "Markdown"},
             timeout=5
         )
-        logger.info("✅ Mensaje enviado a Telegram")
     except Exception as e:
-        logger.error(f"❌ Error Telegram: {e}")
+        logger.error(f"Telegram error: {e}")
 
-# ==========================================
-# HANDLER HTTP CON CORS MEJORADO
-# ==========================================
-
-class WebhookHandler(BaseHTTPRequestHandler):
-    
-    def _set_cors_headers(self):
-        """Establece headers CORS correctamente"""
+class Handler(BaseHTTPRequestHandler):
+    def do_OPTIONS(self):
+        self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Extension-ID')
-        self.send_header('Access-Control-Max-Age', '3600')
-    
-    def do_OPTIONS(self):
-        """Manejo de CORS preflight - CRÍTICO"""
-        logger.info(f"📍 OPTIONS request desde {self.client_address[0]}")
-        
-        self.send_response(200)
-        self._set_cors_headers()
-        self.send_header('Content-Type', 'text/plain')
-        self.send_header('Content-Length', '0')
         self.end_headers()
-        
-        logger.info("✅ OPTIONS preflight respondido correctamente")
-    
-    def do_POST(self):
-        """Endpoint POST /api/capture-bearer"""
-        
-        if self.path == "/api/capture-bearer":
-            self.handle_capture_bearer()
-        else:
-            self.send_response(404)
-            self._set_cors_headers()
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({"detail": "Not found"}).encode())
-    
+        logger.info("✅ OPTIONS preflight OK")
+
     def do_GET(self):
-        """Health check"""
         if self.path == "/health":
             self.send_response(200)
-            self._set_cors_headers()
+            self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({"status": "healthy"}).encode())
         else:
             self.send_response(404)
-            self._set_cors_headers()
-            self.send_header('Content-Type', 'application/json')
             self.end_headers()
-            self.wfile.write(json.dumps({"detail": "Not found"}).encode())
-    
-    def handle_capture_bearer(self):
-        """Maneja captura de Bearer token"""
+
+    def do_POST(self):
+        if self.path != "/api/capture-bearer":
+            self.send_response(404)
+            self.end_headers()
+            return
+
+        auth = self.headers.get('Authorization')
+        ext_id = self.headers.get('X-Extension-ID')
         
-        # Leer headers
-        auth_header = self.headers.get('Authorization')
-        x_extension_id = self.headers.get('X-Extension-ID')
-        content_length = int(self.headers.get('Content-Length', 0))
-        
-        logger.info(f"🔍 POST /api/capture-bearer recibido")
-        logger.info(f"🆔 Extension ID: {x_extension_id}")
-        logger.info(f"🔐 Auth Header: {auth_header[:20] if auth_header else 'None'}...")
+        logger.info(f"🔍 POST recibido | Extension: {ext_id}")
         
         # Validar Extension ID
-        if not x_extension_id or x_extension_id not in ALLOWED_EXTENSION_IDS:
-            logger.warning(f"🚨 Extension no autorizada: {x_extension_id}")
-            logger.warning(f"📋 IDs permitidos: {ALLOWED_EXTENSION_IDS}")
-            self.send_json_response(403, {"detail": "Extension not authorized"})
+        if not ext_id or ext_id not in ALLOWED_EXTENSION_IDS:
+            logger.warning(f"❌ Extension no autorizada: {ext_id}")
+            logger.warning(f"   Permitidas: {ALLOWED_EXTENSION_IDS}")
+            self._respond_json(403, {"detail": "Extension not authorized"})
             return
-        
+
         # Validar Authorization
-        expected_auth = f"Bearer {WEBHOOK_SECRET_KEY}"
-        if auth_header != expected_auth:
-            logger.warning(f"🚨 Autorización inválida")
-            logger.warning(f"   Recibido: {auth_header[:30] if auth_header else 'None'}...")
-            logger.warning(f"   Esperado: {expected_auth[:30]}...")
-            self.send_json_response(401, {"detail": "Unauthorized"})
+        if auth != f"Bearer {WEBHOOK_SECRET_KEY}":
+            logger.warning(f"❌ Auth inválida")
+            self._respond_json(401, {"detail": "Unauthorized"})
             return
-        
+
         # Leer body
         try:
-            body = self.rfile.read(content_length).decode('utf-8')
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8')
             data = json.loads(body)
         except Exception as e:
-            logger.error(f"❌ Error parseando JSON: {e}")
-            self.send_json_response(400, {"detail": "Invalid JSON"})
+            logger.error(f"❌ Parse error: {e}")
+            self._respond_json(400, {"detail": "Invalid JSON"})
             return
-        
+
         token = data.get("token")
         seller_id = data.get("seller_id", "LVP_01")
-        
-        # Validar token
+
         if not token or len(token) < 50:
-            logger.error(f"❌ Token inválido o muy corto")
-            self.send_json_response(400, {"detail": "Invalid token"})
+            logger.error(f"❌ Token inválido")
+            self._respond_json(400, {"detail": "Invalid token"})
             return
-        
+
         # Guardar en BD
         try:
-            # Usar psycopg 3 (nueva API)
             with psycopg.connect(DATABASE_URL) as conn:
-                with conn.cursor() as cursor:
-                    
+                with conn.cursor() as cur:
                     # Verificar cuenta
-                    cursor.execute(
-                        "SELECT id_cuenta FROM cuentas_liverpool WHERE id_cuenta = %s",
-                        (seller_id,)
-                    )
-                    if not cursor.fetchone():
+                    cur.execute("SELECT id_cuenta FROM cuentas_liverpool WHERE id_cuenta = %s", (seller_id,))
+                    if not cur.fetchone():
                         logger.error(f"❌ Cuenta no encontrada: {seller_id}")
-                        self.send_json_response(404, {"detail": "Account not found"})
+                        self._respond_json(404, {"detail": "Account not found"})
                         return
-                    
-                    # Encriptar token
+
+                    # Encriptar
                     cipher = Fernet(FERNET_ENCRYPTION_KEY.encode())
-                    token_encriptado = cipher.encrypt(token.encode()).decode()
-                    
-                    # Actualizar cuentas_liverpool
-                    cursor.execute("""
+                    token_enc = cipher.encrypt(token.encode()).decode()
+
+                    # Actualizar
+                    cur.execute("""
                         UPDATE cuentas_liverpool 
                         SET token_autorizacion=%s, timestamp_token=NOW(), 
                             token_expira_en=NOW()+INTERVAL '24 hours',
                             fernet_encryption_key=%s
                         WHERE id_cuenta=%s
-                    """, (token_encriptado, FERNET_ENCRYPTION_KEY, seller_id))
-                    
-                    # Limpiar historial (mantener últimos 4)
-                    cursor.execute("""
+                    """, (token_enc, FERNET_ENCRYPTION_KEY, seller_id))
+
+                    # Limpiar histórico
+                    cur.execute("""
                         DELETE FROM bearer_token_history 
                         WHERE id_cuenta = %s 
                         AND id NOT IN (
                             SELECT id FROM bearer_token_history 
                             WHERE id_cuenta = %s 
-                            ORDER BY captured_at DESC 
-                            LIMIT 4
+                            ORDER BY captured_at DESC LIMIT 4
                         )
                     """, (seller_id, seller_id))
-                    
-                    # Insertar nuevo token
-                    cursor.execute("""
+
+                    # Insertar nuevo
+                    cur.execute("""
                         INSERT INTO bearer_token_history 
                         (id_cuenta, token_encriptado, captured_at, token_order, status)
                         VALUES (%s, %s, NOW(), 1, 'active')
-                    """, (seller_id, token_encriptado))
-                    
-                    # Log de auditoría
-                    cursor.execute("""
+                    """, (seller_id, token_enc))
+
+                    # Auditoría
+                    cur.execute("""
                         INSERT INTO bearer_capture_log 
                         (id_cuenta, action, timestamp, details)
                         VALUES (%s, 'captured', NOW(), %s)
-                    """, (seller_id, f"Extension: {x_extension_id}"))
-                    
+                    """, (seller_id, f"Extension: {ext_id}"))
+
                     # Contar tokens
-                    cursor.execute("""
-                        SELECT COUNT(*) FROM bearer_token_history 
-                        WHERE id_cuenta = %s
-                    """, (seller_id,))
-                    num_tokens = cursor.fetchone()[0]
-                    
+                    cur.execute("SELECT COUNT(*) FROM bearer_token_history WHERE id_cuenta = %s", (seller_id,))
+                    num_tokens = cur.fetchone()[0]
+
                     conn.commit()
-                    
-                    # Enviar Telegram en thread (no bloquear)
+
+                    # Telegram en thread
                     msg = f"""🔐 *Bearer capturado*
-🆔 Extension: `{x_extension_id[-8:]}`
+🆔 Extension: `{ext_id[-8:]}`
 🏪 Cuenta: `{seller_id}`
 📦 Tokens: `{num_tokens}/5`
 ⏰ Válido por: `24 horas`"""
-                    threading.Thread(target=enviar_telegram, args=(msg,)).start()
-                    
-                    logger.info(f"✅ ÉXITO | Extension: {x_extension_id[-8:]} | Tokens: {num_tokens}/5")
-                    
-                    self.send_json_response(200, {
-                        "status": "success",
-                        "message": "Bearer guardado",
-                        "tokens_in_history": num_tokens
-                    })
-        
+                    threading.Thread(target=send_telegram, args=(msg,), daemon=True).start()
+
+                    logger.info(f"✅ ÉXITO | Tokens: {num_tokens}/5")
+                    self._respond_json(200, {"status": "success", "tokens_in_history": num_tokens})
+
         except Exception as e:
-            logger.error(f"❌ Error BD: {e}")
-            self.send_json_response(500, {"detail": str(e)})
-    
-    def send_json_response(self, status_code, data):
-        """Envía respuesta JSON con CORS headers"""
-        self.send_response(status_code)
-        self._set_cors_headers()
+            logger.error(f"❌ BD error: {e}")
+            self._respond_json(500, {"detail": str(e)})
+
+    def _respond_json(self, code, data):
+        self.send_response(code)
+        self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
-        
-        response_body = json.dumps(data).encode()
-        self.wfile.write(response_body)
-    
-    def log_message(self, format, *args):
-        """Silenciar logs de HTTP por defecto"""
-        pass
+        self.wfile.write(json.dumps(data).encode())
 
-# ==========================================
-# MAIN
-# ==========================================
+    def log_message(self, format, *args):
+        pass
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
-    
-    server = HTTPServer(("0.0.0.0", port), WebhookHandler)
-    logger.info(f"🚀 Webhook iniciado en puerto {port}")
-    logger.info(f"📍 POST http://localhost:{port}/api/capture-bearer")
-    logger.info(f"❤️ GET http://localhost:{port}/health")
-    logger.info(f"✅ CORS habilitado para Chrome Extensions")
-    
+    server = HTTPServer(("0.0.0.0", port), Handler)
+    logger.info(f"🚀 Webhook en puerto {port}")
+    logger.info(f"✅ CORS enabled")
     server.serve_forever()
