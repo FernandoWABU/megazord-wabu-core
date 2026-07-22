@@ -1755,7 +1755,9 @@ def ejecutar_bot():
                 cipher = Fernet(FERNET_ENCRYPTION_KEY.encode())
                 token_cuenta = cipher.decrypt(token_cuenta.encode()).decode()
                 print(f"✅ Token desencriptado! (primeros 50 chars): {token_cuenta[:50]}")
+                print(f"🔐 Token completo (SOLO DEBUGGING): {token_cuenta[:100]}...")  # ← AGREGAR ESTA LÍNEA
                 logger.info(f"✅ Token desencriptado! (primeros 50 chars): {token_cuenta[:50]}")
+                logger.info(f"🔐 Token completo (SOLO DEBUGGING): {token_cuenta[:100]}...")  # ← AGREGAR ESTA LÍNEA
             except Exception as e:
                 print(f"❌ Error desencriptando: {e}")
                 logger.error(f"❌ Error desencriptando: {e}")
@@ -1787,6 +1789,10 @@ def ejecutar_bot():
         else:
             url_ping = f"https://pro-api.liverpool.com.mx/api/offermanagement/offers?shop_id={SHOP_ID_INTERNO}&sku={urllib.parse.quote(sku_muestra)}"
             headers_ping = {"Authorization": f"Bearer {token_cuenta}", "Content-Type": "application/json"}
+
+            # 🔍 DEBUG: Ver exactamente qué header se está enviando
+            print(f"🔍 HEADER PING: Authorization: Bearer {token_cuenta[:50]}...", flush=True)
+            logger.info(f"🔍 HEADER PING: Authorization: Bearer {token_cuenta[:50]}...")
             
             try:
                 response = crear_session_con_retry().get(url_ping, headers=headers_ping, timeout=10)
