@@ -1136,49 +1136,45 @@ def cazar_oferta_especifica(token, sku_interno, sku_liverpool):
     return None
 
 def obtener_info_rivales(token, liverpool_sku):
-    """Obtiene precios REALES de competencia desde pro-api (TIEMPO REAL)"""
+    """Obtiene precios de competencia (usando shoppapp - funciona)"""
     
-    url = f"https://pro-api.liverpool.com.mx/api/marketplace/v1/offers?sku={liverpool_sku}"
+    # Usar shoppapp en lugar de pro-api (pro-api devuelve 502)
+    url = f"https://shoppapp.liverpool.com.mx/appclienteservices/services/v2/marketplace/pdp/getSellersOfferDetailsPdp?skuId={liverpool_sku}"
     
-    logger.info(f"🔍 Llamando a obtener_info_rivales - SKU: {liverpool_sku}")
+    logger.info(f"🔍 Obtener rivales para SKU: {liverpool_sku}")
     logger.info(f"📍 URL: {url}")
     
     try:
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "shopid": SHOP_ID_INTERNO
-        }
-        res = crear_session_con_retry().get(url, headers=headers, timeout=30)
+        res = crear_session_con_retry().get(url, headers={"User-Agent": "Liverpool/2.2.0"}, timeout=30)
         
         logger.info(f"🔐 Status code: {res.status_code}")
-        logger.info(f"📦 Response: {res.text[:200]}")  # Primeros 200 caracteres
         
         if res.status_code == 200:
             rivales = []
             data = res.json()
-            logger.info(f"✅ JSON parseado. Offers: {len(data.get('offers', []))}")
+            sellers = data.get("sellersOfferDetails", [])
+            logger.info(f"✅ Sellers encontrados: {len(sellers)}")
             
-            for offer in data.get("offers", []):
-                seller_id = str(offer.get("sellerId", ""))
-                
-                if seller_id and seller_id != str(SHOP_ID_PUBLICO):
-                    precio = float(offer.get("price", 0))
-                    if precio > 0:
-                        rivales.append({
-                            "precio": precio,
-                            "nombre": str(offer.get("sellerName", "Desconocido"))
-                        })
-                        logger.info(f"  ✅ Rival encontrado: {offer.get('sellerName')} - ${precio}")
+            for v in sellers:
+                seller_id = str(v.get("sellerId"))
+                if seller_id != str(SHOP_ID_PUBLICO):
+                    precio_raw = v.get("promoPrice") or v.get("salePrice")
+                    try:
+                        precio = float(precio_raw) if precio_raw else 0.0
+                        if precio > 0:
+                            nombre = str(v.get("sellerName", "Desconocido"))
+                            rivales.append({"precio": precio, "nombre": nombre})
+                            logger.info(f"  ✅ Rival: {nombre} - ${precio}")
+                    except (ValueError, TypeError):
+                        pass
             
             logger.info(f"🎯 Total rivales: {len(rivales)}")
             return sorted(rivales, key=lambda x: x["precio"])
         else:
-            logger.error(f"❌ Error en pro-api: {res.status_code}")
-            logger.error(f"📄 Response: {res.text}")
-    
+            logger.error(f"❌ Error: Status {res.status_code}")
+            
     except Exception as e:
-        logger.error(f"❌ Exception en obtener_info_rivales: {e}")
+        logger.error(f"❌ Exception: {e}")
     
     logger.warning(f"⚠️ Retornando lista vacía para SKU: {liverpool_sku}")
     return []
