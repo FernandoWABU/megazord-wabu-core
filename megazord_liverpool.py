@@ -884,7 +884,7 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
         for selector in ['input#username', 'input[name="username"]', 'input[name="email"]', 'input[type="email"]']:
             try:
                 locator = page.locator(selector).first
-                if locator.is_visible(timeout=5000):
+                if locator.is_visible(timeout=15000):
                     email_field = locator
                     break
             except: 
@@ -953,7 +953,7 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
         for selector in ['input#password', 'input[name="password"]', 'input[type="password"]']:
             try:
                 locator = page.locator(selector).first
-                if locator.is_visible(timeout=5000):
+                if locator.is_visible(timeout=15000):
                     password_field = locator
                     break
             except: 
@@ -980,7 +980,7 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
         
         try:
             submit_button = page.locator('button[type="submit"]').first
-            if not submit_button or not submit_button.is_visible(timeout=5000):
+            if not submit_button or not submit_button.is_visible(timeout=15000):
                 logger.error(f"❌ NIVEL 2 FALLÓ: No se encontró botón submit")
                 page.screenshot(path="debug_nivel2_v5_4_submit.png")
                 return None, None
@@ -1027,7 +1027,7 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                     for selector in ['input[name="code"]', 'input[name="otp"]', 'input[maxlength="6"]']:
                         try:
                             locator = page.locator(selector).first
-                            if locator.is_visible(timeout=5000):
+                            if locator.is_visible(timeout=15000):
                                 codigo_input = locator
                                 break
                         except: 
@@ -1153,7 +1153,7 @@ def obtener_info_rivales(token, liverpool_sku):
             page.goto(url, wait_until="networkidle", timeout=30000)
             
             # Esperar a que carguen los precios
-            page.wait_for_selector('.price-tag', timeout=5000)
+            page.wait_for_selector('.price-tag', timeout=15000)
             
             html = page.content()
             browser.close()
