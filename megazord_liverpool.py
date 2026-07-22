@@ -1136,45 +1136,81 @@ def cazar_oferta_especifica(token, sku_interno, sku_liverpool):
     return None
 
 def obtener_info_rivales(token, liverpool_sku):
-    """Obtiene precios de competencia (usando shoppapp - funciona)"""
+    """Obtiene precios REALES scrapeando el HTML de Liverpool (tiempo real)"""
     
-    # Usar shoppapp en lugar de pro-api (pro-api devuelve 502)
-    url = f"https://shoppapp.liverpool.com.mx/appclienteservices/services/v2/marketplace/pdp/getSellersOfferDetailsPdp?skuId={liverpool_sku}"
+    url = f"https://www.liverpool.com.mx/tienda/producto/{liverpool_sku}"
     
-    logger.info(f"🔍 Obtener rivales para SKU: {liverpool_sku}")
+    logger.info(f"🔍 Scrapeando precios reales para SKU: {liverpool_sku}")
     logger.info(f"📍 URL: {url}")
     
     try:
-        res = crear_session_con_retry().get(url, headers={"User-Agent": "Liverpool/2.2.0"}, timeout=30)
+        # Usar Playwright para obtener HTML actualizado
+        from playwright.sync_api import sync_playwright
         
-        logger.info(f"🔐 Status code: {res.status_code}")
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(url, wait_until="networkidle", timeout=30000)
+            
+            # Esperar a que carguen los precios
+            page.wait_for_selector('.price-tag', timeout=5000)
+            
+            html = page.content()
+            browser.close()
         
-        if res.status_code == 200:
-            rivales = []
-            data = res.json()
-            sellers = data.get("sellersOfferDetails", [])
-            logger.info(f"✅ Sellers encontrados: {len(sellers)}")
-            
-            for v in sellers:
-                seller_id = str(v.get("sellerId"))
-                if seller_id != str(SHOP_ID_PUBLICO):
-                    precio_raw = v.get("promoPrice") or v.get("salePrice")
-                    try:
-                        precio = float(precio_raw) if precio_raw else 0.0
-                        if precio > 0:
-                            nombre = str(v.get("sellerName", "Desconocido"))
-                            rivales.append({"precio": precio, "nombre": nombre})
-                            logger.info(f"  ✅ Rival: {nombre} - ${precio}")
-                    except (ValueError, TypeError):
-                        pass
-            
-            logger.info(f"🎯 Total rivales: {len(rivales)}")
-            return sorted(rivales, key=lambda x: x["precio"])
-        else:
-            logger.error(f"❌ Error: Status {res.status_code}")
-            
+        # Parsear HTML para obtener precios
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        rivales = []
+        
+        # Buscar todos los sellers en la página
+        seller_boxes = soup.find_all('div', class_='seller-offer')
+        
+        logger.info(f"✅ Sellers encontrados: {len(seller_boxes)}")
+        
+        for seller in seller_boxes:
+            try:
+                nombre = seller.find('span', class_='seller-name').text.strip()
+                precio_text = seller.find('span', class_='seller-price').text.strip()
+                precio = float(precio_text.replace('$', '').replace(',', ''))
+                
+                # No incluir tu propia tienda
+                if nombre.upper() != 'PRECIOS UNICOS':
+                    rivales.append({
+                        "precio": precio,
+                        "nombre": nombre
+                    })
+                    logger.info(f"  ✅ Rival: {nombre} - ${precio}")
+            except Exception as e:
+                logger.error(f"  ❌ Error parseando seller: {e}")
+                continue
+        
+        logger.info(f"🎯 Total rivales reales: {len(rivales)}")
+        return sorted(rivales, key=lambda x: x["precio"])
+        
     except Exception as e:
-        logger.error(f"❌ Exception: {e}")
+        logger.error(f"❌ Error scrapeando HTML: {e}")
+        logger.warning(f"⚠️ Cayendo a shoppapp como fallback...")
+        
+        # FALLBACK: Usar shoppapp si falla Playwright
+        try:
+            url_fallback = f"https://shoppapp.liverpool.com.mx/appclienteservices/services/v2/marketplace/pdp/getSellersOfferDetailsPdp?skuId={liverpool_sku}"
+            res = crear_session_con_retry().get(url_fallback, headers={"User-Agent": "Liverpool/2.2.0"}, timeout=30)
+            
+            if res.status_code == 200:
+                rivales = []
+                for v in res.json().get("sellersOfferDetails", []):
+                    if str(v.get("sellerId")) != str(SHOP_ID_PUBLICO):
+                        precio = float(v.get("promoPrice") or v.get("salePrice") or 0)
+                        if precio > 0:
+                            rivales.append({
+                                "precio": precio,
+                                "nombre": str(v.get("sellerName", "Desconocido"))
+                            })
+                return sorted(rivales, key=lambda x: x["precio"])
+        except Exception as e2:
+            logger.error(f"❌ Fallback shoppapp también falló: {e2}")
     
     logger.warning(f"⚠️ Retornando lista vacía para SKU: {liverpool_sku}")
     return []
