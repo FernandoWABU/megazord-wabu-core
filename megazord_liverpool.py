@@ -1776,11 +1776,6 @@ def reset_circuit_breaker():
         logger.info("🔄 CIRCUIT BREAKER RESETEADO - Sistema listo para operar")
         enviar_telegram("🔄 *Circuit Breaker reseteado* - Sistema listo para operar nuevamente")
 
-# AGREGAR AL INICIO DE ejecutar_bot():
-if STATS_PW["abortar"]:
-    logger.info("ℹ️ Circuit Breaker estaba activo. Evaluando...")
-    # Aquí podrías preguntar manualmente o agregar lógica de recuperación
-
 def ejecutar_bot():
     """Función principal del bot"""
     logger.info("--- INICIANDO MEGAZORD LIVERPOOL ---")
@@ -1846,8 +1841,23 @@ def ejecutar_bot():
     sesion_compartida = crear_session_con_retry()
     total_skus_procesados = 0
 
+    # DESPUÉS (✅ CORRECTO):
     for cuenta in cuentas_activas:
-        id_cuenta, nombre_desc, email_usuario, token_cuenta, cookie_vip = cuenta
+        id_cuenta, nombre_desc, email_usuario, token_cuenta, cookie_vip, timestamp_token = cuenta
+        
+        # 🔐 DESENCRIPTAR TOKEN
+        if token_cuenta and FERNET_ENCRYPTION_KEY:
+            try:
+                cipher = Fernet(FERNET_ENCRYPTION_KEY.encode())
+                token_cuenta_desc = cipher.decrypt(token_cuenta.encode()).decode()
+            except Exception as e:
+                logger.error(f"❌ Error desencriptando token para {id_cuenta}: {e}")
+                continue
+        else:
+            logger.warning(f"⚠️ No hay token o FERNET_KEY para {id_cuenta}")
+            continue
+    
+        # Usar token_cuenta_desc desde aquí en adelante
     
         # DEBUG: Ver qué viene de la BD
         print(f"🔍 Token de BD (primeros 50 chars): {token_cuenta[:50] if token_cuenta else 'NULO'}")
@@ -1912,6 +1922,8 @@ def ejecutar_bot():
                 token_valido = False
             else:
                 token_valido = True
+                logger.info(f"✅ Token válido para {id_cuenta} - Ping OK")
+
             
             # ✅ SI EL TOKEN NO ES VÁLIDO, INTENTAR RENOVAR
             if not token_valido:
