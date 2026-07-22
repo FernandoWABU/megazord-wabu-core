@@ -1840,24 +1840,6 @@ def ejecutar_bot():
     resultados = ResultadosThreadSafe()
     sesion_compartida = crear_session_con_retry()
     total_skus_procesados = 0
-
-    # DESPUÉS (✅ CORRECTO):
-    for cuenta in cuentas_activas:
-        id_cuenta, nombre_desc, email_usuario, token_cuenta, cookie_vip, timestamp_token = cuenta
-        
-        # 🔐 DESENCRIPTAR TOKEN
-        if token_cuenta and FERNET_ENCRYPTION_KEY:
-            try:
-                cipher = Fernet(FERNET_ENCRYPTION_KEY.encode())
-                token_cuenta_desc = cipher.decrypt(token_cuenta.encode()).decode()
-            except Exception as e:
-                logger.error(f"❌ Error desencriptando token para {id_cuenta}: {e}")
-                continue
-        else:
-            logger.warning(f"⚠️ No hay token o FERNET_KEY para {id_cuenta}")
-            continue
-    
-        # Usar token_cuenta_desc desde aquí en adelante
     
         # DEBUG: Ver qué viene de la BD
         print(f"🔍 Token de BD (primeros 50 chars): {token_cuenta[:50] if token_cuenta else 'NULO'}")
