@@ -1,1 +1,1 @@
-web: cd src && python webhook_simple.py
+web: python -u src/webhook_simple.py
