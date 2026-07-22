@@ -1564,9 +1564,11 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                             baja = round(random.uniform(1.50, 1.96), 2)
                             nuevo_precio = round(rival_mas_bajo - baja, 2)
                             
+                            # 🛡️ TOPE MÁXIMO: Si intentamos bajar pero rebasamos el máximo, respetamos techo
                             if precio_maximo_regla > 0 and nuevo_precio > precio_maximo_regla:
                                 nuevo_precio = precio_maximo_regla
                             
+                            # ✅ CASO 1: ATAQUE POSIBLE - Podemos bajar y competir dentro de mínimo
                             if nuevo_precio >= precio_minimo_regla:
                                 pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
                                 if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
@@ -1579,27 +1581,31 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                                             'hay_rivales': True,
                                             'ciclo_anterior': 'ataque_ejecutado'
                                         }
+                            # ❌ CASO 2: NO PODEMOS VENCER AL #1 (MODO SOMBRA ACTIVADO)
                             else:
-                                # 🦇 MODO SOMBRA (PERDIENDO LA BUYBOX): 
-                                # Si no podemos vencer al #1, buscamos al SIGUIENTE competidor (#2)
-                                rivales_superiores = [p for p in precios_rivales if p > rival_mas_bajo and p >= precio_minimo_regla]
+                                # 🦇 MODO SOMBRA: Si no podemos vencer al #1, nos posicionamos cerca del #2
+                                # Buscamos rivales VIABLES (que estén dentro de nuestro rango mín/máx)
+                                rivales_viables = [p for p in precios_rivales if p >= precio_minimo_regla]
                                 
-                                if rivales_superiores:
-                                    # Nos pegamos al siguiente rival viable con firma .09
-                                    nuevo_precio = round(float(int(rivales_superiores[0]) - 1) + 0.09, 2)
+                                if rivales_viables and len(rivales_viables) > 0:
+                                    # El rival viable más cercano (normalmente será el #2 o #3)
+                                    rival_viable = rivales_viables[0]
+                                    
+                                    # Nos posicionamos debajo del rival viable con firma .09
+                                    nuevo_precio = round(float(int(rival_viable) - 1) + 0.09, 2)
+                                    
+                                    logger.info(f"🎯 [GLADIADOR] Modo Sombra activado: Posición debajo de rival viable ${rival_viable} → Nuevo precio: ${nuevo_precio}")
                                 else:
-                                    # Si no hay siguiente rival, huimos al techo con firma .09
-                                    nuevo_precio = round(float(int(precio_maximo_regla) - 1) + 0.09, 2)
+                                    # Si NO hay rivales viables, nos mantenemos en precio actual (CONGELADO)
+                                    nuevo_precio = precio_actual
+                                    logger.info(f"🛑 [GLADIADOR] Alerta Roja: No hay rivales viables. Congelado en ${precio_actual}")
                                 
-                                # 🛡️ APLICAR TOPES ESTRATÉGICOS (MANTENIENDO EL .09)
+                                # 🛡️ APLICAR TOPES ESTRATÉGICOS (MANTENIENDO COHERENCIA)
                                 if precio_maximo_regla > 0 and nuevo_precio > precio_maximo_regla: 
-                                    nuevo_precio = round(float(int(precio_maximo_regla) - 1) + 0.09, 2)
+                                    nuevo_precio = precio_maximo_regla
                                 
                                 if nuevo_precio < precio_minimo_regla: 
-                                    nuevo_precio = round(float(int(precio_minimo_regla)) + 0.09, 2)
-                                    # Seguridad extrema por si el mínimo tenía decimales (ej. 741.99)
-                                    if nuevo_precio < precio_minimo_regla:
-                                        nuevo_precio = round(nuevo_precio + 1.00, 2)
+                                    nuevo_precio = precio_minimo_regla
                                 
                                 with resultados._lock:
                                     resultados.ultimo_estado_conocido[sku_i] = {
