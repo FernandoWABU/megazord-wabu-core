@@ -1,0 +1,24 @@
+buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+startCommand: python src/megazord_liverpool.py
+
+services:
+  - type: web
+    name: megazord-wabu-core
+    runtime: python
+    runtimeVersion: 3.11
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn src.bot_webhooks:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: WEBHOOK_SECRET_KEY
+        sync: false
+      - key: FERNET_ENCRYPTION_KEY
+        sync: false
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_WMT
+        sync: false
+      - key: ALLOWED_EXTENSION_IDS
+        sync: false
