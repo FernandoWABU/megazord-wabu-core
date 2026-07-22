@@ -183,7 +183,7 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     try:
-        port = 8000  # Hardcodear puerto
+        port = int(os.getenv("PORT", 8000))  # ✅ CORRECTO
         log_and_flush(f"🚀 Servidor en puerto {port}")
         
         server = HTTPServer(("0.0.0.0", port), Handler)
