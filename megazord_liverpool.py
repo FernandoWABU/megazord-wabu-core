@@ -1138,6 +1138,12 @@ def cazar_oferta_especifica(token, sku_interno, sku_liverpool):
 
 
 # ============================================================
+# CIRCUIT BREAKER Y ESTADÍSTICAS DE PLAYWRIGHT
+# ============================================================
+CIRCUIT_LOCK = threading.Lock()
+STATS_PW = {"intentos": 0, "timeouts": 0, "abortar": False}
+
+# ============================================================
 # HEADERS STEALTH (Para evitar detección como bot)
 # ============================================================
 HEADERS_STEALTH = {
@@ -1160,7 +1166,6 @@ HEADERS_STEALTH = {
 
 def obtener_info_rivales(token, liverpool_sku):
     """Scraping sin Playwright usando requests + BeautifulSoup."""
-
     global STATS_PW
     
     # ============================================================
