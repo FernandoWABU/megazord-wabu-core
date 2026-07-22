@@ -1135,121 +1135,137 @@ def cazar_oferta_especifica(token, sku_interno, sku_liverpool):
         except: pass
     return None
 
-# ==========================================
-# CIRCUIT BREAKER GLOBALES
-# ==========================================
-CIRCUIT_LOCK = threading.Lock()
-STATS_PW = {"intentos": 0, "timeouts": 0, "abortar": False}
-
-def obtener_info_rivales(token, liverpool_sku):
-    """Scraping con Circuit Breaker anti-timeout."""
     global STATS_PW
     
+    # ============================================================
+    # CIRCUIT BREAKER CHECK
+    # ============================================================
     with CIRCUIT_LOCK:
         if STATS_PW["abortar"]:
             logger.warning(f"🛑 Circuit Breaker ACTIVO - devolviendo vacío para SKU {liverpool_sku}")
             return []
         STATS_PW["intentos"] += 1
     
-    # ✅ NUEVO (BUYBOX):
+    # ============================================================
+    # CONSTRUIR URL Y HEADERS
+    # ============================================================
     url_liverpool = f"https://www.liverpool.com.mx/tienda/mirakl/offerListing?productId={liverpool_sku}&skuId={liverpool_sku}"
-    logger.info(f"🔍 Scrapeando: {liverpool_sku}")
+    
+    logger.info(f"🔍 Scrapeando (SIN Playwright): {liverpool_sku}")
+    logger.info(f"📍 URL: {url_liverpool}")
     
     try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(url_liverpool, wait_until="networkidle", timeout=30000)
-            page.wait_for_selector('[data-testid="discounted"]', timeout=20000)  # ← TIMEOUT ACTUALIZADO
-            html = page.content()
-            browser.close()
+        # ============================================================
+        # HACER PETICIÓN HTTP CON HEADERS STEALTH
+        # ============================================================
         
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html, 'html.parser')
-        rivales = []
-        seller_boxes = soup.find_all('div', class_='seller-offer')
+        logger.info(f"🌐 Enviando petición con headers stealth...")
+        response = requests.get(
+            url_liverpool,
+            headers=HEADERS_STEALTH,
+            timeout=15,
+            allow_redirects=True
+        )
         
-        for seller in seller_boxes:
-            try:
-                nombre = seller.find('span', class_='seller-name').text.strip()
-                precio_text = seller.find('span', class_='seller-price').text.strip()
-                precio = float(precio_text.replace('$', '').replace(',', ''))
-                
-                if nombre.upper() != 'PRECIOS UNICOS':
-                    rivales.append({"precio": precio, "nombre": nombre})
-            except:
-                continue
+        logger.info(f"📊 Status Code: {response.status_code}")
         
-        return sorted(rivales, key=lambda x: x["precio"])
+        if response.status_code != 200:
+            logger.error(f"❌ Respuesta no-200: {response.status_code}")
+            with CIRCUIT_LOCK:
+                STATS_PW["timeouts"] += 1
+            return []
         
-    except Exception as e:
-        logger.error(f"❌ Playwright timeout: {e}")
+        # ============================================================
+        # VERIFICAR QUE NO ES UNA PÁGINA DE BLOQUEO
+        # ============================================================
         
-        # CIRCUIT BREAKER LOGIC
+        if "Access Denied" in response.text or "CAPTCHA" in response.text or len(response.text) < 1000:
+            logger.error(f"⚠️ Posible bloqueo WAF (respuesta muy corta: {len(response.text)} chars)")
+            with CIRCUIT_LOCK:
+                STATS_PW["timeouts"] += 1
+            return []
+        
+        # ============================================================
+        # PARSEAR HTML CON BEAUTIFULSOUP
+        # ============================================================
+        
+        logger.info(f"🔨 Parseando HTML ({len(response.text)} caracteres)...")
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # ============================================================
+        # BUSCAR ELEMENTO DE PRECIO
+        # ============================================================
+        
+        # Estrategia 1: Buscar por data-testid="discounted" (lo que vimos en DevTools)
+        elemento_precio = soup.find('span', {'data-testid': 'discounted'})
+        
+        if not elemento_precio:
+            logger.warning(f"⚠️ No encontrado [data-testid='discounted'], buscando alternativas...")
+            
+            # Estrategia 2: Buscar por clase de precio
+            elemento_precio = soup.find('span', class_=lambda x: x and 'text-price-primary' in x)
+        
+        if not elemento_precio:
+            logger.warning(f"⚠️ No encontrado por clases, buscando con regex...")
+            
+            # Estrategia 3: Regex directo
+            match = re.search(r'\$[\s]*([\d,]+)', response.text)
+            if match:
+                precio_str = match.group(1)
+                precio = float(precio_str.replace(',', ''))
+                logger.info(f"✅ Precio encontrado por regex: ${precio}")
+                return [{"precio": precio, "nombre": "Liverpool"}]
+            else:
+                logger.error(f"❌ No se encontró precio con ningún método")
+                return []
+        
+        # ============================================================
+        # EXTRAER PRECIO DEL ELEMENTO
+        # ============================================================
+        
+        texto_completo = elemento_precio.get_text(strip=True)
+        logger.info(f"📝 Texto extraído: {texto_completo}")
+        
+        # Limpiar: puede contener "$" y números
+        # Ejemplos: "$659", "$659.00", "$1,299"
+        precio_match = re.search(r'[\$]?[\s]*([\d,]+)', texto_completo)
+        
+        if precio_match:
+            precio_str = precio_match.group(1)
+            precio = float(precio_str.replace(',', '').replace('$', '').strip())
+            
+            logger.info(f"✅ PRECIO EXTRAÍDO: ${precio}")
+            
+            # Retornar en formato que espera Megazord
+            rivales = [{
+                "precio": precio,
+                "nombre": "Liverpool Oficial",
+                "url": url_liverpool
+            }]
+            
+            return rivales
+        else:
+            logger.error(f"❌ No se pudo parsear el precio del texto: {texto_completo}")
+            return []
+    
+    except requests.exceptions.Timeout:
+        logger.error(f"❌ TIMEOUT en requests (15 segundos)")
         with CIRCUIT_LOCK:
             STATS_PW["timeouts"] += 1
-            ratio = STATS_PW["timeouts"] / STATS_PW["intentos"] if STATS_PW["intentos"] > 0 else 0
-            
-            if STATS_PW["intentos"] >= 10 and ratio >= 0.30 and not STATS_PW["abortar"]:
+            if STATS_PW["intentos"] > 10 and (STATS_PW["timeouts"] / STATS_PW["intentos"]) > 0.3:
                 STATS_PW["abortar"] = True
-                msg = f"🛑 *CIRCUIT BREAKER ACTIVADO*\n{STATS_PW['timeouts']}/{STATS_PW['intentos']} timeouts ({(ratio*100):.1f}%)\nBot pausado temporalmente."
-                logger.error(msg)
-                enviar_telegram(msg)
-        
-        # 🚫 NO usamos ShoppApp (datos viejos)
+                logger.error(f"🛑 CIRCUIT BREAKER ACTIVADO (>30% timeouts)")
         return []
-        
-        # Buscar todos los sellers en la página
-        seller_boxes = soup.find_all('div', class_='seller-offer')
-        
-        logger.info(f"✅ Sellers encontrados: {len(seller_boxes)}")
-        
-        for seller in seller_boxes:
-            try:
-                nombre = seller.find('span', class_='seller-name').text.strip()
-                precio_text = seller.find('span', class_='seller-price').text.strip()
-                precio = float(precio_text.replace('$', '').replace(',', ''))
-                
-                # No incluir tu propia tienda
-                if nombre.upper() != 'PRECIOS UNICOS':
-                    rivales.append({
-                        "precio": precio,
-                        "nombre": nombre
-                    })
-                    logger.info(f"  ✅ Rival: {nombre} - ${precio}")
-            except Exception as e:
-                logger.error(f"  ❌ Error parseando seller: {e}")
-                continue
-        
-        logger.info(f"🎯 Total rivales reales: {len(rivales)}")
-        return sorted(rivales, key=lambda x: x["precio"])
-        
-    except Exception as e:
-        logger.error(f"❌ Error scrapeando HTML: {e}")
-        logger.warning(f"⚠️ Cayendo a shoppapp como fallback...")
-        
-        # FALLBACK: Usar shoppapp si falla Playwright
-        try:
-            url_fallback = f"https://shoppapp.liverpool.com.mx/appclienteservices/services/v2/marketplace/pdp/getSellersOfferDetailsPdp?skuId={liverpool_sku}"
-            res = crear_session_con_retry().get(url_fallback, headers={"User-Agent": "Liverpool/2.2.0"}, timeout=30)
-            
-            if res.status_code == 200:
-                rivales = []
-                for v in res.json().get("sellersOfferDetails", []):
-                    if str(v.get("sellerId")) != str(SHOP_ID_PUBLICO):
-                        precio = float(v.get("promoPrice") or v.get("salePrice") or 0)
-                        if precio > 0:
-                            rivales.append({
-                                "precio": precio,
-                                "nombre": str(v.get("sellerName", "Desconocido"))
-                            })
-                return sorted(rivales, key=lambda x: x["precio"])
-        except Exception as e2:
-            logger.error(f"❌ Fallback shoppapp también falló: {e2}")
     
-    logger.warning(f"⚠️ Retornando lista vacía para SKU: {liverpool_sku}")
-    return []
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ Error en petición HTTP: {e}")
+        return []
+    
+    except Exception as e:
+        logger.error(f"❌ Error general en obtener_info_rivales: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
 
 def calcular_posicion_buybox(precios_rivales, nuestro_precio):
     if not precios_rivales:
