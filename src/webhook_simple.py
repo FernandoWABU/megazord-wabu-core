@@ -170,7 +170,8 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 print("🚀 Creando servidor...", flush=True)
-port = int(os.environ.get("PORT") or "8000")
+port = int(os.environ.get("PORT", "3000"))
+print(f"🎯 Puerto REAL que Railway asignó: {port}", flush=True)
 print(f"🎯 Puerto: {port}", flush=True)
 
 server = HTTPServer(("0.0.0.0", port), Handler)
