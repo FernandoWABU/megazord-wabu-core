@@ -1875,22 +1875,6 @@ def ejecutar_bot():
 
         if not reglas_cuenta:
             continue
-        else:
-            print(f"⚠️ No hay clave o token es nulo")
-            logger.warning(f"⚠️ No hay clave o token es nulo")
-            continue
-        
-        logger.info(f"\n==========================================")
-        logger.info(f"🏪 CARGANDO MOTOR PARA: {nombre_desc} ({id_cuenta})")
-        # ... resto igual
-
-        reglas_cuenta = {}
-        for row in catalogo_completo:
-            fila_dict = dict(zip(columnas_cat, row))
-            if fila_dict['id_cuenta'] == id_cuenta:
-                reglas_cuenta[fila_dict['sku_liverpool']] = fila_dict
-
-        if not reglas_cuenta: continue
 
         sku_muestra = next(iter(reglas_cuenta.values()))['sku_interno']
         token_valido = True
