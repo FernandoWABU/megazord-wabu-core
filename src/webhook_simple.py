@@ -11,7 +11,7 @@ import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
-import psycopg2
+import psycopg
 import requests
 import threading
 
@@ -136,7 +136,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
         
         # Guardar en BD
         try:
-            with psycopg2.connect(DATABASE_URL) as conn:
+            with psycopg.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cursor:
                     
                     # Verificar cuenta
