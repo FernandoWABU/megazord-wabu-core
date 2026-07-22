@@ -1152,7 +1152,7 @@ def obtener_info_rivales(token, liverpool_sku):
         STATS_PW["intentos"] += 1
     
     # ✅ NUEVO (BUYBOX):
-    url_liverpool = f"https://www.liverpool.com.mx/tienda/mirakl/offerListing?productId={sku_liverpool}&skuId={sku_liverpool}"
+    url_liverpool = f"https://www.liverpool.com.mx/tienda/mirakl/offerListing?productId={liverpool_sku}&skuId={liverpool_sku}"
     logger.info(f"🔍 Scrapeando: {liverpool_sku}")
     
     try:
@@ -1160,7 +1160,7 @@ def obtener_info_rivales(token, liverpool_sku):
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
-            page.goto(url, wait_until="networkidle", timeout=30000)
+            page.goto(url_liverpool, wait_until="networkidle", timeout=30000)
             page.wait_for_selector('[data-testid="discounted"]', timeout=20000)  # ← TIMEOUT ACTUALIZADO
             html = page.content()
             browser.close()
