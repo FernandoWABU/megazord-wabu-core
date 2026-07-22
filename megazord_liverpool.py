@@ -1840,28 +1840,41 @@ def ejecutar_bot():
     resultados = ResultadosThreadSafe()
     sesion_compartida = crear_session_con_retry()
     total_skus_procesados = 0
-    
-        # DEBUG: Ver qué viene de la BD
-        print(f"🔍 Token de BD (primeros 50 chars): {token_cuenta[:50] if token_cuenta else 'NULO'}")
-        logger.info(f"🔍 Token de BD (primeros 50 chars): {token_cuenta[:50] if token_cuenta else 'NULO'}")
-    
-        # ✅ DESENCRIPTAR
+
+    for cuenta in cuentas_activas:
+        id_cuenta, nombre_desc, email_usuario, token_cuenta, cookie_vip, timestamp_token = cuenta
+        
+        # 🔐 DESENCRIPTAR TOKEN
         FERNET_ENCRYPTION_KEY = os.getenv("FERNET_ENCRYPTION_KEY")
         print(f"🔐 FERNET_ENCRYPTION_KEY existe?: {bool(FERNET_ENCRYPTION_KEY)}")
         logger.info(f"🔐 FERNET_ENCRYPTION_KEY existe?: {bool(FERNET_ENCRYPTION_KEY)}")
-    
+
         if FERNET_ENCRYPTION_KEY and token_cuenta:
             try:
                 cipher = Fernet(FERNET_ENCRYPTION_KEY.encode())
                 token_cuenta = cipher.decrypt(token_cuenta.encode()).decode()
                 print(f"✅ Token desencriptado! (primeros 50 chars): {token_cuenta[:50]}")
-                print(f"🔐 Token completo (SOLO DEBUGGING): {token_cuenta[:100]}...")  # ← AGREGAR ESTA LÍNEA
                 logger.info(f"✅ Token desencriptado! (primeros 50 chars): {token_cuenta[:50]}")
-                logger.info(f"🔐 Token completo (SOLO DEBUGGING): {token_cuenta[:100]}...")  # ← AGREGAR ESTA LÍNEA
             except Exception as e:
                 print(f"❌ Error desencriptando: {e}")
                 logger.error(f"❌ Error desencriptando: {e}")
                 continue
+        else:
+            print(f"⚠️ No hay clave o token es nulo")
+            logger.warning(f"⚠️ No hay clave o token es nulo")
+            continue
+        
+        logger.info(f"\n==========================================")
+        logger.info(f"🏪 CARGANDO MOTOR PARA: {nombre_desc} ({id_cuenta})")
+
+        reglas_cuenta = {}
+        for row in catalogo_completo:
+            fila_dict = dict(zip(columnas_cat, row))
+            if fila_dict['id_cuenta'] == id_cuenta:
+                reglas_cuenta[fila_dict['sku_liverpool']] = fila_dict
+
+        if not reglas_cuenta:
+            continue
         else:
             print(f"⚠️ No hay clave o token es nulo")
             logger.warning(f"⚠️ No hay clave o token es nulo")
