@@ -1135,34 +1135,69 @@ def cazar_oferta_especifica(token, sku_interno, sku_liverpool):
         except: pass
     return None
 
+# ==========================================
+# CIRCUIT BREAKER GLOBALES
+# ==========================================
+CIRCUIT_LOCK = threading.Lock()
+STATS_PW = {"intentos": 0, "timeouts": 0, "abortar": False}
+
 def obtener_info_rivales(token, liverpool_sku):
-    """Obtiene precios REALES scrapeando el HTML de Liverpool (tiempo real)"""
+    """Scraping con Circuit Breaker anti-timeout."""
+    global STATS_PW
+    
+    with CIRCUIT_LOCK:
+        if STATS_PW["abortar"]:
+            logger.warning(f"🛑 Circuit Breaker ACTIVO - devolviendo vacío para SKU {liverpool_sku}")
+            return []
+        STATS_PW["intentos"] += 1
     
     url = f"https://www.liverpool.com.mx/tienda/producto/{liverpool_sku}"
-    
-    logger.info(f"🔍 Scrapeando precios reales para SKU: {liverpool_sku}")
-    logger.info(f"📍 URL: {url}")
+    logger.info(f"🔍 Scrapeando: {liverpool_sku}")
     
     try:
-        # Usar Playwright para obtener HTML actualizado
         from playwright.sync_api import sync_playwright
-        
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
             page.goto(url, wait_until="networkidle", timeout=30000)
-            
-            # Esperar a que carguen los precios
-            page.wait_for_selector('.price-tag', timeout=15000)
-            
+            page.wait_for_selector('.price-tag', timeout=15000)  # ← TIMEOUT ACTUALIZADO
             html = page.content()
             browser.close()
         
-        # Parsear HTML para obtener precios
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(html, 'html.parser')
-        
         rivales = []
+        seller_boxes = soup.find_all('div', class_='seller-offer')
+        
+        for seller in seller_boxes:
+            try:
+                nombre = seller.find('span', class_='seller-name').text.strip()
+                precio_text = seller.find('span', class_='seller-price').text.strip()
+                precio = float(precio_text.replace('$', '').replace(',', ''))
+                
+                if nombre.upper() != 'PRECIOS UNICOS':
+                    rivales.append({"precio": precio, "nombre": nombre})
+            except:
+                continue
+        
+        return sorted(rivales, key=lambda x: x["precio"])
+        
+    except Exception as e:
+        logger.error(f"❌ Playwright timeout: {e}")
+        
+        # CIRCUIT BREAKER LOGIC
+        with CIRCUIT_LOCK:
+            STATS_PW["timeouts"] += 1
+            ratio = STATS_PW["timeouts"] / STATS_PW["intentos"] if STATS_PW["intentos"] > 0 else 0
+            
+            if STATS_PW["intentos"] >= 10 and ratio >= 0.30 and not STATS_PW["abortar"]:
+                STATS_PW["abortar"] = True
+                msg = f"🛑 *CIRCUIT BREAKER ACTIVADO*\n{STATS_PW['timeouts']}/{STATS_PW['intentos']} timeouts ({(ratio*100):.1f}%)\nBot pausado temporalmente."
+                logger.error(msg)
+                enviar_telegram(msg)
+        
+        # 🚫 NO usamos ShoppApp (datos viejos)
+        return []
         
         # Buscar todos los sellers en la página
         seller_boxes = soup.find_all('div', class_='seller-offer')
@@ -1731,6 +1766,21 @@ def token_aun_valido_por_intento(token_expira_en):
 # ==========================================
 # FUNCIÓN PRINCIPAL MULTI-TENANT
 # ==========================================
+
+def reset_circuit_breaker():
+    """Reinicia los contadores del Circuit Breaker cuando Liverpool está estable."""
+    global STATS_PW
+    
+    with CIRCUIT_LOCK:
+        STATS_PW = {"intentos": 0, "timeouts": 0, "abortar": False}
+        logger.info("🔄 CIRCUIT BREAKER RESETEADO - Sistema listo para operar")
+        enviar_telegram("🔄 *Circuit Breaker reseteado* - Sistema listo para operar nuevamente")
+
+# AGREGAR AL INICIO DE ejecutar_bot():
+if STATS_PW["abortar"]:
+    logger.info("ℹ️ Circuit Breaker estaba activo. Evaluando...")
+    # Aquí podrías preguntar manualmente o agregar lógica de recuperación
+
 def ejecutar_bot():
     logger.info("\n--- INICIANDO MEGAZORD LIVERPOOL V5.4 (DATADOME PRESERVATION) ---")
     
@@ -1747,12 +1797,24 @@ def ejecutar_bot():
     try:
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT id_cuenta, nombre_descriptivo, email_usuario, token_autorizacion, cookie_vip FROM cuentas_liverpool WHERE is_active = TRUE")
+                cursor.execute("SELECT id_cuenta, nombre_descriptivo, email_usuario, token_autorizacion, cookie_vip, timestamp_token FROM cuentas_liverpool WHERE is_active = TRUE")
                 cuentas_activas = cursor.fetchall()
-                
+
                 if not cuentas_activas:
                     logger.warning("⚠️ No hay cuentas activas en la Bóveda VIP.")
                     return
+                
+                # 🛑 STALENESS DETECTION
+                for cuenta in cuentas_activas:
+                    id_cuenta, nombre_desc, email_usuario, token_cuenta, cookie_vip, timestamp_token = cuenta
+                    
+                    if timestamp_token:
+                        horas_transcurridas = (datetime.now() - timestamp_token).total_seconds() / 3600
+                        if horas_transcurridas > 24:
+                            msg = f"🚨 *CRÍTICO: TOKEN OBSOLETO ({id_cuenta})*\n\nEl Bearer Token tiene {horas_transcurridas:.1f} horas de antigüedad.\n🛑 Bot abortado para evitar operar a ciegas."
+                            logger.error(msg)
+                            enviar_telegram(msg)
+                            continue  # Salta esta cuenta
                 
                 # Extraemos de una vez todo el catálogo activo
                 cursor.execute("SELECT id, sku_limpio, sku_interno, sku_liverpool, precio_minimo, precio_maximo, costo_odoo, regla_estrategia, estatus, id_cuenta FROM catalogo_maestro_v3 WHERE estatus = 'ACTIVO' AND sku_liverpool IS NOT NULL AND sku_liverpool != ''")
@@ -1836,95 +1898,48 @@ def ejecutar_bot():
             
             # ✅ SI EL TOKEN NO ES VÁLIDO, INTENTAR RENOVAR
             if not token_valido:
-                logger.warning(f"💀 El Ping devolvió 401. Token MUERTO.")
-                logger.info(f"🔄 INTENTANDO RENOVAR TOKEN CON REFRESH TOKEN...")
-                
+                logger.warning(f"💀 El Ping devolvió 401. Intentando rescate...")
+    
                 try:
                     with psycopg2.connect(DATABASE_URL) as conn:
                         with conn.cursor() as cursor:
+                            # Buscar PENÚLTIMO token
                             cursor.execute("""
-                                SELECT refresh_token, token_expira_en 
-                                FROM cuentas_liverpool 
-                                WHERE id_cuenta = %s
+                                SELECT token_encriptado FROM bearer_token_history 
+                                WHERE id_cuenta = %s AND status = 'active' 
+                                ORDER BY captured_at DESC OFFSET 1 LIMIT 1
                             """, (id_cuenta,))
-                            resultado = cursor.fetchone()
+                            token_respaldo_row = cursor.fetchone()
                             
-                            if resultado:
-                                refresh_token_guardado, token_expira_en = resultado
+                            if token_respaldo_row and FERNET_ENCRYPTION_KEY:
+                                token_respaldo_enc = token_respaldo_row[0]
+                                cipher = Fernet(FERNET_ENCRYPTION_KEY.encode())
+                                token_respaldo = cipher.decrypt(token_respaldo_enc.encode()).decode()
                                 
-                                if refresh_token_guardado:
-                                    logger.info(f"   ✓ Refresh token encontrado en BD")
-                                    
-                                    # INTENTAR RENOVACIÓN
-                                    resultado_renovacion = renovar_token_con_refresh_token(
-                                        refresh_token_guardado, 
-                                        logger,
-                                        gc_client=gc_connection,
-                                        timeout_2fa=180
-                                    )
-                                    
-                                    if resultado_renovacion["success"]:
-                                        # ✅ RENOVACIÓN EXITOSA
-                                        nuevo_token = resultado_renovacion["access_token"]
-                                        nuevo_refresh = resultado_renovacion["refresh_token"]
-                                        expires_in = resultado_renovacion["expires_in"]
-                                        
-                                        token_expira_en = datetime.now() + timedelta(seconds=expires_in)
-                                        
-                                        with psycopg2.connect(DATABASE_URL) as conn2:
-                                            with conn2.cursor() as cursor2:
-                                                cursor2.execute("""
-                                                    UPDATE cuentas_liverpool 
-                                                    SET token_autorizacion=%s, 
-                                                        refresh_token=%s, 
-                                                        timestamp_token=NOW(),
-                                                        token_expira_en=%s
-                                                    WHERE id_cuenta=%s
-                                                """, (nuevo_token, nuevo_refresh, token_expira_en, id_cuenta))
-                                        
-                                        logger.info(f"✅ Token renovado y guardado en BD")
-                                        token_cuenta = nuevo_token
-                                        token_valido = True
-                                    
-                                    else:
-                                        # ❌ RENOVACIÓN FALLÓ
-                                        error_tipo = resultado_renovacion.get("error_type", "unknown")
-                                        puede_continuar = resultado_renovacion.get("can_continue", False)
-                                        
-                                        logger.error(f"❌ Error renovando token: {resultado_renovacion.get('error')}")
-                                        
-                                        # Manejar el error
-                                        debe_continuar = manejar_renovacion_fallida(
-                                            id_cuenta, 
-                                            error_tipo, 
-                                            logger
-                                        )
-                                        
-                                        if debe_continuar and token_aun_valido_por_intento(token_expira_en):
-                                            # 🟡 FALLBACK: Continuar con token viejo
-                                            logger.warning(f"🟡 [{id_cuenta}] Continuando con token antiguo (MFA bloqueando renovación)")
-                                            token_valido = True  # Asumir que sigue siendo válido
-                                        else:
-                                            # 🔴 NO PODEMOS CONTINUAR
-                                            logger.error(f"❌ No se pudo obtener token válido para {id_cuenta}. Saltando...")
-                                            token_valido = False
+                                logger.info("🔄 Probando ping con token de respaldo...")
+                                headers_respaldo = {"Authorization": f"Bearer {token_respaldo}"}
+                                res_respaldo = crear_session_con_retry().get(url_ping, headers=headers_respaldo, timeout=10)
                                 
+                                if res_respaldo.status_code == 200:
+                                    logger.info("✅ ¡RESCATE EXITOSO! Token anterior vivo.")
+                                    token_cuenta = token_respaldo
+                                    token_valido = True
+                                    
+                                    # Actualizar BD
+                                    cursor.execute("UPDATE cuentas_liverpool SET token_autorizacion=%s WHERE id_cuenta=%s", 
+                                                  (token_respaldo_enc, id_cuenta))
+                                    conn.commit()
                                 else:
-                                    logger.error(f"❌ No hay refresh token guardado - necesitas login manual")
-                                    token_valido = False
-                            
+                                    logger.error("❌ Token de respaldo también 401")
                             else:
-                                logger.error(f"❌ Cuenta no encontrada en BD")
-                                token_valido = False
-                
+                                logger.error("❌ No hay tokens en historial")
                 except Exception as e:
-                    logger.error(f"❌ Error renovando token: {e}")
-                    token_valido = False
-        
-        # ✅ SECURITY CHECK: Token debe ser válido para procesar
-        if not token_valido:
-            logger.error(f"❌ No se pudo obtener token válido para {id_cuenta}. Saltando...")
-            continue
+                    logger.error(f"❌ Error retry logic: {e}")
+                
+                if not token_valido:
+                    msg = f"🚨 *CAÍDA DE TOKENS ({id_cuenta})*\nPrincipal y respaldo devolvieron 401."
+                    enviar_telegram(msg)
+                    continue
             
         total_skus_procesados += len(reglas_cuenta)
         with ThreadPoolExecutor(max_workers=3) as executor:
