@@ -1782,7 +1782,24 @@ if STATS_PW["abortar"]:
     # Aquí podrías preguntar manualmente o agregar lógica de recuperación
 
 def ejecutar_bot():
-    logger.info("\n--- INICIANDO MEGAZORD LIVERPOOL V5.4 (DATADOME PRESERVATION) ---")
+    """Función principal del bot"""
+    logger.info("--- INICIANDO MEGAZORD LIVERPOOL ---")
+    
+    # ✅ NUEVA: Verificar si hay orden de reset del Circuit Breaker
+    try:
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT valor FROM config_sistema WHERE clave = 'reset_circuit_breaker'")
+                resultado = cursor.fetchone()
+                if resultado and resultado[0] == 'true':
+                    reset_circuit_breaker()  # Tu función local de reset
+                    cursor.execute("UPDATE config_sistema SET valor = 'false' WHERE clave = 'reset_circuit_breaker'")
+                    conn.commit()
+                    logger.info("♻️ Circuit Breaker reseteado por orden externa (CLI/Dashboard)")
+    except Exception as e:
+        logger.error(f"⚠️ Error verificando bandera de reset: {e}")
+    
+    # ... resto de tu código ejecutar_bot() ...
     
     try: db = DbManager()
     except: db = None
@@ -1961,5 +1978,34 @@ def ejecutar_bot():
     logger.info("\n🏁 Misión cumplida.")
     enviar_telegram(f"🏁 *BARRIDO MEGAZORD V5.4 COMPLETADO*\nTotal de SKUs evaluados: {total_skus_procesados}")
 
+# ==========================================
+# CLI INTERFACE
+# ==========================================
+import argparse
+import sys
+
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Megazord Liverpool - Repricing Bot")
+    parser.add_argument("--reset-breaker", action="store_true", 
+                       help="Resetea Circuit Breaker en la BD y sale")
+    parser.add_argument("--run", action="store_true", default=True,
+                       help="Ejecuta el bot normalmente (default)")
+    
+    args = parser.parse_args()
+    
+    if args.reset_breaker:
+        try:
+            print("🔄 Reseteando Circuit Breaker en PostgreSQL...")
+            with psycopg2.connect(DATABASE_URL) as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("UPDATE config_sistema SET valor = 'true' WHERE clave = 'reset_circuit_breaker'")
+                    conn.commit()
+            print("✅ CLI: Circuit Breaker reseteado exitosamente.")
+            print("📌 Megazord leerá la bandera en el próximo ciclo.")
+            sys.exit(0)
+        except Exception as e:
+            print(f"❌ CLI Error: {e}")
+            sys.exit(1)
+    
+    # Ejecutar bot normalmente
     ejecutar_bot()
