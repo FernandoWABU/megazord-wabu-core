@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 
 """
-WEBHOOK SIMPLE - SIN FASTAPI NI PYDANTIC
+WEBHOOK SIMPLE - CORS FIXED
 Servidor HTTP básico para capturar Bearer tokens
+Manejo robusto de CORS para Chrome Extensions
 """
 
 import os
 import json
 import logging
+import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 import psycopg
 import requests
-import threading
 
 # CARGAR VARIABLES DE ENTORNO
 load_dotenv()
@@ -60,18 +61,29 @@ def enviar_telegram(mensaje):
         logger.error(f"❌ Error Telegram: {e}")
 
 # ==========================================
-# HANDLER HTTP
+# HANDLER HTTP CON CORS MEJORADO
 # ==========================================
 
 class WebhookHandler(BaseHTTPRequestHandler):
     
-    def do_OPTIONS(self):
-        """Manejo de CORS preflight"""
-        self.send_response(200)
+    def _set_cors_headers(self):
+        """Establece headers CORS correctamente"""
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Extension-ID')
+        self.send_header('Access-Control-Max-Age', '3600')
+    
+    def do_OPTIONS(self):
+        """Manejo de CORS preflight - CRÍTICO"""
+        logger.info(f"📍 OPTIONS request desde {self.client_address[0]}")
+        
+        self.send_response(200)
+        self._set_cors_headers()
+        self.send_header('Content-Type', 'text/plain')
+        self.send_header('Content-Length', '0')
         self.end_headers()
+        
+        logger.info("✅ OPTIONS preflight respondido correctamente")
     
     def do_POST(self):
         """Endpoint POST /api/capture-bearer"""
@@ -80,18 +92,25 @@ class WebhookHandler(BaseHTTPRequestHandler):
             self.handle_capture_bearer()
         else:
             self.send_response(404)
+            self._set_cors_headers()
+            self.send_header('Content-Type', 'application/json')
             self.end_headers()
+            self.wfile.write(json.dumps({"detail": "Not found"}).encode())
     
     def do_GET(self):
         """Health check"""
         if self.path == "/health":
             self.send_response(200)
+            self._set_cors_headers()
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({"status": "healthy"}).encode())
         else:
             self.send_response(404)
+            self._set_cors_headers()
+            self.send_header('Content-Type', 'application/json')
             self.end_headers()
+            self.wfile.write(json.dumps({"detail": "Not found"}).encode())
     
     def handle_capture_bearer(self):
         """Maneja captura de Bearer token"""
@@ -103,16 +122,21 @@ class WebhookHandler(BaseHTTPRequestHandler):
         
         logger.info(f"🔍 POST /api/capture-bearer recibido")
         logger.info(f"🆔 Extension ID: {x_extension_id}")
+        logger.info(f"🔐 Auth Header: {auth_header[:20] if auth_header else 'None'}...")
         
         # Validar Extension ID
         if not x_extension_id or x_extension_id not in ALLOWED_EXTENSION_IDS:
             logger.warning(f"🚨 Extension no autorizada: {x_extension_id}")
+            logger.warning(f"📋 IDs permitidos: {ALLOWED_EXTENSION_IDS}")
             self.send_json_response(403, {"detail": "Extension not authorized"})
             return
         
         # Validar Authorization
-        if auth_header != f"Bearer {WEBHOOK_SECRET_KEY}":
+        expected_auth = f"Bearer {WEBHOOK_SECRET_KEY}"
+        if auth_header != expected_auth:
             logger.warning(f"🚨 Autorización inválida")
+            logger.warning(f"   Recibido: {auth_header[:30] if auth_header else 'None'}...")
+            logger.warning(f"   Esperado: {expected_auth[:30]}...")
             self.send_json_response(401, {"detail": "Unauthorized"})
             return
         
@@ -130,12 +154,13 @@ class WebhookHandler(BaseHTTPRequestHandler):
         
         # Validar token
         if not token or len(token) < 50:
-            logger.error(f"❌ Token inválido")
+            logger.error(f"❌ Token inválido o muy corto")
             self.send_json_response(400, {"detail": "Invalid token"})
             return
         
         # Guardar en BD
         try:
+            # Usar psycopg 3 (nueva API)
             with psycopg.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cursor:
                     
@@ -218,12 +243,14 @@ class WebhookHandler(BaseHTTPRequestHandler):
             self.send_json_response(500, {"detail": str(e)})
     
     def send_json_response(self, status_code, data):
-        """Envía respuesta JSON"""
+        """Envía respuesta JSON con CORS headers"""
         self.send_response(status_code)
+        self._set_cors_headers()
         self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
+        
+        response_body = json.dumps(data).encode()
+        self.wfile.write(response_body)
     
     def log_message(self, format, *args):
         """Silenciar logs de HTTP por defecto"""
@@ -240,5 +267,6 @@ if __name__ == "__main__":
     logger.info(f"🚀 Webhook iniciado en puerto {port}")
     logger.info(f"📍 POST http://localhost:{port}/api/capture-bearer")
     logger.info(f"❤️ GET http://localhost:{port}/health")
+    logger.info(f"✅ CORS habilitado para Chrome Extensions")
     
     server.serve_forever()
