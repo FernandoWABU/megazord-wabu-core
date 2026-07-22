@@ -64,6 +64,45 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"status": "healthy"}).encode())
                 print("✅ /health OK", flush=True)
+            
+            # 🆕 NUEVO ENDPOINT PARA RESETEAR DESDE DASHBOARD
+            elif self.path == "/admin/reset-breaker":
+                print("📍 GET /admin/reset-breaker - RESET SOLICITADO", flush=True)
+                auth = self.headers.get('Authorization')
+                
+                # Validación de seguridad (opcional, pero recomendado)
+                if auth != f"Bearer {WEBHOOK_SECRET_KEY}":
+                    self._respond(401, {"detail": "Unauthorized"})
+                    return
+                
+                try:
+                    with psycopg.connect(DATABASE_URL) as conn:
+                        with conn.cursor() as cur:
+                            cur.execute("UPDATE config_sistema SET valor = 'true' WHERE clave = 'reset_circuit_breaker'")
+                            conn.commit()
+                    
+                    self._respond(200, {
+                        "status": "success", 
+                        "message": "Circuit Breaker marcado para reset",
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    print("✅ Reset HTTP exitoso", flush=True)
+                    
+                    # Notificar a Telegram
+                    threading.Thread(
+                        target=send_telegram, 
+                        args=("🔄 *Circuit Breaker reseteado vía HTTP*\nEl bot lo aplicará en el próximo ciclo.",), 
+                        daemon=True
+                    ).start()
+                    
+                except Exception as db_error:
+                    print(f"❌ DB Error en reset-breaker: {db_error}", flush=True)
+                    self._respond(500, {"status": "error", "message": str(db_error)})
+            
+            else:
+                self.send_response(404)
+                self.end_headers()
+                
         except Exception as e:
             print(f"❌ GET ERROR: {e}", flush=True)
             print(traceback.format_exc(), flush=True)
