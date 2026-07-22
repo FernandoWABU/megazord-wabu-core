@@ -1,12 +1,12 @@
 streamlit>=1.28.0
 gspread
 oauth2client
-requests
-playwright==1.40.0
+requests==2.31.0
+playwright==1.45.1
 google-generativeai
 tabulate
 curl_cffi==0.5.9
-cryptography
+cryptography==41.0.7
 psycopg2-binary>=2.9.9
 SQLAlchemy>=2.0.23
 pandas>=2.0.0
@@ -15,4 +15,6 @@ python-dotenv>=1.0.0
 playwright-stealth==1.0.6
 fastapi==0.104.1
 uvicorn==0.24.0
-beautifulsoup4==4.12.0
+beautifulsoup4==4.12.3
+pydantic==2.5.2
+APScheduler==3.10.4
