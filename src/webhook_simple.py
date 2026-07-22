@@ -228,3 +228,25 @@ except Exception as e:
     print(f"❌ CRASH: {e}", flush=True)
     print(traceback.format_exc(), flush=True)
     sys.exit(1)
+elif self.path == "/admin/reset-breaker":
+    print("📍 GET /admin/reset-breaker", flush=True)
+    auth = self.headers.get('Authorization')
+    
+    if auth != f"Bearer {WEBHOOK_SECRET_KEY}":
+        self._respond(401, {"detail": "Unauthorized"})
+        return
+    
+    try:
+        with psycopg.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE config_sistema SET valor = 'true' WHERE clave = 'reset_circuit_breaker'")
+                conn.commit()
+        
+        self._respond(200, {
+            "status": "success", 
+            "message": "Circuit Breaker reseteado"
+        })
+        print("✅ Reset HTTP exitoso", flush=True)
+    except Exception as e:
+        print(f"❌ Error: {e}", flush=True)
+        self._respond(500, {"status": "error", "message": str(e)})
