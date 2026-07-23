@@ -1167,41 +1167,27 @@ HEADERS_STEALTH = {
 
 def obtener_info_rivales(token, liverpool_sku):
     """
-    Scraping de offerListing y FILTRO de nuestro propio precio.
-    EXCLUYE: "PRECIO GENIAL", "WABU", "8579"
-    Retorna SOLO rivales reales.
+    Scraping de offerListing con PARSING ROBUSTO.
+    Filtra "PRECIO GENIAL" automáticamente.
     """
     global STATS_PW
     
-    # ============================================================
-    # CIRCUIT BREAKER CHECK
-    # ============================================================
     with CIRCUIT_LOCK:
         if STATS_PW["abortar"]:
             logger.warning(f"🛑 Circuit Breaker ACTIVO - devolviendo vacío para SKU {liverpool_sku}")
             return []
         STATS_PW["intentos"] += 1
     
-    # ============================================================
-    # CONFIGURACIÓN: NUESTROS NOMBRES EN LIVERPOOL
-    # ============================================================
     TIENDA_NOMBRES = ["PRECIO GENIAL", "PRECIOS UNICOS", "WABU", "WABU SHOP", "8579"]
     SHOP_ID_PUBLICO = "8579"
     
-    # ============================================================
-    # CONSTRUIR URL Y HEADERS
-    # ============================================================
     url_liverpool = f"https://www.liverpool.com.mx/tienda/mirakl/offerListing?productId={liverpool_sku}&skuId={liverpool_sku}"
     
-    logger.info(f"🔍 Scrapeando (SIN Playwright): {liverpool_sku}")
+    logger.info(f"🔍 Scrapeando: {liverpool_sku}")
     logger.info(f"📍 URL: {url_liverpool}")
     
     try:
-        # ============================================================
-        # HACER PETICIÓN HTTP CON HEADERS STEALTH
-        # ============================================================
-        
-        logger.info(f"🌐 Enviando petición con headers stealth...")
+        logger.info(f"🌐 Enviando petición...")
         response = requests.get(
             url_liverpool,
             headers=HEADERS_STEALTH,
@@ -1217,81 +1203,131 @@ def obtener_info_rivales(token, liverpool_sku):
                 STATS_PW["timeouts"] += 1
             return []
         
-        # ============================================================
-        # VERIFICAR QUE NO ES UNA PÁGINA DE BLOQUEO
-        # ============================================================
-        
         if "Access Denied" in response.text or "CAPTCHA" in response.text or len(response.text) < 1000:
-            logger.error(f"⚠️ Posible bloqueo WAF (respuesta muy corta: {len(response.text)} chars)")
+            logger.error(f"⚠️ Posible bloqueo WAF")
             with CIRCUIT_LOCK:
                 STATS_PW["timeouts"] += 1
             return []
         
-        # ============================================================
-        # PARSEAR HTML CON BEAUTIFULSOUP
-        # ============================================================
-        
-        logger.info(f"🔨 Parseando HTML ({len(response.text)} caracteres)...")
+        logger.info(f"🔨 Parseando HTML...")
         soup = BeautifulSoup(response.text, 'html.parser')
         
         # ============================================================
-        # PARSEAR TABLA DE OFERTAS
+        # ESTRATEGIA: BUSCAR POR ESTRUCTURA MÁS ROBUSTA
         # ============================================================
         
         rivales_brutos = []
         
-        # Buscar la tabla principal de ofertas
-        tabla = soup.find('table')  # Buscar cualquier tabla
+        # ESTRATEGIA 1: Buscar tabla y extraer por encabezados
+        tabla = soup.find('table')
         
-        if not tabla:
-            logger.warning("⚠️ No se encontró tabla de ofertas, buscando alternativas...")
-            # Intenta otra estrategia: buscar divs con clase offer-item
-            offers = soup.find_all('div', class_='offer-item')
-            if not offers:
-                logger.warning("⚠️ No se encontraron divs de offertas tampoco")
-                return []
-        else:
-            # Iterar sobre cada ROW de la tabla
-            for row in tabla.find_all('tr')[1:]:  # Skip header
-                try:
-                    celdas = row.find_all('td')
+        if tabla:
+            headers = tabla.find('tr')  # Primera fila es header
+            
+            if headers:
+                header_cells = headers.find_all('th')
+                
+                # Encontrar índices de columnas
+                idx_precio = None
+                idx_vendedor = None
+                
+                for i, th in enumerate(header_cells):
+                    text = th.get_text().lower()
+                    if 'precio' in text:
+                        idx_precio = i
+                    elif 'vendido' in text or 'vendedor' in text or 'seller' in text:
+                        idx_vendedor = i
+                
+                # Si encontramos los índices, usar esos
+                if idx_precio is not None and idx_vendedor is not None:
+                    logger.info(f"✅ Índices encontrados: Precio={idx_precio}, Vendedor={idx_vendedor}")
                     
-                    if len(celdas) < 4:
-                        continue  # Row incompleto
-                    
-                    # COLUMNA 0: Precio
-                    precio_text = celdas[0].get_text(strip=True)
-                    # Limpiar: "$900.00" → 900.00
-                    precio_match = re.search(r'[\$]?([\d,]+\.?\d*)', precio_text)
-                    if not precio_match:
-                        continue
-                    
-                    precio = float(precio_match.group(1).replace(',', ''))
-                    
-                    # COLUMNA 3: Vendedor (usualmente en <a> tag)
-                    vendedor_cell = celdas[3]
-                    vendedor_link = vendedor_cell.find('a')
-                    
-                    if vendedor_link:
-                        vendedor_nombre = vendedor_link.get_text(strip=True)
-                        vendedor_id = vendedor_link.get('href', '')
-                    else:
-                        vendedor_nombre = vendedor_cell.get_text(strip=True)
-                        vendedor_id = ''
-                    
-                    # Guardar información
-                    rival_info = {
-                        'precio': precio,
-                        'vendedor': vendedor_nombre,
-                        'vendedor_id': vendedor_id
-                    }
-                    
-                    rivales_brutos.append(rival_info)
-                    logger.debug(f"✅ Rival encontrado: ${precio} - {vendedor_nombre}")
-                    
-                except Exception as e:
-                    logger.debug(f"⚠️ Error parseando row: {e}")
-                    continue
+                    for row in tabla.find_all('tr')[1:]:  # Skip header
+                        try:
+                            celdas = row.find_all('td')
+                            
+                            if len(celdas) <= max(idx_precio, idx_vendedor):
+                                continue
+                            
+                            # Extraer PRECIO
+                            precio_text = celdas[idx_precio].get_text(strip=True)
+                            precio_match = re.search(r'[\$]?([\d,]+\.?\d*)', precio_text)
+                            if not precio_match:
+                                continue
+                            
+                            precio = float(precio_match.group(1).replace(',', ''))
+                            
+                            # Extraer VENDEDOR
+                            vendedor_cell = celdas[idx_vendedor]
+                            vendedor_link = vendedor_cell.find('a')
+                            
+                            if vendedor_link:
+                                # Obtener texto limpio, sin el sub-texto de entrega
+                                vendedor_nombre = vendedor_link.get_text(strip=True)
+                            else:
+                                # Si no hay link, obtener todo el texto pero limpiarlo
+                                vendedor_text = vendedor_cell.get_text(strip=True)
+                                # Limpiar: quitar "Entrega estimada:..."
+                                vendedor_nombre = vendedor_text.split('Entrega')[0].strip()
+                                if not vendedor_nombre:
+                                    continue
+                            
+                            rival_info = {
+                                'precio': precio,
+                                'vendedor': vendedor_nombre,
+                                'vendedor_id': ''
+                            }
+                            
+                            rivales_brutos.append(rival_info)
+                            logger.debug(f"✅ Rival: ${precio:.2f} - {vendedor_nombre[:50]}")
+                            
+                        except Exception as e:
+                            logger.debug(f"⚠️ Error en row: {e}")
+                            continue
+                
+                # Si no encontramos índices por header, usar posiciones por defecto
+                else:
+                    logger.warning(f"⚠️ Headers no encontrados, usando índices por defecto")
+                    for row in tabla.find_all('tr')[1:]:
+                        try:
+                            celdas = row.find_all('td')
+                            if len(celdas) < 4:
+                                continue
+                            
+                            precio_text = celdas[0].get_text(strip=True)
+                            precio_match = re.search(r'[\$]?([\d,]+\.?\d*)', precio_text)
+                            if not precio_match:
+                                continue
+                            
+                            precio = float(precio_match.group(1).replace(',', ''))
+                            
+                            vendedor_cell = celdas[3]
+                            vendedor_link = vendedor_cell.find('a')
+                            
+                            if vendedor_link:
+                                vendedor_nombre = vendedor_link.get_text(strip=True)
+                            else:
+                                vendedor_text = vendedor_cell.get_text(strip=True)
+                                vendedor_nombre = vendedor_text.split('Entrega')[0].strip()
+                                if not vendedor_nombre:
+                                    continue
+                            
+                            rival_info = {
+                                'precio': precio,
+                                'vendedor': vendedor_nombre,
+                                'vendedor_id': ''
+                            }
+                            
+                            rivales_brutos.append(rival_info)
+                            logger.debug(f"✅ Rival (default): ${precio:.2f} - {vendedor_nombre[:50]}")
+                            
+                        except Exception as e:
+                            logger.debug(f"⚠️ Error default: {e}")
+                            continue
+        
+        if not rivales_brutos:
+            logger.warning(f"⚠️ No se encontraron rivales")
+            return []
         
         # ============================================================
         # FILTRAR: EXCLUIR NUESTRO PROPIO PRECIO
@@ -1302,7 +1338,7 @@ def obtener_info_rivales(token, liverpool_sku):
         for rival in rivales_brutos:
             # CHECK 1: ¿Es nuestro ID?
             if rival['vendedor_id'] == SHOP_ID_PUBLICO:
-                logger.info(f"🛡️ EXCLUIDO (ID): ${rival['precio']:.2f} - {rival['vendedor']} (ID: {rival['vendedor_id']})")
+                logger.info(f"🛡️ EXCLUIDO (ID): ${rival['precio']:.2f} - {rival['vendedor']}")
                 continue
             
             # CHECK 2: ¿Es nuestro nombre?
@@ -1316,33 +1352,25 @@ def obtener_info_rivales(token, liverpool_sku):
             if es_nuestro:
                 continue
             
-            # CHECK 3: ¿Es vacío/genérico?
-            if not rival['vendedor'] or rival['vendedor'].lower() in ['sin especificar', 'genérico', '']:
-                logger.info(f"🛡️ EXCLUIDO (VACÍO): ${rival['precio']:.2f}")
+            # CHECK 3: ¿Es texto corrupto?
+            if 'Entrega estimada' in rival['vendedor'] or 'Por el momento' in rival['vendedor']:
+                logger.info(f"🛡️ EXCLUIDO (CORRUPTO): ${rival['precio']:.2f} - {rival['vendedor'][:50]}")
                 continue
             
-            # ✅ SI LLEGÓ AQUÍ, ES UN RIVAL REAL
+            # CHECK 4: ¿Es vacío?
+            if not rival['vendedor'] or rival['vendedor'].lower() in ['sin especificar', 'genérico', '']:
+                continue
+            
             rivales_filtrados.append(rival)
         
-        # Ordenar por precio (más bajo primero)
         rivales_filtrados.sort(key=lambda x: x['precio'])
         
-        # ============================================================
-        # LOGUEAR RESULTADOS
-        # ============================================================
-        
-        logger.info(f"✅ RIVALES REALES: {len(rivales_filtrados)} (Total analizado: {len(rivales_brutos)})")
+        logger.info(f"✅ RIVALES REALES: {len(rivales_filtrados)} (Total: {len(rivales_brutos)})")
         
         if rivales_filtrados:
-            logger.info(f"📊 TOP 5 RIVALES:")
+            logger.info(f"📊 TOP 5:")
             for idx, rival in enumerate(rivales_filtrados[:5]):
-                logger.info(f"  #{idx+1}: ${rival['precio']:.2f} - {rival['vendedor']}")
-        else:
-            logger.warning(f"⚠️ No hay rivales reales después de filtro")
-        
-        # ============================================================
-        # RETORNAR EN FORMATO COMPATIBLE
-        # ============================================================
+                logger.info(f"  #{idx+1}: ${rival['precio']:.2f} - {rival['vendedor'][:40]}")
         
         precios_rivales = [
             {
@@ -1357,23 +1385,17 @@ def obtener_info_rivales(token, liverpool_sku):
         return precios_rivales
     
     except requests.exceptions.Timeout:
-        logger.error(f"❌ TIMEOUT en requests (15 segundos)")
+        logger.error(f"❌ TIMEOUT")
         with CIRCUIT_LOCK:
             STATS_PW["timeouts"] += 1
-            if STATS_PW["intentos"] > 10 and (STATS_PW["timeouts"] / STATS_PW["intentos"]) > 0.3:
-                STATS_PW["abortar"] = True
-                logger.error(f"🛑 CIRCUIT BREAKER ACTIVADO (>30% timeouts)")
-        return []
-    
-    except requests.exceptions.RequestException as e:
-        logger.error(f"❌ Error en petición HTTP: {e}")
         return []
     
     except Exception as e:
-        logger.error(f"❌ Error general en obtener_info_rivales: {e}")
+        logger.error(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
         return []
+
 
 def calcular_posicion_buybox(precios_rivales, nuestro_precio):
     if not precios_rivales:
