@@ -1165,10 +1165,59 @@ HEADERS_STEALTH = {
     "Connection": "keep-alive",
 }
 
+def extraer_precio_actual(precio_cell):
+    """
+    Extrae el PRECIO ACTUAL (en rojo) de una celda que contiene:
+    - Precio tachado (original)
+    - Precio actual (en rojo) ← ESTE
+    
+    Retorna el precio actual (más bajo)
+    """
+    
+    # ESTRATEGIA 1: Buscar span con precio específico (rojo)
+    # El precio actual generalmente está en una clase específica
+    precio_spans = precio_cell.find_all('span')
+    
+    if len(precio_spans) >= 2:
+        # Si hay 2+ spans, el segundo es normalmente el precio actual
+        for span in precio_spans:
+            texto = span.get_text(strip=True)
+            match = re.search(r'[\$]?([\d,]+\.?\d*)', texto)
+            if match:
+                precio = float(match.group(1).replace(',', ''))
+                # Si es el segundo span, es probablemente el actual
+                if span == precio_spans[-1]:  # ← Último span = precio actual
+                    return precio
+    
+    # ESTRATEGIA 2: Si solo hay 1 span, devuelve ese
+    if len(precio_spans) == 1:
+        texto = precio_spans[0].get_text(strip=True)
+        match = re.search(r'[\$]?([\d,]+\.?\d*)', texto)
+        if match:
+            return float(match.group(1).replace(',', ''))
+    
+    # ESTRATEGIA 3: Si no hay spans, extrae todos los números y toma el MENOR
+    # (precio actual es siempre menor que el tachado)
+    texto_completo = precio_cell.get_text(strip=True)
+    precios_encontrados = re.findall(r'[\$]?([\d,]+\.?\d*)', texto_completo)
+    
+    if precios_encontrados:
+        precios_numeros = [float(p.replace(',', '')) for p in precios_encontrados]
+        # El precio actual es el MÁS BAJO
+        return min(precios_numeros)  # ← PRECIO ACTUAL
+    
+    return None
+
+
+# ============================================================
+# INTEGRAR EN obtener_info_rivales()
+# ============================================================
+
 def obtener_info_rivales(token, liverpool_sku):
     """
     Scraping de offerListing con PARSING ROBUSTO.
     Filtra "PRECIO GENIAL" automáticamente.
+    Extrae PRECIO ACTUAL (no el tachado).
     """
     global STATS_PW
     
@@ -1212,22 +1261,14 @@ def obtener_info_rivales(token, liverpool_sku):
         logger.info(f"🔨 Parseando HTML...")
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # ============================================================
-        # ESTRATEGIA: BUSCAR POR ESTRUCTURA MÁS ROBUSTA
-        # ============================================================
-        
         rivales_brutos = []
-        
-        # ESTRATEGIA 1: Buscar tabla y extraer por encabezados
         tabla = soup.find('table')
         
         if tabla:
-            headers = tabla.find('tr')  # Primera fila es header
+            headers = tabla.find('tr')
             
             if headers:
                 header_cells = headers.find_all('th')
-                
-                # Encontrar índices de columnas
                 idx_precio = None
                 idx_vendedor = None
                 
@@ -1238,36 +1279,36 @@ def obtener_info_rivales(token, liverpool_sku):
                     elif 'vendido' in text or 'vendedor' in text or 'seller' in text:
                         idx_vendedor = i
                 
-                # Si encontramos los índices, usar esos
                 if idx_precio is not None and idx_vendedor is not None:
                     logger.info(f"✅ Índices encontrados: Precio={idx_precio}, Vendedor={idx_vendedor}")
                     
-                    for row in tabla.find_all('tr')[1:]:  # Skip header
+                    for row in tabla.find_all('tr')[1:]:
                         try:
                             celdas = row.find_all('td')
                             
                             if len(celdas) <= max(idx_precio, idx_vendedor):
                                 continue
                             
-                            # Extraer PRECIO
-                            precio_text = celdas[idx_precio].get_text(strip=True)
-                            precio_match = re.search(r'[\$]?([\d,]+\.?\d*)', precio_text)
-                            if not precio_match:
+                            # ============================================================
+                            # EXTRAER PRECIO CORRECTO (actual, no tachado)
+                            # ============================================================
+                            precio_cell = celdas[idx_precio]
+                            precio = extraer_precio_actual(precio_cell)
+                            
+                            if precio is None:
+                                logger.debug(f"⚠️ No se pudo extraer precio")
                                 continue
                             
-                            precio = float(precio_match.group(1).replace(',', ''))
-                            
-                            # Extraer VENDEDOR
+                            # ============================================================
+                            # EXTRAER VENDEDOR
+                            # ============================================================
                             vendedor_cell = celdas[idx_vendedor]
                             vendedor_link = vendedor_cell.find('a')
                             
                             if vendedor_link:
-                                # Obtener texto limpio, sin el sub-texto de entrega
                                 vendedor_nombre = vendedor_link.get_text(strip=True)
                             else:
-                                # Si no hay link, obtener todo el texto pero limpiarlo
                                 vendedor_text = vendedor_cell.get_text(strip=True)
-                                # Limpiar: quitar "Entrega estimada:..."
                                 vendedor_nombre = vendedor_text.split('Entrega')[0].strip()
                                 if not vendedor_nombre:
                                     continue
@@ -1285,7 +1326,6 @@ def obtener_info_rivales(token, liverpool_sku):
                             logger.debug(f"⚠️ Error en row: {e}")
                             continue
                 
-                # Si no encontramos índices por header, usar posiciones por defecto
                 else:
                     logger.warning(f"⚠️ Headers no encontrados, usando índices por defecto")
                     for row in tabla.find_all('tr')[1:]:
@@ -1294,13 +1334,18 @@ def obtener_info_rivales(token, liverpool_sku):
                             if len(celdas) < 4:
                                 continue
                             
-                            precio_text = celdas[0].get_text(strip=True)
-                            precio_match = re.search(r'[\$]?([\d,]+\.?\d*)', precio_text)
-                            if not precio_match:
+                            # ============================================================
+                            # EXTRAER PRECIO CORRECTO
+                            # ============================================================
+                            precio_cell = celdas[0]
+                            precio = extraer_precio_actual(precio_cell)
+                            
+                            if precio is None:
                                 continue
                             
-                            precio = float(precio_match.group(1).replace(',', ''))
-                            
+                            # ============================================================
+                            # EXTRAER VENDEDOR
+                            # ============================================================
                             vendedor_cell = celdas[3]
                             vendedor_link = vendedor_cell.find('a')
                             
@@ -1336,12 +1381,10 @@ def obtener_info_rivales(token, liverpool_sku):
         rivales_filtrados = []
         
         for rival in rivales_brutos:
-            # CHECK 1: ¿Es nuestro ID?
             if rival['vendedor_id'] == SHOP_ID_PUBLICO:
                 logger.info(f"🛡️ EXCLUIDO (ID): ${rival['precio']:.2f} - {rival['vendedor']}")
                 continue
             
-            # CHECK 2: ¿Es nuestro nombre?
             es_nuestro = False
             for nombre_nuestro in TIENDA_NOMBRES:
                 if nombre_nuestro.upper() in rival['vendedor'].upper():
@@ -1352,12 +1395,10 @@ def obtener_info_rivales(token, liverpool_sku):
             if es_nuestro:
                 continue
             
-            # CHECK 3: ¿Es texto corrupto?
             if 'Entrega estimada' in rival['vendedor'] or 'Por el momento' in rival['vendedor']:
                 logger.info(f"🛡️ EXCLUIDO (CORRUPTO): ${rival['precio']:.2f} - {rival['vendedor'][:50]}")
                 continue
             
-            # CHECK 4: ¿Es vacío?
             if not rival['vendedor'] or rival['vendedor'].lower() in ['sin especificar', 'genérico', '']:
                 continue
             
@@ -1395,7 +1436,6 @@ def obtener_info_rivales(token, liverpool_sku):
         import traceback
         traceback.print_exc()
         return []
-
 
 def calcular_posicion_buybox(precios_rivales, nuestro_precio):
     if not precios_rivales:
