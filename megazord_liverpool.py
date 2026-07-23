@@ -1166,7 +1166,11 @@ HEADERS_STEALTH = {
 }
 
 def obtener_info_rivales(token, liverpool_sku):
-    """Scraping sin Playwright usando requests + BeautifulSoup."""
+    """
+    Scraping de offerListing y FILTRO de nuestro propio precio.
+    EXCLUYE: "PRECIO GENIAL", "WABU", "8579"
+    Retorna SOLO rivales reales.
+    """
     global STATS_PW
     
     # ============================================================
@@ -1177,6 +1181,12 @@ def obtener_info_rivales(token, liverpool_sku):
             logger.warning(f"🛑 Circuit Breaker ACTIVO - devolviendo vacío para SKU {liverpool_sku}")
             return []
         STATS_PW["intentos"] += 1
+    
+    # ============================================================
+    # CONFIGURACIÓN: NUESTROS NOMBRES EN LIVERPOOL
+    # ============================================================
+    TIENDA_NOMBRES = ["PRECIO GENIAL", "PRECIOS UNICOS", "WABU", "WABU SHOP", "8579"]
+    SHOP_ID_PUBLICO = "8579"
     
     # ============================================================
     # CONSTRUIR URL Y HEADERS
@@ -1225,60 +1235,126 @@ def obtener_info_rivales(token, liverpool_sku):
         soup = BeautifulSoup(response.text, 'html.parser')
         
         # ============================================================
-        # BUSCAR ELEMENTO DE PRECIO
+        # PARSEAR TABLA DE OFERTAS
         # ============================================================
         
-        # Estrategia 1: Buscar por data-testid="discounted" (lo que vimos en DevTools)
-        elemento_precio = soup.find('span', {'data-testid': 'discounted'})
+        rivales_brutos = []
         
-        if not elemento_precio:
-            logger.warning(f"⚠️ No encontrado [data-testid='discounted'], buscando alternativas...")
-            
-            # Estrategia 2: Buscar por clase de precio
-            elemento_precio = soup.find('span', class_=lambda x: x and 'text-price-primary' in x)
+        # Buscar la tabla principal de ofertas
+        tabla = soup.find('table')  # Buscar cualquier tabla
         
-        if not elemento_precio:
-            logger.warning(f"⚠️ No encontrado por clases, buscando con regex...")
-            
-            # Estrategia 3: Regex directo
-            match = re.search(r'\$[\s]*([\d,]+)', response.text)
-            if match:
-                precio_str = match.group(1)
-                precio = float(precio_str.replace(',', ''))
-                logger.info(f"✅ Precio encontrado por regex: ${precio}")
-                return [{"precio": precio, "nombre": "Liverpool"}]
-            else:
-                logger.error(f"❌ No se encontró precio con ningún método")
+        if not tabla:
+            logger.warning("⚠️ No se encontró tabla de ofertas, buscando alternativas...")
+            # Intenta otra estrategia: buscar divs con clase offer-item
+            offers = soup.find_all('div', class_='offer-item')
+            if not offers:
+                logger.warning("⚠️ No se encontraron divs de offertas tampoco")
                 return []
-        
-        # ============================================================
-        # EXTRAER PRECIO DEL ELEMENTO
-        # ============================================================
-        
-        texto_completo = elemento_precio.get_text(strip=True)
-        logger.info(f"📝 Texto extraído: {texto_completo}")
-        
-        # Limpiar: puede contener "$" y números
-        # Ejemplos: "$659", "$659.00", "$1,299"
-        precio_match = re.search(r'[\$]?[\s]*([\d,]+)', texto_completo)
-        
-        if precio_match:
-            precio_str = precio_match.group(1)
-            precio = float(precio_str.replace(',', '').replace('$', '').strip())
-            
-            logger.info(f"✅ PRECIO EXTRAÍDO: ${precio}")
-            
-            # Retornar en formato que espera Megazord
-            rivales = [{
-                "precio": precio,
-                "nombre": "Liverpool Oficial",
-                "url": url_liverpool
-            }]
-            
-            return rivales
         else:
-            logger.error(f"❌ No se pudo parsear el precio del texto: {texto_completo}")
-            return []
+            # Iterar sobre cada ROW de la tabla
+            for row in tabla.find_all('tr')[1:]:  # Skip header
+                try:
+                    celdas = row.find_all('td')
+                    
+                    if len(celdas) < 4:
+                        continue  # Row incompleto
+                    
+                    # COLUMNA 0: Precio
+                    precio_text = celdas[0].get_text(strip=True)
+                    # Limpiar: "$900.00" → 900.00
+                    precio_match = re.search(r'[\$]?([\d,]+\.?\d*)', precio_text)
+                    if not precio_match:
+                        continue
+                    
+                    precio = float(precio_match.group(1).replace(',', ''))
+                    
+                    # COLUMNA 3: Vendedor (usualmente en <a> tag)
+                    vendedor_cell = celdas[3]
+                    vendedor_link = vendedor_cell.find('a')
+                    
+                    if vendedor_link:
+                        vendedor_nombre = vendedor_link.get_text(strip=True)
+                        vendedor_id = vendedor_link.get('href', '')
+                    else:
+                        vendedor_nombre = vendedor_cell.get_text(strip=True)
+                        vendedor_id = ''
+                    
+                    # Guardar información
+                    rival_info = {
+                        'precio': precio,
+                        'vendedor': vendedor_nombre,
+                        'vendedor_id': vendedor_id
+                    }
+                    
+                    rivales_brutos.append(rival_info)
+                    logger.debug(f"✅ Rival encontrado: ${precio} - {vendedor_nombre}")
+                    
+                except Exception as e:
+                    logger.debug(f"⚠️ Error parseando row: {e}")
+                    continue
+        
+        # ============================================================
+        # FILTRAR: EXCLUIR NUESTRO PROPIO PRECIO
+        # ============================================================
+        
+        rivales_filtrados = []
+        
+        for rival in rivales_brutos:
+            # CHECK 1: ¿Es nuestro ID?
+            if rival['vendedor_id'] == SHOP_ID_PUBLICO:
+                logger.info(f"🛡️ EXCLUIDO (ID): ${rival['precio']:.2f} - {rival['vendedor']} (ID: {rival['vendedor_id']})")
+                continue
+            
+            # CHECK 2: ¿Es nuestro nombre?
+            es_nuestro = False
+            for nombre_nuestro in TIENDA_NOMBRES:
+                if nombre_nuestro.upper() in rival['vendedor'].upper():
+                    es_nuestro = True
+                    logger.info(f"🛡️ EXCLUIDO (NOMBRE): ${rival['precio']:.2f} - {rival['vendedor']}")
+                    break
+            
+            if es_nuestro:
+                continue
+            
+            # CHECK 3: ¿Es vacío/genérico?
+            if not rival['vendedor'] or rival['vendedor'].lower() in ['sin especificar', 'genérico', '']:
+                logger.info(f"🛡️ EXCLUIDO (VACÍO): ${rival['precio']:.2f}")
+                continue
+            
+            # ✅ SI LLEGÓ AQUÍ, ES UN RIVAL REAL
+            rivales_filtrados.append(rival)
+        
+        # Ordenar por precio (más bajo primero)
+        rivales_filtrados.sort(key=lambda x: x['precio'])
+        
+        # ============================================================
+        # LOGUEAR RESULTADOS
+        # ============================================================
+        
+        logger.info(f"✅ RIVALES REALES: {len(rivales_filtrados)} (Total analizado: {len(rivales_brutos)})")
+        
+        if rivales_filtrados:
+            logger.info(f"📊 TOP 5 RIVALES:")
+            for idx, rival in enumerate(rivales_filtrados[:5]):
+                logger.info(f"  #{idx+1}: ${rival['precio']:.2f} - {rival['vendedor']}")
+        else:
+            logger.warning(f"⚠️ No hay rivales reales después de filtro")
+        
+        # ============================================================
+        # RETORNAR EN FORMATO COMPATIBLE
+        # ============================================================
+        
+        precios_rivales = [
+            {
+                'precio': rival['precio'],
+                'nombre': rival['vendedor'],
+                'vendedor_id': rival['vendedor_id'],
+                'url': url_liverpool
+            }
+            for rival in rivales_filtrados
+        ]
+        
+        return precios_rivales
     
     except requests.exceptions.Timeout:
         logger.error(f"❌ TIMEOUT en requests (15 segundos)")
