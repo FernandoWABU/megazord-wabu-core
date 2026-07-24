@@ -570,28 +570,24 @@ def show_admin_dashboard():
         if st.button("▶️ Ejecutar Barrido Ahora", width="stretch", key="trigger_barrido"):
             st.session_state.barrido_ejecutado = True
             logger.info(f"🚀 Barrido iniciado para: {marketplace_ejecutar}")
-            st.rerun()
-        
-        if st.session_state.barrido_ejecutado:
-            st.success(f"""
-            ✅ BARRIDO INICIADO
             
-            Marketplace: {marketplace_ejecutar}
-            Estado: En progreso
+            # Mostrar mensaje temporal que desaparece después de 4 segundos
+            mensaje_placeholder = st.empty()
+            with mensaje_placeholder.container():
+                st.success(f"""
+                ✅ BARRIDO INICIADO
+                
+                Marketplace: {marketplace_ejecutar}
+                Estado: En progreso ⏳
+                """)
             
-            ⏳ Espera 2-3 minutos para que se complete
+            # Esperar 4 segundos y limpiar mensaje
+            time.sleep(4)
+            mensaje_placeholder.empty()
             
-            El bot está:
-            1. Obteniendo precios actuales
-            2. Consultando rivalidad
-            3. Aplicando estrategias de repricing
-            4. Actualizando Liverpool
-            """)
-            
-            # Botón para resetear estado
-            if st.button("🔄 Resetear estado", width="stretch", key="reset_barrido"):
-                st.session_state.barrido_ejecutado = False
-                st.rerun()
+            # Resetear estado automáticamente
+            st.session_state.barrido_ejecutado = False
+            logger.info("✅ Barrido completado (simulado)")
         
         # FUTURO: Botón para Coppel (deshabilitado por ahora)
         if st.button("🟪 Coppel (Próximamente)", width="stretch", disabled=True):
@@ -808,6 +804,15 @@ def show_admin_dashboard():
                         st.markdown(f"**SKU Interno:** {sku_data['sku_interno']}")
                         st.markdown(f"**Regla Actual:** {sku_data['regla']}")
                         st.markdown(f"**Estado:** {sku_data['estatus']}")
+                    
+                    # NUEVO: Mostrar tienda como recuadro informativo
+                    tienda_actual = sku_data.get('id_cuenta', 'LVP_01') or 'LVP_01'
+                    st.markdown(f"""
+                    <div style='background: #1a1f3a; border: 2px solid #00d9ff; border-radius: 8px; padding: 10px; text-align: center;'>
+                        <div style='color: #00d9ff; font-size: 0.9em;'>🏪 Tienda Liverpool</div>
+                        <div style='color: #1db954; font-size: 1.4em; font-weight: bold;'>{tienda_actual}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
                     
                     st.markdown("---")
                     
@@ -1216,7 +1221,7 @@ def show_admin_dashboard():
             with col2:
                 precio_minimo = st.number_input("Precio Mínimo ($):", min_value=0.0, step=0.01)
                 precio_maximo = st.number_input("Precio Máximo ($):", min_value=0.0, step=0.01)
-                costo_odoo = st.number_input("Costo Odoo ($):", min_value=0.0, step=0.01)
+                costo_odoo = st.number_input("Costo Odoo ($) - Opcional:", min_value=0.0, step=0.01, value=0.0, help="Se actualiza automáticamente 2x/día desde ODOO")
             
             col3, col4 = st.columns(2)
             
@@ -1226,7 +1231,25 @@ def show_admin_dashboard():
             with col4:
                 estatus = st.selectbox("Estado:", ["ACTIVO", "INACTIVO"])
             
+            # NUEVA COLUMNA: Selector de Tienda
+            col5, col6 = st.columns(2)
+            
+            with col5:
+                id_cuenta = st.selectbox(
+                    "Tienda Liverpool:",
+                    ["LVP_01", "LVP_02"],
+                    index=0,
+                    help="LVP_01 = Tienda Principal (Precio Genial)\nLVP_02 = Tienda Secundaria (futuro)"
+                )
+            
             # VALIDAR PRIMERO
+            # Costo Odoo NO es obligatorio - ODOO lo actualiza automáticamente
+            # Si está en 0, poner como None (NULL en BD)
+            if costo_odoo == 0.0:
+                costo_odoo_insert = None
+            else:
+                costo_odoo_insert = costo_odoo
+            
             validacion_ok = (sku_limpio and sku_interno and sku_liverpool) and (precio_minimo < precio_maximo)
             
             if not validacion_ok:
@@ -1271,12 +1294,16 @@ def show_admin_dashboard():
                             try:
                                 logger.info(f"📝 CREATE SKU: {sku_limpio}")
                                 logger.info(f"📝 SKU Interno: {sku_interno}, Liverpool: {sku_liverpool}")
+                                logger.info(f"📝 Tienda: {id_cuenta}")
                                 
                                 # INSERT SIN especificar ID - PostgreSQL lo genera automáticamente
+                                # Manejo de costo_odoo: si es 0 o None, insertar NULL (ODOO lo actualizará)
+                                costo_sql = f"{float(costo_odoo_insert)}" if costo_odoo_insert else "NULL"
+                                
                                 insert_query = f"""
                                 INSERT INTO catalogo_maestro_v3 
                                 (sku_limpio, sku_interno, sku_liverpool, precio_minimo, precio_maximo, costo_odoo, regla_estrategia, estatus, id_cuenta)
-                                VALUES ('{sku_limpio}', '{sku_interno}', '{sku_liverpool}', {float(precio_minimo)}, {float(precio_maximo)}, {float(costo_odoo)}, '{regla}', '{estatus}', 'LVP_01')
+                                VALUES ('{sku_limpio}', '{sku_interno}', '{sku_liverpool}', {float(precio_minimo)}, {float(precio_maximo)}, {costo_sql}, '{regla}', '{estatus}', '{id_cuenta}')
                                 RETURNING id
                                 """
                                 resultado = db.execute_update(insert_query)
