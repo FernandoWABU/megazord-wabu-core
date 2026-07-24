@@ -779,7 +779,12 @@ def show_admin_dashboard():
                     
                     # NUEVO: Obtener precio actual de Buybox
                     buybox_price = get_buybox_price_actual(sku_data['sku_interno'])
-                    costo_odoo = float(sku_data['costo_odoo']) if sku_data['costo_odoo'] else 0
+                    
+                    # Convertir costo_odoo a float puro (importante para st.number_input)
+                    try:
+                        costo_odoo = float(sku_data['costo_odoo']) if sku_data['costo_odoo'] else 0.0
+                    except (ValueError, TypeError):
+                        costo_odoo = 0.0
                     
                     # Mostrar información de Buybox y Costo
                     col_info1, col_info2, col_info3 = st.columns(3)
@@ -805,7 +810,7 @@ def show_admin_dashboard():
                         costo_simulado = st.number_input(
                             "Costo Simulado (solo visual):",
                             min_value=0.0,
-                            value=costo_odoo,
+                            value=float(costo_odoo),  # Convertir explícitamente a float
                             step=0.01,
                             help="Editable solo para simular ganancias. NO se guarda en BD."
                         )
@@ -814,8 +819,9 @@ def show_admin_dashboard():
                     
                     # ANÁLISIS DE MARGEN (si hay Buybox price)
                     if buybox_price:
-                        ganancia_monetaria = buybox_price - costo_simulado
-                        ganancia_porcentaje = (ganancia_monetaria / costo_simulado * 100) if costo_simulado > 0 else 0
+                        buybox_price = float(buybox_price)  # Asegurar que es float puro
+                        ganancia_monetaria = buybox_price - float(costo_simulado)
+                        ganancia_porcentaje = (ganancia_monetaria / float(costo_simulado) * 100) if float(costo_simulado) > 0 else 0
                         
                         col_margen1, col_margen2 = st.columns(2)
                         
@@ -843,7 +849,7 @@ def show_admin_dashboard():
                     
                     with col_edit1:
                         new_precio_min = st.number_input(
-                            f"Precio Mínimo (Actual: ${sku_data['precio_minimo']})",
+                            f"Precio Mínimo (Actual: ${float(sku_data['precio_minimo']):.2f})",
                             min_value=0.0,
                             value=float(sku_data['precio_minimo']),
                             step=0.01
@@ -851,7 +857,7 @@ def show_admin_dashboard():
                     
                     with col_edit2:
                         new_precio_max = st.number_input(
-                            f"Precio Máximo (Actual: ${sku_data['precio_maximo']})",
+                            f"Precio Máximo (Actual: ${float(sku_data['precio_maximo']):.2f})",
                             min_value=0.0,
                             value=float(sku_data['precio_maximo']),
                             step=0.01
