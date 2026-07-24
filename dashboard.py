@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ==========================================
-# MEGAZORD WAR ROOM - DASHBOARD V3.1 FASE 2
-# Optimizado + UI Corporativa + Reportes
+# MEGAZORD WAR ROOM - DASHBOARD V4.0
+# ADMIN COMPLETO + GESTIÓN DE CATÁLOGO
 # ==========================================
 
 import streamlit as st
@@ -39,7 +39,7 @@ st.set_page_config(
 )
 
 # ==========================================
-# 🎨 DARK MODE CSS + CORPORATIVO
+# 🎨 DARK MODE CSS
 # ==========================================
 
 DARK_MODE_CSS = """
@@ -94,6 +94,9 @@ DARK_MODE_CSS = """
     .metric-value { color: #00d9ff; font-size: 2.5em; font-weight: bold; }
     .metric-label { color: #ffffff; font-size: 0.9em; margin-top: 10px; }
     .metric-change { color: #1db954; font-size: 0.8em; margin-top: 5px; }
+    
+    .warning-box { background: #ff4757; padding: 15px; border-radius: 6px; color: white; font-weight: bold; }
+    .success-box { background: #1db954; padding: 15px; border-radius: 6px; color: white; font-weight: bold; }
 </style>
 """
 st.markdown(DARK_MODE_CSS, unsafe_allow_html=True)
@@ -182,10 +185,10 @@ db = PostgreSQLManager(DATABASE_URL)
 auth = AuthManager()
 
 # ==========================================
-# 📊 CACHED DATA FUNCTIONS (FASE 2: TTL AGRESIVO)
+# 📊 CACHED DATA FUNCTIONS
 # ==========================================
 
-@st.cache_data(ttl=600)  # 10 minutos - histórico se actualiza menos frecuente
+@st.cache_data(ttl=600)
 def get_historial_precios(days: int = 7) -> pd.DataFrame:
     query = """
     SELECT h.fecha_hora AS created_at, h.sku_interno, c.sku_limpio,
@@ -199,7 +202,7 @@ def get_historial_precios(days: int = 7) -> pd.DataFrame:
     """
     return db.execute_query(query, {"fecha_desde": datetime.now() - timedelta(days=days)})
 
-@st.cache_data(ttl=3600)  # 1 hora - catálogo cambio poco
+@st.cache_data(ttl=3600)
 def get_catalogo_maestro() -> pd.DataFrame:
     query = """
     SELECT id, sku_limpio, sku_interno, sku_liverpool, sku_walmart, sku_coppel,
@@ -210,7 +213,7 @@ def get_catalogo_maestro() -> pd.DataFrame:
     """
     return db.execute_query(query)
 
-@st.cache_data(ttl=120)  # 2 minutos - métricas en vivo
+@st.cache_data(ttl=120)
 def get_metricas_vivas() -> Dict:
     try:
         df_skus = db.execute_query("SELECT COUNT(*) as total FROM catalogo_maestro_v3 WHERE estatus = 'ACTIVO'")
@@ -234,6 +237,10 @@ def get_metricas_vivas() -> Dict:
 def get_cuentas_disponibles() -> list:
     df_ctas = db.execute_query("SELECT id_cuenta FROM cuentas_liverpool ORDER BY id_cuenta ASC")
     return df_ctas['id_cuenta'].tolist() if not df_ctas.empty else ['LVP_01']
+
+@st.cache_data(ttl=3600)
+def get_reglas_disponibles() -> list:
+    return ['1. Gladiador', '2. Sombra', '3. Invasor', '4. Mantener Margen']
 
 # ==========================================
 # 📱 LOGIN PAGE
@@ -276,7 +283,7 @@ def show_login_page():
                     st.error("❌ Contraseña incorrecta")
 
 # ==========================================
-# 🎯 EXECUTIVE VIEW (Optimizado + UI Corporativa)
+# 👁️ EXECUTIVE VIEW (v3.1 - Sin cambios)
 # ==========================================
 
 def show_executive_dashboard():
@@ -306,12 +313,8 @@ def show_executive_dashboard():
         with col2:
             st.metric("⚡ Updates/Hora", metricas['updates_hora'])
     
-    # FASE 2.2: TABS CON LAZY LOADING
     tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard Ejecutivo", "📈 Análisis Histórico", "📋 Catálogo", "📥 Reportes"])
     
-    # ==========================================
-    # TAB 1: DASHBOARD EJECUTIVO (UI CORPORATIVA)
-    # ==========================================
     with tab1:
         st.subheader("📊 Resumen Ejecutivo")
         
@@ -319,7 +322,6 @@ def show_executive_dashboard():
             df_hist = get_historial_precios(days=1)
         
         if not df_hist.empty:
-            # FASE 2.2: KPIs en tarjetas hermosas
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
@@ -367,7 +369,6 @@ def show_executive_dashboard():
             
             st.markdown("---")
             
-            # FASE 2.2: Gráficos ejecutivos mejorados
             col_graph1, col_graph2 = st.columns(2)
             
             with col_graph1:
@@ -398,9 +399,6 @@ def show_executive_dashboard():
         else:
             st.info("📭 No hay datos disponibles")
     
-    # ==========================================
-    # TAB 2: ANÁLISIS HISTÓRICO (LAZY LOADING)
-    # ==========================================
     with tab2:
         st.subheader("📈 Análisis Histórico")
         
@@ -442,9 +440,6 @@ def show_executive_dashboard():
         else:
             st.info("📭 No hay datos para descargar")
     
-    # ==========================================
-    # TAB 3: CATÁLOGO (LAZY LOADING)
-    # ==========================================
     with tab3:
         st.subheader("📋 Catálogo Maestro")
         
@@ -473,9 +468,6 @@ def show_executive_dashboard():
         else:
             st.info("📭 No hay catálogo disponible")
     
-    # ==========================================
-    # TAB 4: REPORTES DESCARGABLES
-    # ==========================================
     with tab4:
         st.subheader("📥 Reportes Ejecutivos")
         
@@ -514,17 +506,9 @@ def show_executive_dashboard():
                             file_name=f"reporte_semanal_{datetime.now().strftime('%Y%m%d')}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
-        
-        st.markdown("---")
-        st.info("""
-        ### 📋 Tipos de Reportes Disponibles:
-        - **Reporte Diario:** Última 24h de cambios de precios
-        - **Reporte Semanal:** Últimos 7 días de análisis
-        - **Formato Excel:** Para análisis en Excel con toda la información
-        """)
 
 # ==========================================
-# 🔐 ADMIN VIEW (Optimizado)
+# 🔐 ADMIN VIEW + GESTIÓN DE CATÁLOGO (v4.0)
 # ==========================================
 
 def show_admin_dashboard():
@@ -553,7 +537,15 @@ def show_admin_dashboard():
         with col2:
             st.metric("⚡ Updates/Hora", metricas['updates_hora'])
     
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Dashboard", "📈 Histórico", "📋 Catálogo", "📥 Reportes", "⚙️ Config"])
+    # TAB 6: NUEVO - GESTIÓN DE CATÁLOGO (ADMIN COMPLETO)
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "📊 Dashboard", 
+        "📈 Histórico", 
+        "📋 Catálogo", 
+        "📥 Reportes", 
+        "⚙️ Config",
+        "✏️ Gestión de Catálogo"  # ← NUEVA TAB
+    ])
     
     with tab1:
         st.subheader("📊 Resumen Ejecutivo (Admin View)")
@@ -683,13 +675,316 @@ def show_admin_dashboard():
         
         st.markdown("---")
         st.info("""
-        ### 📊 Dashboard v3.1 FASE 2
-        - **Status:** ✅ Optimizado
-        - **Caché:** Agresivo (TTL 600s histórico, 3600s catálogo)
-        - **Throttling:** Eliminado
-        - **UI:** Corporativa
-        - **Reportes:** Excel descargable
+        ### 📊 Dashboard v4.0 - Admin Completo
+        - **Status:** ✅ Operativo
+        - **Modo:** Administrador
+        - **Features:** Dashboard + Gestión Catálogo
+        - **Marketplace:** Liverpool
         """)
+    
+    # ==========================================
+    # TAB 6: GESTIÓN DE CATÁLOGO (NUEVO - v4.0)
+    # ==========================================
+    with tab6:
+        st.subheader("✏️ Gestión de Catálogo (ADMIN COMPLETO)")
+        st.markdown("---")
+        
+        # Opciones de gestión
+        gestion_option = st.radio(
+            "¿Qué deseas hacer?",
+            ["📝 Editar Precios", "🔄 Cambiar Regla", "✅ Activar/Desactivar SKU", "➕ Cargar Nuevo SKU"],
+            horizontal=True
+        )
+        
+        # ==========================================
+        # OPCIÓN 1: EDITAR PRECIOS
+        # ==========================================
+        if gestion_option == "📝 Editar Precios":
+            st.markdown("### 📝 Editar Precios Mín/Máx de SKU")
+            
+            with st.spinner("⏳ Cargando catálogo..."):
+                df_cat = get_catalogo_maestro()
+            
+            if not df_cat.empty:
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    sku_buscar = st.text_input("🔍 Buscar SKU:", placeholder="Ej: PERFUME-001")
+                    df_filtered = df_cat[df_cat['sku_limpio'].str.contains(sku_buscar, case=False, na=False)] if sku_buscar else df_cat
+                    
+                    if not df_filtered.empty:
+                        sku_selected = st.selectbox(
+                            "Selecciona SKU:",
+                            df_filtered['sku_limpio'].tolist(),
+                            key="sku_edit_select"
+                        )
+                    else:
+                        st.warning("❌ SKU no encontrado")
+                        sku_selected = None
+                
+                if sku_selected:
+                    sku_data = df_filtered[df_filtered['sku_limpio'] == sku_selected].iloc[0]
+                    
+                    with col2:
+                        st.markdown(f"**SKU Interno:** {sku_data['sku_interno']}")
+                        st.markdown(f"**Regla Actual:** {sku_data['regla']}")
+                        st.markdown(f"**Estado:** {sku_data['estatus']}")
+                    
+                    st.markdown("---")
+                    
+                    col_edit1, col_edit2 = st.columns(2)
+                    
+                    with col_edit1:
+                        new_precio_min = st.number_input(
+                            f"Precio Mínimo (Actual: ${sku_data['precio_minimo']})",
+                            min_value=0.0,
+                            value=float(sku_data['precio_minimo']),
+                            step=0.01
+                        )
+                    
+                    with col_edit2:
+                        new_precio_max = st.number_input(
+                            f"Precio Máximo (Actual: ${sku_data['precio_maximo']})",
+                            min_value=0.0,
+                            value=float(sku_data['precio_maximo']),
+                            step=0.01
+                        )
+                    
+                    if new_precio_min >= new_precio_max:
+                        st.error("❌ El precio mínimo no puede ser mayor o igual al máximo")
+                    else:
+                        if st.button("💾 Guardar Cambios de Precios", use_container_width=True):
+                            st.markdown("""
+                            <div class='warning-box'>
+                            ⚠️ CONFIRMAR CAMBIOS:
+                            Precio Mín: ${:.2f} → ${:.2f}
+                            Precio Máx: ${:.2f} → ${:.2f}
+                            </div>
+                            """.format(sku_data['precio_minimo'], new_precio_min, sku_data['precio_maximo'], new_precio_max), unsafe_allow_html=True)
+                            
+                            col_confirm1, col_confirm2 = st.columns(2)
+                            with col_confirm1:
+                                if st.button("✅ Confirmar Cambios", use_container_width=True, key="confirm_precio"):
+                                    update_query = """
+                                    UPDATE catalogo_maestro_v3 
+                                    SET precio_minimo = :precio_min, precio_maximo = :precio_max
+                                    WHERE sku_interno = :sku_interno
+                                    """
+                                    if db.execute_update(update_query, {
+                                        "precio_min": new_precio_min,
+                                        "precio_max": new_precio_max,
+                                        "sku_interno": sku_data['sku_interno']
+                                    }):
+                                        st.success("✅ Precios actualizados correctamente")
+                                        st.cache_data.clear()
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ Error al actualizar precios")
+                            
+                            with col_confirm2:
+                                if st.button("❌ Cancelar", use_container_width=True, key="cancel_precio"):
+                                    st.info("Cambios cancelados")
+            else:
+                st.error("❌ No hay catálogo disponible")
+        
+        # ==========================================
+        # OPCIÓN 2: CAMBIAR REGLA
+        # ==========================================
+        elif gestion_option == "🔄 Cambiar Regla":
+            st.markdown("### 🔄 Cambiar Regla de Estrategia")
+            
+            with st.spinner("⏳ Cargando catálogo..."):
+                df_cat = get_catalogo_maestro()
+            
+            if not df_cat.empty:
+                sku_buscar = st.text_input("🔍 Buscar SKU:", placeholder="Ej: PERFUME-001", key="sku_rule_search")
+                df_filtered = df_cat[df_cat['sku_limpio'].str.contains(sku_buscar, case=False, na=False)] if sku_buscar else df_cat
+                
+                if not df_filtered.empty:
+                    sku_selected = st.selectbox(
+                        "Selecciona SKU:",
+                        df_filtered['sku_limpio'].tolist(),
+                        key="sku_rule_select"
+                    )
+                    
+                    sku_data = df_filtered[df_filtered['sku_limpio'] == sku_selected].iloc[0]
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown(f"**Regla Actual:** {sku_data['regla']}")
+                    with col2:
+                        new_regla = st.selectbox(
+                            "Nueva Regla:",
+                            get_reglas_disponibles(),
+                            key="new_rule_select"
+                        )
+                    
+                    if st.button("💾 Cambiar Regla", use_container_width=True):
+                        st.markdown(f"""
+                        <div class='warning-box'>
+                        ⚠️ CONFIRMAR CAMBIO:
+                        {sku_data['regla']} → {new_regla}
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        col_confirm1, col_confirm2 = st.columns(2)
+                        with col_confirm1:
+                            if st.button("✅ Confirmar Cambio Regla", use_container_width=True, key="confirm_rule"):
+                                update_query = """
+                                UPDATE catalogo_maestro_v3 
+                                SET regla_estrategia = :regla
+                                WHERE sku_interno = :sku_interno
+                                """
+                                if db.execute_update(update_query, {
+                                    "regla": new_regla,
+                                    "sku_interno": sku_data['sku_interno']
+                                }):
+                                    st.success("✅ Regla actualizada correctamente")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Error al actualizar regla")
+                        
+                        with col_confirm2:
+                            if st.button("❌ Cancelar", use_container_width=True, key="cancel_rule"):
+                                st.info("Cambios cancelados")
+                else:
+                    st.warning("❌ SKU no encontrado")
+            else:
+                st.error("❌ No hay catálogo disponible")
+        
+        # ==========================================
+        # OPCIÓN 3: ACTIVAR/DESACTIVAR
+        # ==========================================
+        elif gestion_option == "✅ Activar/Desactivar SKU":
+            st.markdown("### ✅ Activar o Desactivar SKU")
+            
+            with st.spinner("⏳ Cargando catálogo..."):
+                df_cat = get_catalogo_maestro()
+            
+            if not df_cat.empty:
+                sku_buscar = st.text_input("🔍 Buscar SKU:", placeholder="Ej: PERFUME-001", key="sku_status_search")
+                df_filtered = df_cat[df_cat['sku_limpio'].str.contains(sku_buscar, case=False, na=False)] if sku_buscar else df_cat
+                
+                if not df_filtered.empty:
+                    sku_selected = st.selectbox(
+                        "Selecciona SKU:",
+                        df_filtered['sku_limpio'].tolist(),
+                        key="sku_status_select"
+                    )
+                    
+                    sku_data = df_filtered[df_filtered['sku_limpio'] == sku_selected].iloc[0]
+                    estatus_actual = sku_data['estatus']
+                    nuevo_estatus = "INACTIVO" if estatus_actual == "ACTIVO" else "ACTIVO"
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown(f"**Estado Actual:** {estatus_actual}")
+                    with col2:
+                        st.markdown(f"**Nuevo Estado:** {nuevo_estatus}")
+                    
+                    if st.button("💾 Cambiar Estado", use_container_width=True):
+                        st.markdown(f"""
+                        <div class='warning-box'>
+                        ⚠️ CONFIRMAR CAMBIO:
+                        {estatus_actual} → {nuevo_estatus}
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        col_confirm1, col_confirm2 = st.columns(2)
+                        with col_confirm1:
+                            if st.button("✅ Confirmar Cambio Estado", use_container_width=True, key="confirm_status"):
+                                update_query = """
+                                UPDATE catalogo_maestro_v3 
+                                SET estatus = :estatus
+                                WHERE sku_interno = :sku_interno
+                                """
+                                if db.execute_update(update_query, {
+                                    "estatus": nuevo_estatus,
+                                    "sku_interno": sku_data['sku_interno']
+                                }):
+                                    st.success("✅ Estado actualizado correctamente")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Error al actualizar estado")
+                        
+                        with col_confirm2:
+                            if st.button("❌ Cancelar", use_container_width=True, key="cancel_status"):
+                                st.info("Cambios cancelados")
+                else:
+                    st.warning("❌ SKU no encontrado")
+            else:
+                st.error("❌ No hay catálogo disponible")
+        
+        # ==========================================
+        # OPCIÓN 4: CARGAR NUEVO SKU
+        # ==========================================
+        elif gestion_option == "➕ Cargar Nuevo SKU":
+            st.markdown("### ➕ Cargar Nuevo SKU")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                sku_limpio = st.text_input("SKU Limpio:", placeholder="PERFUME-001")
+                sku_interno = st.text_input("SKU Interno:", placeholder="123456")
+                sku_liverpool = st.text_input("SKU Liverpool:", placeholder="789012")
+            
+            with col2:
+                precio_minimo = st.number_input("Precio Mínimo ($):", min_value=0.0, step=0.01)
+                precio_maximo = st.number_input("Precio Máximo ($):", min_value=0.0, step=0.01)
+                costo_odoo = st.number_input("Costo Odoo ($):", min_value=0.0, step=0.01)
+            
+            col3, col4 = st.columns(2)
+            
+            with col3:
+                regla = st.selectbox("Regla de Estrategia:", get_reglas_disponibles())
+            
+            with col4:
+                estatus = st.selectbox("Estado:", ["ACTIVO", "INACTIVO"])
+            
+            if st.button("➕ Crear SKU", use_container_width=True):
+                if not (sku_limpio and sku_interno and sku_liverpool):
+                    st.error("❌ Completa todos los campos obligatorios")
+                elif precio_minimo >= precio_maximo:
+                    st.error("❌ Precio mínimo debe ser menor a máximo")
+                else:
+                    st.markdown(f"""
+                    <div class='success-box'>
+                    ✅ CONFIRMAR NUEVO SKU:
+                    SKU: {sku_limpio}
+                    Precio: ${precio_minimo:.2f} - ${precio_maximo:.2f}
+                    Regla: {regla}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    col_confirm1, col_confirm2 = st.columns(2)
+                    with col_confirm1:
+                        if st.button("✅ Crear SKU", use_container_width=True, key="confirm_create"):
+                            insert_query = """
+                            INSERT INTO catalogo_maestro_v3 
+                            (sku_limpio, sku_interno, sku_liverpool, precio_minimo, precio_maximo, costo_odoo, regla_estrategia, estatus, id_cuenta)
+                            VALUES (:sku_limpio, :sku_interno, :sku_liverpool, :precio_minimo, :precio_maximo, :costo_odoo, :regla, :estatus, 'LVP_01')
+                            """
+                            if db.execute_update(insert_query, {
+                                "sku_limpio": sku_limpio,
+                                "sku_interno": sku_interno,
+                                "sku_liverpool": sku_liverpool,
+                                "precio_minimo": precio_minimo,
+                                "precio_maximo": precio_maximo,
+                                "costo_odoo": costo_odoo,
+                                "regla": regla,
+                                "estatus": estatus
+                            }):
+                                st.success("✅ SKU creado correctamente")
+                                st.cache_data.clear()
+                                st.rerun()
+                            else:
+                                st.error("❌ Error al crear SKU")
+                    
+                    with col_confirm2:
+                        if st.button("❌ Cancelar", use_container_width=True, key="cancel_create"):
+                            st.info("Creación cancelada")
 
 # ==========================================
 # 🚀 MAIN LOGIC
