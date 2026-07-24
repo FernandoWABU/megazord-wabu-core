@@ -353,12 +353,13 @@ def show_executive_dashboard():
             
             with col4:
                 try:
-                    stock_promedio = pd.to_numeric(df_hist['stock'], errors='coerce').mean() if 'stock' in df_hist.columns else 0
+                    stock_temp = pd.to_numeric(df_hist['stock'], errors='coerce').mean() if 'stock' in df_hist.columns else 0
+                    stock_promedio = 0 if (pd.isna(stock_temp) or np.isnan(stock_temp)) else int(stock_temp)
                 except:
                     stock_promedio = 0
                 st.markdown(f"""
                 <div class='metric-card'>
-                    <div class='metric-value'>{stock_promedio:.0f if not np.isnan(stock_promedio) else 0}</div>
+                    <div class='metric-value'>{stock_promedio}</div>
                     <div class='metric-label'>Stock Promedio</div>
                     <div class='metric-change'>Unidades disponibles</div>
                 </div>
@@ -591,12 +592,13 @@ def show_admin_dashboard():
             
             with col4:
                 try:
-                    stock_promedio = pd.to_numeric(df_hist['stock'], errors='coerce').mean() if 'stock' in df_hist.columns else 0
+                    stock_temp = pd.to_numeric(df_hist['stock'], errors='coerce').mean() if 'stock' in df_hist.columns else 0
+                    stock_promedio = 0 if (pd.isna(stock_temp) or np.isnan(stock_temp)) else int(stock_temp)
                 except:
                     stock_promedio = 0
                 st.markdown(f"""
                 <div class='metric-card'>
-                    <div class='metric-value'>{stock_promedio:.0f if not np.isnan(stock_promedio) else 0}</div>
+                    <div class='metric-value'>{stock_promedio}</div>
                     <div class='metric-label'>Stock Promedio</div>
                 </div>
                 """, unsafe_allow_html=True)
