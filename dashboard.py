@@ -251,6 +251,14 @@ def show_executive_dashboard():
         st.markdown("*No se puede editar. Solo visualización.*")
         st.markdown("---")
         
+        if st.button("🚪 Cerrar Sesión"):
+            st.session_state['authenticated'] = False
+            st.session_state['admin_mode'] = False
+            st.session_state['executive_mode'] = False
+            st.rerun()
+        
+        st.markdown("---")
+        
         cuentas = get_cuentas_disponibles()
         opciones = ["🌍 TODAS LAS CUENTAS"] + [f"✅ {cta}" for cta in cuentas]
         map_cuentas = {"🌍 TODAS LAS CUENTAS": "TODAS"}
