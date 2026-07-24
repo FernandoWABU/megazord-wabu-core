@@ -203,26 +203,36 @@ def get_cuentas_disponibles() -> list:
 def show_login_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.markdown("<br><br><br><div style='text-align: center;'><h1 style='color: #00d9ff;'>⚡ MEGAZORD WAR ROOM</h1></div><br><br>", unsafe_allow_html=True)
+        st.markdown("<br><br><div style='text-align: center;'><h1 style='color: #00d9ff;'>⚡ MEGAZORD WAR ROOM</h1></div><br>", unsafe_allow_html=True)
         
-        # Dos opciones: Admin o Executive
-        st.markdown("<div style='text-align: center;'><h3>Selecciona tu acceso</h3></div>", unsafe_allow_html=True)
+        st.markdown("<div style='text-align: center;'><h3>¿Quién eres?</h3></div>", unsafe_allow_html=True)
         
-        access_mode = st.radio("", ["👁️ Vista Ejecutiva (Sin contraseña)", "🔐 Acceso Admin (Con contraseña)"], horizontal=True)
+        col_exec, col_admin = st.columns(2, gap="large")
         
-        if access_mode == "👁️ Vista Ejecutiva (Sin contraseña)":
-            st.session_state['authenticated'] = False
-            st.session_state['admin_mode'] = False
-            st.session_state['executive_mode'] = True
-            st.success("✅ Acceso como Ejecutivo")
-            st.rerun()
-        else:
-            st.markdown("<br>", unsafe_allow_html=True)
-            password = st.text_input("🔐 Contraseña de Acceso", type="password", key="admin_password")
-            if st.button("🚀 ACCESO ADMIN", use_container_width=True):
-                if auth.login(password):
+        # OPCIÓN 1: EXECUTIVE (SIN CONTRASEÑA)
+        with col_exec:
+            st.markdown("### 👁️ Ejecutivo")
+            st.markdown("*Ver datos (solo lectura)*")
+            if st.button("📊 Acceder como Ejecutivo", use_container_width=True, key="btn_exec"):
+                st.session_state['authenticated'] = False
+                st.session_state['admin_mode'] = False
+                st.session_state['executive_mode'] = True
+                st.success("✅ Acceso como Ejecutivo")
+                st.rerun()
+        
+        # OPCIÓN 2: ADMIN (CON CONTRASEÑA)
+        with col_admin:
+            st.markdown("### 🔐 Administrador")
+            st.markdown("*Acceso completo (editar)*")
+            
+            password = st.text_input("🔐 Contraseña", type="password", key="admin_password")
+            if st.button("🚀 Acceder como Admin", use_container_width=True, key="btn_admin"):
+                if password == "":
+                    st.error("❌ Ingresa la contraseña")
+                elif auth.login(password):
                     st.session_state['admin_mode'] = True
                     st.session_state['executive_mode'] = False
+                    st.session_state['authenticated'] = True
                     st.success("✅ Admin mode activado")
                     st.rerun()
                 else:
