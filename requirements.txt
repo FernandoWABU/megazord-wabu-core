@@ -1,5 +1,6 @@
 streamlit
 sqlalchemy==2.0.51
+plotly==5.17.0
 python-dotenv==1.0.0
 cryptography==41.0.7
 requests==2.31.0
