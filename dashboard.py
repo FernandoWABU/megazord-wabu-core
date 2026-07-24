@@ -164,19 +164,47 @@ class PostgreSQLManager:
             return pd.DataFrame()
 
     def execute_update(self, query: str, params: dict = None) -> bool:
+        """Ejecuta UPDATE/INSERT/DELETE con mejor manejo de transacciones"""
         try:
             if self.engine is None:
+                logger.error("❌ Engine es None")
                 return False
             
-            # Usar conexión con timeout más corto para updates
-            with self.engine.begin() as conn:
-                result = conn.execute(text(query), params or {})
-                # Forzar commit inmediato
-                conn.commit()
-            logger.info(f"✅ Update ejecutado - Rows affected: {result.rowcount}")
-            return True
+            logger.info(f"📝 Ejecutando query: {query[:50]}...")
+            logger.info(f"📝 Parámetros: {params}")
+            
+            # Usar conexión dedicada para evitar problemas con pool
+            connection = self.engine.raw_connection()
+            try:
+                cursor = connection.cursor()
+                
+                # Preparar query con parámetros
+                if params:
+                    # Convertir parámetros para psycopg
+                    param_values = list(params.values())
+                    query_formatted = query
+                    for key in params.keys():
+                        query_formatted = query_formatted.replace(f":{key}", "%s")
+                    
+                    logger.info(f"🔧 Query formateada: {query_formatted}")
+                    cursor.execute(query_formatted, param_values)
+                else:
+                    cursor.execute(query)
+                
+                rows_affected = cursor.rowcount
+                connection.commit()
+                cursor.close()
+                
+                logger.info(f"✅ UPDATE exitoso - Filas afectadas: {rows_affected}")
+                return True
+            except Exception as e:
+                connection.rollback()
+                logger.error(f"❌ Error en execute_update: {e}")
+                return False
+            finally:
+                connection.close()
         except Exception as e:
-            logger.error(f"❌ Error en update: {e}")
+            logger.error(f"❌ Error crítico en execute_update: {e}")
             return False
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -914,31 +942,44 @@ def show_admin_dashboard():
                         st.markdown("---")
                         
                         if st.button("💾 Guardar Cambios de Precios", width="stretch"):
+                            st.info("⏳ Modo confirmación activado - Haz click en 'Confirmar' para guardar")
                             col_confirm1, col_confirm2 = st.columns(2)
                             
                             with col_confirm1:
-                                if st.button("✅ Confirmar Cambios", width="stretch", key="confirm_precio"):
-                                    with st.spinner("⏳ Guardando cambios..."):
-                                        update_query = """
-                                        UPDATE catalogo_maestro_v3 
-                                        SET precio_minimo = :precio_min, precio_maximo = :precio_max
-                                        WHERE sku_interno = :sku_interno
-                                        """
-                                        if db.execute_update(update_query, {
-                                            "precio_min": new_precio_min,
-                                            "precio_max": new_precio_max,
-                                            "sku_interno": sku_data['sku_interno']
-                                        }):
-                                            st.success("✅ Precios actualizados correctamente")
-                                            st.cache_data.clear()
-                                            time.sleep(1)
-                                            st.rerun()
-                                        else:
-                                            st.error("❌ Error al actualizar precios")
+                                if st.button("✅ CONFIRMAR - Guardar Cambios", width="stretch", key="confirm_precio"):
+                                    with st.spinner("⏳ Guardando en base de datos..."):
+                                        try:
+                                            logger.info(f"🔄 Iniciando update para SKU: {sku_data['sku_interno']}")
+                                            logger.info(f"🔄 Precio mín: {new_precio_min}, Precio máx: {new_precio_max}")
+                                            
+                                            update_query = """
+                                            UPDATE catalogo_maestro_v3 
+                                            SET precio_minimo = :precio_min, precio_maximo = :precio_max
+                                            WHERE sku_interno = :sku_interno
+                                            """
+                                            
+                                            resultado = db.execute_update(update_query, {
+                                                "precio_min": float(new_precio_min),
+                                                "precio_max": float(new_precio_max),
+                                                "sku_interno": str(sku_data['sku_interno'])
+                                            })
+                                            
+                                            if resultado:
+                                                st.success("✅ ¡ÉXITO! Precios actualizados en base de datos")
+                                                st.balloons()
+                                                st.cache_data.clear()
+                                                time.sleep(2)
+                                                st.rerun()
+                                            else:
+                                                st.error("❌ ERROR: No se pudieron guardar los cambios en BD")
+                                                st.error("Revisa los logs de Streamlit para más detalles")
+                                        except Exception as e:
+                                            st.error(f"❌ ERROR CRÍTICO: {str(e)}")
+                                            logger.error(f"❌ Excepción en confirm: {e}")
                             
                             with col_confirm2:
-                                if st.button("❌ Cancelar", width="stretch", key="cancel_precio"):
-                                    st.info("Cambios cancelados")
+                                if st.button("❌ CANCELAR", width="stretch", key="cancel_precio"):
+                                    st.warning("Cambios cancelados")
             else:
                 st.error("❌ No hay catálogo disponible")
         
@@ -975,29 +1016,40 @@ def show_admin_dashboard():
                         )
                     
                     if st.button("💾 Cambiar Regla", width="stretch"):
+                        st.info("⏳ Modo confirmación activado - Haz click en 'CONFIRMAR' para cambiar")
                         col_confirm1, col_confirm2 = st.columns(2)
                         with col_confirm1:
-                            if st.button("✅ Confirmar Cambio Regla", width="stretch", key="confirm_rule"):
+                            if st.button("✅ CONFIRMAR - Cambiar Regla", width="stretch", key="confirm_rule"):
                                 with st.spinner("⏳ Guardando cambios..."):
-                                    update_query = """
-                                    UPDATE catalogo_maestro_v3 
-                                    SET regla_estrategia = :regla
-                                    WHERE sku_interno = :sku_interno
-                                    """
-                                    if db.execute_update(update_query, {
-                                        "regla": new_regla,
-                                        "sku_interno": sku_data['sku_interno']
-                                    }):
-                                        st.success("✅ Regla actualizada correctamente")
-                                        st.cache_data.clear()
-                                        time.sleep(1)
-                                        st.rerun()
-                                    else:
-                                        st.error("❌ Error al actualizar regla")
+                                    try:
+                                        logger.info(f"🔄 Cambiando regla para SKU: {sku_data['sku_interno']}")
+                                        logger.info(f"🔄 Nueva regla: {new_regla}")
+                                        
+                                        update_query = """
+                                        UPDATE catalogo_maestro_v3 
+                                        SET regla_estrategia = :regla
+                                        WHERE sku_interno = :sku_interno
+                                        """
+                                        resultado = db.execute_update(update_query, {
+                                            "regla": str(new_regla),
+                                            "sku_interno": str(sku_data['sku_interno'])
+                                        })
+                                        
+                                        if resultado:
+                                            st.success("✅ ¡ÉXITO! Regla actualizada")
+                                            st.balloons()
+                                            st.cache_data.clear()
+                                            time.sleep(2)
+                                            st.rerun()
+                                        else:
+                                            st.error("❌ ERROR: No se pudo cambiar la regla")
+                                    except Exception as e:
+                                        st.error(f"❌ ERROR CRÍTICO: {str(e)}")
+                                        logger.error(f"❌ Excepción en confirm rule: {e}")
                         
                         with col_confirm2:
-                            if st.button("❌ Cancelar", width="stretch", key="cancel_rule"):
-                                st.info("Cambios cancelados")
+                            if st.button("❌ CANCELAR", width="stretch", key="cancel_rule"):
+                                st.warning("Cambios cancelados")
                 else:
                     st.warning("❌ SKU no encontrado")
             else:
@@ -1034,29 +1086,40 @@ def show_admin_dashboard():
                         st.markdown(f"**Nuevo Estado:** {nuevo_estatus}")
                     
                     if st.button("💾 Cambiar Estado", width="stretch"):
+                        st.info("⏳ Modo confirmación activado - Haz click en 'CONFIRMAR' para cambiar")
                         col_confirm1, col_confirm2 = st.columns(2)
                         with col_confirm1:
-                            if st.button("✅ Confirmar Cambio Estado", width="stretch", key="confirm_status"):
+                            if st.button("✅ CONFIRMAR - Cambiar Estado", width="stretch", key="confirm_status"):
                                 with st.spinner("⏳ Guardando cambios..."):
-                                    update_query = """
-                                    UPDATE catalogo_maestro_v3 
-                                    SET estatus = :estatus
-                                    WHERE sku_interno = :sku_interno
-                                    """
-                                    if db.execute_update(update_query, {
-                                        "estatus": nuevo_estatus,
-                                        "sku_interno": sku_data['sku_interno']
-                                    }):
-                                        st.success("✅ Estado actualizado correctamente")
-                                        st.cache_data.clear()
-                                        time.sleep(1)
-                                        st.rerun()
-                                    else:
-                                        st.error("❌ Error al actualizar estado")
+                                    try:
+                                        logger.info(f"🔄 Cambiando estado para SKU: {sku_data['sku_interno']}")
+                                        logger.info(f"🔄 Nuevo estado: {nuevo_estatus}")
+                                        
+                                        update_query = """
+                                        UPDATE catalogo_maestro_v3 
+                                        SET estatus = :estatus
+                                        WHERE sku_interno = :sku_interno
+                                        """
+                                        resultado = db.execute_update(update_query, {
+                                            "estatus": str(nuevo_estatus),
+                                            "sku_interno": str(sku_data['sku_interno'])
+                                        })
+                                        
+                                        if resultado:
+                                            st.success(f"✅ ¡ÉXITO! Estado cambiado a {nuevo_estatus}")
+                                            st.balloons()
+                                            st.cache_data.clear()
+                                            time.sleep(2)
+                                            st.rerun()
+                                        else:
+                                            st.error("❌ ERROR: No se pudo cambiar el estado")
+                                    except Exception as e:
+                                        st.error(f"❌ ERROR CRÍTICO: {str(e)}")
+                                        logger.error(f"❌ Excepción en confirm status: {e}")
                         
                         with col_confirm2:
-                            if st.button("❌ Cancelar", width="stretch", key="cancel_status"):
-                                st.info("Cambios cancelados")
+                            if st.button("❌ CANCELAR", width="stretch", key="cancel_status"):
+                                st.warning("Cambios cancelados")
                 else:
                     st.warning("❌ SKU no encontrado")
             else:
@@ -1094,35 +1157,46 @@ def show_admin_dashboard():
                 elif precio_minimo >= precio_maximo:
                     st.error("❌ Precio mínimo debe ser menor a máximo")
                 else:
+                    st.info("⏳ Modo confirmación activado - Haz click en 'CREAR SKU' para confirmar")
                     col_confirm1, col_confirm2 = st.columns(2)
                     with col_confirm1:
-                        if st.button("✅ Crear SKU", width="stretch", key="confirm_create"):
+                        if st.button("✅ CONFIRMAR - Crear SKU", width="stretch", key="confirm_create"):
                             with st.spinner("⏳ Creando SKU..."):
-                                insert_query = """
-                                INSERT INTO catalogo_maestro_v3 
-                                (sku_limpio, sku_interno, sku_liverpool, precio_minimo, precio_maximo, costo_odoo, regla_estrategia, estatus, id_cuenta)
-                                VALUES (:sku_limpio, :sku_interno, :sku_liverpool, :precio_minimo, :precio_maximo, :costo_odoo, :regla, :estatus, 'LVP_01')
-                                """
-                                if db.execute_update(insert_query, {
-                                    "sku_limpio": sku_limpio,
-                                    "sku_interno": sku_interno,
-                                    "sku_liverpool": sku_liverpool,
-                                    "precio_minimo": precio_minimo,
-                                    "precio_maximo": precio_maximo,
-                                    "costo_odoo": costo_odoo,
-                                    "regla": regla,
-                                    "estatus": estatus
-                                }):
-                                    st.success("✅ SKU creado correctamente")
-                                    st.cache_data.clear()
-                                    time.sleep(1)
-                                    st.rerun()
-                                else:
-                                    st.error("❌ Error al crear SKU")
+                                try:
+                                    logger.info(f"🔄 Creando nuevo SKU: {sku_limpio}")
+                                    logger.info(f"🔄 SKU Interno: {sku_interno}, Liverpool: {sku_liverpool}")
+                                    
+                                    insert_query = """
+                                    INSERT INTO catalogo_maestro_v3 
+                                    (sku_limpio, sku_interno, sku_liverpool, precio_minimo, precio_maximo, costo_odoo, regla_estrategia, estatus, id_cuenta)
+                                    VALUES (:sku_limpio, :sku_interno, :sku_liverpool, :precio_minimo, :precio_maximo, :costo_odoo, :regla, :estatus, 'LVP_01')
+                                    """
+                                    resultado = db.execute_update(insert_query, {
+                                        "sku_limpio": str(sku_limpio),
+                                        "sku_interno": str(sku_interno),
+                                        "sku_liverpool": str(sku_liverpool),
+                                        "precio_minimo": float(precio_minimo),
+                                        "precio_maximo": float(precio_maximo),
+                                        "costo_odoo": float(costo_odoo),
+                                        "regla": str(regla),
+                                        "estatus": str(estatus)
+                                    })
+                                    
+                                    if resultado:
+                                        st.success("✅ ¡ÉXITO! SKU creado correctamente")
+                                        st.balloons()
+                                        st.cache_data.clear()
+                                        time.sleep(2)
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ ERROR: No se pudo crear el SKU")
+                                except Exception as e:
+                                    st.error(f"❌ ERROR CRÍTICO: {str(e)}")
+                                    logger.error(f"❌ Excepción en create SKU: {e}")
                     
                     with col_confirm2:
-                        if st.button("❌ Cancelar", width="stretch", key="cancel_create"):
-                            st.info("Creación cancelada")
+                        if st.button("❌ CANCELAR", width="stretch", key="cancel_create"):
+                            st.warning("Creación cancelada")
 
 # ==========================================
 # 🚀 MAIN LOGIC
