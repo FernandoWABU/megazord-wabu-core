@@ -709,21 +709,21 @@ def show_admin_dashboard():
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    sku_buscar = st.text_input("🔍 Buscar SKU:", placeholder="Ej: PERFUME-001")
-                    df_filtered = df_cat[df_cat['sku_limpio'].str.contains(sku_buscar, case=False, na=False)] if sku_buscar else df_cat
+                    sku_buscar = st.text_input("🔍 Buscar SKU Liverpool:", placeholder="Ej: 789012")
+                    df_filtered = df_cat[df_cat['sku_liverpool'].astype(str).str.contains(sku_buscar, case=False, na=False)] if sku_buscar else df_cat
                     
                     if not df_filtered.empty:
                         sku_selected = st.selectbox(
-                            "Selecciona SKU:",
-                            df_filtered['sku_limpio'].tolist(),
+                            "Selecciona SKU Liverpool:",
+                            df_filtered['sku_liverpool'].tolist(),
                             key="sku_edit_select"
                         )
                     else:
-                        st.warning("❌ SKU no encontrado")
+                        st.warning("❌ SKU Liverpool no encontrado")
                         sku_selected = None
                 
                 if sku_selected:
-                    sku_data = df_filtered[df_filtered['sku_limpio'] == sku_selected].iloc[0]
+                    sku_data = df_filtered[df_filtered['sku_liverpool'] == sku_selected].iloc[0]
                     
                     with col2:
                         st.markdown(f"**SKU Interno:** {sku_data['sku_interno']}")
@@ -797,17 +797,17 @@ def show_admin_dashboard():
                 df_cat = get_catalogo_maestro()
             
             if not df_cat.empty:
-                sku_buscar = st.text_input("🔍 Buscar SKU:", placeholder="Ej: PERFUME-001", key="sku_rule_search")
-                df_filtered = df_cat[df_cat['sku_limpio'].str.contains(sku_buscar, case=False, na=False)] if sku_buscar else df_cat
+                sku_buscar = st.text_input("🔍 Buscar SKU Liverpool:", placeholder="Ej: 789012", key="sku_rule_search")
+                df_filtered = df_cat[df_cat['sku_liverpool'].astype(str).str.contains(sku_buscar, case=False, na=False)] if sku_buscar else df_cat
                 
                 if not df_filtered.empty:
                     sku_selected = st.selectbox(
-                        "Selecciona SKU:",
-                        df_filtered['sku_limpio'].tolist(),
+                        "Selecciona SKU Liverpool:",
+                        df_filtered['sku_liverpool'].tolist(),
                         key="sku_rule_select"
                     )
                     
-                    sku_data = df_filtered[df_filtered['sku_limpio'] == sku_selected].iloc[0]
+                    sku_data = df_filtered[df_filtered['sku_liverpool'] == sku_selected].iloc[0]
                     
                     col1, col2 = st.columns(2)
                     with col1:
@@ -863,17 +863,17 @@ def show_admin_dashboard():
                 df_cat = get_catalogo_maestro()
             
             if not df_cat.empty:
-                sku_buscar = st.text_input("🔍 Buscar SKU:", placeholder="Ej: PERFUME-001", key="sku_status_search")
-                df_filtered = df_cat[df_cat['sku_limpio'].str.contains(sku_buscar, case=False, na=False)] if sku_buscar else df_cat
+                sku_buscar = st.text_input("🔍 Buscar SKU Liverpool:", placeholder="Ej: 789012", key="sku_status_search")
+                df_filtered = df_cat[df_cat['sku_liverpool'].astype(str).str.contains(sku_buscar, case=False, na=False)] if sku_buscar else df_cat
                 
                 if not df_filtered.empty:
                     sku_selected = st.selectbox(
-                        "Selecciona SKU:",
-                        df_filtered['sku_limpio'].tolist(),
+                        "Selecciona SKU Liverpool:",
+                        df_filtered['sku_liverpool'].tolist(),
                         key="sku_status_select"
                     )
                     
-                    sku_data = df_filtered[df_filtered['sku_limpio'] == sku_selected].iloc[0]
+                    sku_data = df_filtered[df_filtered['sku_liverpool'] == sku_selected].iloc[0]
                     estatus_actual = sku_data['estatus']
                     nuevo_estatus = "INACTIVO" if estatus_actual == "ACTIVO" else "ACTIVO"
                     
