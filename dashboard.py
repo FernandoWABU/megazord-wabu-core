@@ -724,9 +724,492 @@ def show_admin_dashboard():
             st.info("📭 Sin catálogo")
     
     with tab4:
-        st.subheader("📥 Reportes")
-        if st.button("📊 Generar Reporte"):
-            st.success("✅ Reporte generado")
+        st.subheader("📊 Análisis Avanzado - Fase 3B")
+        st.markdown("Análisis interactivos y detallados de rendimiento, competencia y tendencias")
+        
+        st.markdown("---")
+        
+        # SELECTOR DE PERÍODO
+        col_period1, col_period2, col_period3 = st.columns(3)
+        
+        with col_period1:
+            periodo = st.radio(
+                "Período de análisis:",
+                ["📅 Últimos 7 días", "📅 Últimos 30 días", "📅 Últimos 90 días", "📅 Personalizado"],
+                index=0,
+                horizontal=False
+            )
+        
+        # Mapear período a número de días
+        periodo_map = {
+            "📅 Últimos 7 días": 7,
+            "📅 Últimos 30 días": 30,
+            "📅 Últimos 90 días": 90,
+        }
+        
+        if periodo == "📅 Personalizado":
+            with col_period2:
+                dias_custom = st.number_input("Días personalizados:", min_value=1, max_value=365, value=7)
+            dias_analisis = dias_custom
+        else:
+            dias_analisis = periodo_map.get(periodo, 7)
+        
+        st.markdown("---")
+        
+        # SUBTABS DE ANÁLISIS
+        subtab1, subtab2, subtab3, subtab4, subtab5, subtab6, subtab7 = st.tabs([
+            "📈 Tendencias",
+            "🥇 Top 10",
+            "💵 Margen",
+            "🏆 Competencia",
+            "🔥 Actividad",
+            "📊 Distribución",
+            "📉 Críticos"
+        ])
+        
+        # ==========================================
+        # SUBTAB 1: TENDENCIAS DE PRECIO
+        # ==========================================
+        with subtab1:
+            st.markdown("### 📈 Tendencias de Precio")
+            
+            with st.spinner("⏳ Cargando tendencias..."):
+                trend_result = get_analisis_tendencias(dias_analisis)
+            
+            if trend_result["success"] and trend_result["data"] is not None:
+                df_trend = trend_result["data"]
+                
+                # Gráfico de tendencia por SKU
+                if not df_trend.empty:
+                    # Pivot para gráfico
+                    df_pivot = df_trend.pivot_table(
+                        values='precio_promedio',
+                        index='fecha',
+                        columns='sku_interno',
+                        aggfunc='mean'
+                    )
+                    
+                    fig_trend = go.Figure()
+                    for col in df_pivot.columns[:10]:  # Top 10 SKUs
+                        fig_trend.add_trace(go.Scatter(
+                            x=df_pivot.index,
+                            y=df_pivot[col],
+                            mode='lines+markers',
+                            name=col,
+                            hovertemplate=f'{col}<br>Fecha: %{{x}}<br>Precio: $%{{y:.2f}}<extra></extra>'
+                        ))
+                    
+                    fig_trend.update_layout(
+                        title=f'Tendencia de Precios - Últimos {dias_analisis} días',
+                        xaxis_title='Fecha',
+                        yaxis_title='Precio Promedio ($)',
+                        template='plotly_dark',
+                        height=500,
+                        hovermode='x unified'
+                    )
+                    
+                    st.plotly_chart(fig_trend, use_container_width=True)
+                    
+                    # Tabla de tendencias
+                    st.markdown("#### Resumen de Tendencias")
+                    col_t1, col_t2, col_t3 = st.columns(3)
+                    
+                    with col_t1:
+                        st.metric("SKUs monitoreados", df_trend['sku_interno'].nunique())
+                    with col_t2:
+                        st.metric("Cambios totales", len(df_trend))
+                    with col_t3:
+                        st.metric("Precio promedio", f"${df_trend['precio_promedio'].mean():.2f}")
+                    
+                    # Mostrar datos
+                    st.markdown("#### Datos detallados")
+                    st.dataframe(
+                        df_trend.sort_values('fecha', ascending=False),
+                        use_container_width=True
+                    )
+            else:
+                st.warning("❌ No hay datos de tendencias disponibles")
+        
+        # ==========================================
+        # SUBTAB 2: TOP 10 SKUs POR PERFORMANCE
+        # ==========================================
+        with subtab2:
+            st.markdown("### 🥇 Top 10 SKUs - Mayor Ganancia")
+            
+            with st.spinner("⏳ Cargando top SKUs..."):
+                top_result = get_top_skus_performance(dias_analisis)
+            
+            if top_result["success"] and top_result["data"] is not None:
+                df_top = top_result["data"]
+                
+                # Gráfico de barras
+                if not df_top.empty:
+                    fig_top = go.Figure()
+                    
+                    fig_top.add_trace(go.Bar(
+                        y=df_top['sku_limpio'],
+                        x=df_top['ganancia_monetaria'],
+                        orientation='h',
+                        marker=dict(
+                            color=df_top['ganancia_monetaria'],
+                            colorscale='Greens',
+                            showscale=True
+                        ),
+                        text=[f"${v:.2f}" for v in df_top['ganancia_monetaria']],
+                        textposition='auto',
+                        hovertemplate='<b>%{y}</b><br>Ganancia: $%{x:.2f}<extra></extra>'
+                    ))
+                    
+                    fig_top.update_layout(
+                        title=f'Top 10 SKUs por Ganancia Monetaria - Últimos {dias_analisis} días',
+                        xaxis_title='Ganancia Monetaria ($)',
+                        yaxis_title='SKU',
+                        template='plotly_dark',
+                        height=500,
+                        showlegend=False
+                    )
+                    
+                    st.plotly_chart(fig_top, use_container_width=True)
+                    
+                    # Métricas
+                    col_top1, col_top2, col_top3, col_top4 = st.columns(4)
+                    
+                    with col_top1:
+                        st.metric("Ganancia Total", f"${df_top['ganancia_monetaria'].sum():.2f}")
+                    with col_top2:
+                        st.metric("Ganancia Promedio", f"${df_top['ganancia_monetaria'].mean():.2f}")
+                    with col_top3:
+                        st.metric("Cambios realizados", int(df_top['cambios_realizados'].sum()))
+                    with col_top4:
+                        st.metric("SKUs activos", len(df_top))
+                    
+                    # Tabla
+                    st.markdown("#### Detalle de SKUs")
+                    df_top_display = df_top[['sku_limpio', 'precio_promedio', 'costo', 'ganancia_monetaria', 'cambios_realizados', 'regla']].copy()
+                    df_top_display.columns = ['SKU', 'Precio Promedio', 'Costo', 'Ganancia', 'Cambios', 'Regla']
+                    
+                    st.dataframe(
+                        df_top_display.style.format({
+                            'Precio Promedio': '${:.2f}',
+                            'Costo': '${:.2f}',
+                            'Ganancia': '${:.2f}'
+                        }),
+                        use_container_width=True
+                    )
+            else:
+                st.warning("❌ No hay datos de top SKUs")
+        
+        # ==========================================
+        # SUBTAB 3: ANÁLISIS DE MARGEN
+        # ==========================================
+        with subtab3:
+            st.markdown("### 💵 Análisis de Margen vs Rivales")
+            
+            with st.spinner("⏳ Cargando análisis de margen..."):
+                margen_result = get_analisis_margen(dias_analisis)
+            
+            if margen_result["success"] and margen_result["data"] is not None:
+                df_margen = margen_result["data"]
+                
+                if not df_margen.empty:
+                    # Gráfico scatter: Margen vs Diferencia de Precio
+                    fig_margen = go.Figure()
+                    
+                    fig_margen.add_trace(go.Scatter(
+                        x=df_margen['diferencia_precio'],
+                        y=df_margen['margen_porcentaje'],
+                        mode='markers',
+                        marker=dict(
+                            size=10,
+                            color=df_margen['margen_porcentaje'],
+                            colorscale='RdYlGn',
+                            showscale=True,
+                            colorbar=dict(title="Margen %")
+                        ),
+                        text=df_margen['sku_limpio'],
+                        hovertemplate='<b>%{text}</b><br>Diferencia precio: $%{x:.2f}<br>Margen: %{y:.1f}%<extra></extra>'
+                    ))
+                    
+                    fig_margen.update_layout(
+                        title=f'Margen vs Diferencia de Precio - Últimos {dias_analisis} días',
+                        xaxis_title='Diferencia Precio (Nuestro - Rival) ($)',
+                        yaxis_title='Margen (%)',
+                        template='plotly_dark',
+                        height=500,
+                        hovermode='closest'
+                    )
+                    
+                    st.plotly_chart(fig_margen, use_container_width=True)
+                    
+                    # Métricas
+                    col_marg1, col_marg2, col_marg3 = st.columns(3)
+                    
+                    margen_avg = df_margen[df_margen['margen_porcentaje'] > 0]['margen_porcentaje'].mean()
+                    ganancia_total = df_margen['ganancia_monetaria'].sum()
+                    skus_perdida = len(df_margen[df_margen['margen_porcentaje'] < 0])
+                    
+                    with col_marg1:
+                        st.metric("Margen Promedio", f"{margen_avg:.1f}%")
+                    with col_marg2:
+                        st.metric("Ganancia Total", f"${ganancia_total:.2f}")
+                    with col_marg3:
+                        st.metric("SKUs en pérdida", skus_perdida)
+                    
+                    # Tabla
+                    st.markdown("#### Detalle de Márgenes")
+                    df_marg_display = df_margen[['sku_limpio', 'precio_nuestro', 'precio_rival', 'costo', 'ganancia_monetaria', 'margen_porcentaje']].copy()
+                    df_marg_display.columns = ['SKU', 'Nuestro $', 'Rival $', 'Costo $', 'Ganancia $', 'Margen %']
+                    
+                    st.dataframe(
+                        df_marg_display.sort_values('Margen %', ascending=False).style.format({
+                            'Nuestro $': '${:.2f}',
+                            'Rival $': '${:.2f}',
+                            'Costo $': '${:.2f}',
+                            'Ganancia $': '${:.2f}',
+                            'Margen %': '{:.1f}%'
+                        }),
+                        use_container_width=True
+                    )
+            else:
+                st.warning("❌ No hay datos de margen")
+        
+        # ==========================================
+        # SUBTAB 4: ANÁLISIS DE COMPETENCIA
+        # ==========================================
+        with subtab4:
+            st.markdown("### 🏆 Análisis de Competencia")
+            
+            with st.spinner("⏳ Cargando análisis de competencia..."):
+                comp_result = get_competencia_precios(dias_analisis)
+            
+            if comp_result["success"] and comp_result["data"] is not None:
+                df_comp = comp_result["data"]
+                
+                if not df_comp.empty:
+                    # Gráfico de diferencia de precio
+                    df_comp['diferencia'] = df_comp['precio_nuestro'] - df_comp['precio_rival']
+                    
+                    fig_comp = go.Figure()
+                    
+                    colors = ['#1db954' if x <= 0 else '#ff4757' for x in df_comp['diferencia']]
+                    
+                    fig_comp.add_trace(go.Bar(
+                        y=df_comp['sku_limpio'],
+                        x=df_comp['diferencia'],
+                        orientation='h',
+                        marker=dict(color=colors),
+                        text=[f"${v:.2f}" for v in df_comp['diferencia']],
+                        textposition='auto',
+                        hovertemplate='<b>%{y}</b><br>Diferencia: $%{x:.2f}<extra></extra>'
+                    ))
+                    
+                    fig_comp.update_layout(
+                        title=f'Diferencia de Precio vs Rivales - Últimos {dias_analisis} días',
+                        xaxis_title='Diferencia (Nuestro - Rival) ($) - Verde=Más Bajo, Rojo=Más Alto',
+                        yaxis_title='SKU',
+                        template='plotly_dark',
+                        height=500,
+                        showlegend=False
+                    )
+                    
+                    st.plotly_chart(fig_comp, use_container_width=True)
+                    
+                    # Resumen competitivo
+                    mas_bajos = len(df_comp[df_comp['diferencia'] <= 0])
+                    mas_altos = len(df_comp[df_comp['diferencia'] > 0])
+                    
+                    col_comp1, col_comp2, col_comp3 = st.columns(3)
+                    
+                    with col_comp1:
+                        st.metric("✅ Más BAJOS que rivales", mas_bajos)
+                    with col_comp2:
+                        st.metric("⚠️ Más ALTOS que rivales", mas_altos)
+                    with col_comp3:
+                        st.metric("Promedio diferencia", f"${df_comp['diferencia'].mean():.2f}")
+                    
+                    # Tabla
+                    st.markdown("#### Detalle Competitivo")
+                    df_comp_display = df_comp[['sku_limpio', 'precio_nuestro', 'precio_rival', 'diferencia', 'posicion', 'total_cambios']].copy()
+                    df_comp_display.columns = ['SKU', 'Nuestro $', 'Rival $', 'Diferencia $', 'Posición', 'Cambios']
+                    
+                    st.dataframe(
+                        df_comp_display.sort_values('Diferencia $').style.format({
+                            'Nuestro $': '${:.2f}',
+                            'Rival $': '${:.2f}',
+                            'Diferencia $': '${:.2f}'
+                        }),
+                        use_container_width=True
+                    )
+            else:
+                st.warning("❌ No hay datos de competencia")
+        
+        # ==========================================
+        # SUBTAB 5: HEATMAP ACTIVIDAD
+        # ==========================================
+        with subtab5:
+            st.markdown("### 🔥 Heatmap de Actividad")
+            
+            with st.spinner("⏳ Cargando actividad..."):
+                heat_result = get_heatmap_actividad(dias_analisis)
+            
+            if heat_result["success"] and heat_result["data"] is not None:
+                df_heat = heat_result["data"]
+                
+                if not df_heat.empty:
+                    # Gráfico de actividad por hora
+                    fig_heat = go.Figure()
+                    
+                    fig_heat.add_trace(go.Bar(
+                        x=df_heat['hora'].astype(int),
+                        y=df_heat['cambios'],
+                        marker=dict(
+                            color=df_heat['cambios'],
+                            colorscale='Hot',
+                            showscale=True
+                        ),
+                        text=df_heat['cambios'],
+                        textposition='auto',
+                        hovertemplate='<b>Hora: %{x}:00</b><br>Cambios: %{y}<extra></extra>'
+                    ))
+                    
+                    fig_heat.update_layout(
+                        title=f'Actividad de Repricing por Hora - Últimos {dias_analisis} días',
+                        xaxis_title='Hora del día',
+                        yaxis_title='Cantidad de cambios',
+                        template='plotly_dark',
+                        height=500,
+                        showlegend=False,
+                        xaxis=dict(tickmode='linear', tick0=0, dtick=1)
+                    )
+                    
+                    st.plotly_chart(fig_heat, use_container_width=True)
+                    
+                    # Métricas
+                    hora_pico = df_heat.loc[df_heat['cambios'].idxmax(), 'hora'] if not df_heat.empty else 0
+                    cambios_total = df_heat['cambios'].sum()
+                    
+                    col_heat1, col_heat2, col_heat3 = st.columns(3)
+                    
+                    with col_heat1:
+                        st.metric("Cambios totales", int(cambios_total))
+                    with col_heat2:
+                        st.metric("Hora pico", f"{int(hora_pico)}:00")
+                    with col_heat3:
+                        st.metric("Cambios en hora pico", int(df_heat['cambios'].max()))
+                    
+                    # Tabla
+                    st.markdown("#### Actividad por hora")
+                    df_heat_display = df_heat.copy()
+                    df_heat_display['hora'] = df_heat_display['hora'].astype(int).astype(str) + ':00'
+                    st.dataframe(df_heat_display.sort_values('cambios', ascending=False), use_container_width=True)
+            else:
+                st.warning("❌ No hay datos de actividad")
+        
+        # ==========================================
+        # SUBTAB 6: DISTRIBUCIÓN DE PRECIOS
+        # ==========================================
+        with subtab6:
+            st.markdown("### 📊 Distribución de Precios")
+            
+            with st.spinner("⏳ Cargando distribución..."):
+                dist_result = get_distribucion_precios(dias_analisis)
+            
+            if dist_result["success"] and dist_result["data"] is not None:
+                df_dist = dist_result["data"]
+                
+                if not df_dist.empty:
+                    # Gráfico de pie
+                    fig_dist = go.Figure()
+                    
+                    fig_dist.add_trace(go.Pie(
+                        labels=df_dist['rango_precio'],
+                        values=df_dist['cantidad_skus'],
+                        hovertemplate='<b>%{label}</b><br>SKUs: %{value}<extra></extra>'
+                    ))
+                    
+                    fig_dist.update_layout(
+                        title=f'Distribución de SKUs por Rango de Precio - Últimos {dias_analisis} días',
+                        template='plotly_dark',
+                        height=500
+                    )
+                    
+                    st.plotly_chart(fig_dist, use_container_width=True)
+                    
+                    # Tabla
+                    st.markdown("#### Detalle por rango")
+                    df_dist_display = df_dist[['rango_precio', 'cantidad_skus', 'precio_promedio']].copy()
+                    df_dist_display.columns = ['Rango Precio', 'Cantidad SKUs', 'Precio Promedio']
+                    
+                    st.dataframe(
+                        df_dist_display.style.format({
+                            'Precio Promedio': '${:.2f}'
+                        }),
+                        use_container_width=True
+                    )
+            else:
+                st.warning("❌ No hay datos de distribución")
+        
+        # ==========================================
+        # SUBTAB 7: SKUs CRÍTICOS
+        # ==========================================
+        with subtab7:
+            st.markdown("### 📉 SKUs Críticos - Baja Ganancia")
+            
+            with st.spinner("⏳ Cargando SKUs críticos..."):
+                critico_result = get_skus_criticos(dias_analisis)
+            
+            if critico_result["success"] and critico_result["data"] is not None:
+                df_critico = critico_result["data"]
+                
+                if not df_critico.empty:
+                    # Gráfico de margen crítico
+                    fig_critico = go.Figure()
+                    
+                    fig_critico.add_trace(go.Bar(
+                        y=df_critico['sku_limpio'],
+                        x=df_critico['margen_porcentaje'],
+                        orientation='h',
+                        marker=dict(
+                            color=df_critico['margen_porcentaje'],
+                            colorscale='RdYlGn',
+                            showscale=True
+                        ),
+                        text=[f"{v:.1f}%" for v in df_critico['margen_porcentaje']],
+                        textposition='auto',
+                        hovertemplate='<b>%{y}</b><br>Margen: %{x:.1f}%<extra></extra>'
+                    ))
+                    
+                    fig_critico.update_layout(
+                        title=f'SKUs Críticos - Margen < 10% - Últimos {dias_analisis} días',
+                        xaxis_title='Margen (%)',
+                        yaxis_title='SKU',
+                        template='plotly_dark',
+                        height=500,
+                        showlegend=False
+                    )
+                    
+                    st.plotly_chart(fig_critico, use_container_width=True)
+                    
+                    # Alerta
+                    st.error(f"⚠️ {len(df_critico)} SKUs con margen < 10% - Requieren revisión urgente")
+                    
+                    # Tabla
+                    st.markdown("#### SKUs a Revisar Urgentemente")
+                    df_crit_display = df_critico[['sku_limpio', 'precio_minimo', 'precio_maximo', 'precio_promedio', 'costo', 'margen_porcentaje', 'regla_estrategia']].copy()
+                    df_crit_display.columns = ['SKU', 'Precio Mín', 'Precio Máx', 'Precio Prom', 'Costo', 'Margen %', 'Regla']
+                    
+                    st.dataframe(
+                        df_crit_display.sort_values('Margen %').style.format({
+                            'Precio Mín': '${:.2f}',
+                            'Precio Máx': '${:.2f}',
+                            'Precio Prom': '${:.2f}',
+                            'Costo': '${:.2f}',
+                            'Margen %': '{:.1f}%'
+                        }),
+                        use_container_width=True
+                    )
+            else:
+                st.warning("❌ No hay SKUs críticos (¡Buen trabajo!)")
     
     with tab5:
         st.subheader("⚙️ Configuración")
@@ -1335,8 +1818,212 @@ def show_admin_dashboard():
                         st.rerun()
 
 # ==========================================
-# 🚀 MAIN LOGIC
+# 📊 FUNCIONES DE ANÁLISIS AVANZADO - FASE 3B
 # ==========================================
+
+@st.cache_data(ttl=300)
+def get_analisis_tendencias(dias: int = 7) -> dict:
+    """Obtiene tendencias de precio últimos X días"""
+    try:
+        query = f"""
+        SELECT 
+            sku_interno,
+            DATE(fecha_hora) as fecha,
+            AVG(precio_nuestro::float) as precio_promedio,
+            MIN(precio_nuestro::float) as precio_min,
+            MAX(precio_nuestro::float) as precio_max,
+            COUNT(*) as cambios
+        FROM historial_precios
+        WHERE fecha_hora >= NOW() - INTERVAL '{dias} days'
+        GROUP BY sku_interno, DATE(fecha_hora)
+        ORDER BY fecha DESC
+        """
+        df = db.execute_query(query)
+        return {"data": df, "success": not df.empty}
+    except Exception as e:
+        logger.error(f"❌ Error en tendencias: {e}")
+        return {"data": None, "success": False}
+
+@st.cache_data(ttl=300)
+def get_top_skus_performance(dias: int = 7) -> dict:
+    """Obtiene Top 10 SKUs por ganancia"""
+    try:
+        query = f"""
+        SELECT 
+            c.sku_limpio,
+            c.sku_interno,
+            c.precio_minimo,
+            c.precio_maximo,
+            c.costo_odoo::float as costo,
+            AVG(h.precio_nuestro::float) as precio_promedio,
+            COUNT(h.id) as cambios_realizados,
+            c.regla_estrategia as regla,
+            CASE 
+                WHEN c.costo_odoo IS NOT NULL AND c.costo_odoo != 0 
+                THEN (AVG(h.precio_nuestro::float) - c.costo_odoo::float)
+                ELSE 0 
+            END as ganancia_monetaria
+        FROM catalogo_maestro_v3 c
+        LEFT JOIN historial_precios h ON c.sku_interno = h.sku_interno
+            AND h.fecha_hora >= NOW() - INTERVAL '{dias} days'
+        WHERE c.estatus = 'ACTIVO'
+        GROUP BY c.sku_limpio, c.sku_interno, c.precio_minimo, c.precio_maximo, c.costo_odoo, c.regla_estrategia
+        ORDER BY ganancia_monetaria DESC NULLS LAST
+        LIMIT 10
+        """
+        df = db.execute_query(query)
+        return {"data": df, "success": not df.empty}
+    except Exception as e:
+        logger.error(f"❌ Error en top SKUs: {e}")
+        return {"data": None, "success": False}
+
+@st.cache_data(ttl=300)
+def get_analisis_margen(dias: int = 7) -> dict:
+    """Análisis de margen vs rivales"""
+    try:
+        query = f"""
+        SELECT 
+            c.sku_limpio,
+            c.sku_interno,
+            AVG(h.precio_nuestro::float) as precio_nuestro,
+            AVG(h.precio_rival::float) as precio_rival,
+            c.costo_odoo::float as costo,
+            (AVG(h.precio_nuestro::float) - c.costo_odoo::float) as ganancia_monetaria,
+            CASE 
+                WHEN c.costo_odoo IS NOT NULL AND c.costo_odoo != 0 
+                THEN ((AVG(h.precio_nuestro::float) - c.costo_odoo::float) / c.costo_odoo::float * 100)
+                ELSE 0 
+            END as margen_porcentaje,
+            (AVG(h.precio_nuestro::float) - AVG(h.precio_rival::float)) as diferencia_precio
+        FROM catalogo_maestro_v3 c
+        LEFT JOIN historial_precios h ON c.sku_interno = h.sku_interno
+            AND h.fecha_hora >= NOW() - INTERVAL '{dias} days'
+        WHERE c.estatus = 'ACTIVO'
+        GROUP BY c.sku_limpio, c.sku_interno, c.costo_odoo
+        ORDER BY margen_porcentaje DESC NULLS LAST
+        """
+        df = db.execute_query(query)
+        return {"data": df, "success": not df.empty}
+    except Exception as e:
+        logger.error(f"❌ Error en margen: {e}")
+        return {"data": None, "success": False}
+
+@st.cache_data(ttl=300)
+def get_competencia_precios(dias: int = 7) -> dict:
+    """Análisis de competencia vs rivales"""
+    try:
+        query = f"""
+        SELECT 
+            c.sku_limpio,
+            c.sku_interno,
+            AVG(h.precio_nuestro::float) as precio_nuestro,
+            AVG(h.precio_rival::float) as precio_rival,
+            COUNT(DISTINCT h.fecha_hora::date) as dias_monitoreados,
+            COUNT(h.id) as total_cambios,
+            CASE 
+                WHEN AVG(h.precio_rival::float) > AVG(h.precio_nuestro::float) THEN '✅ MÁS BAJO'
+                WHEN AVG(h.precio_rival::float) < AVG(h.precio_nuestro::float) THEN '⚠️ MÁS ALTO'
+                ELSE '⚖️ IGUAL'
+            END as posicion
+        FROM catalogo_maestro_v3 c
+        LEFT JOIN historial_precios h ON c.sku_interno = h.sku_interno
+            AND h.fecha_hora >= NOW() - INTERVAL '{dias} days'
+        WHERE c.estatus = 'ACTIVO' AND h.precio_rival IS NOT NULL
+        GROUP BY c.sku_limpio, c.sku_interno
+        ORDER BY ABS(AVG(h.precio_rival::float) - AVG(h.precio_nuestro::float)) DESC
+        LIMIT 20
+        """
+        df = db.execute_query(query)
+        return {"data": df, "success": not df.empty}
+    except Exception as e:
+        logger.error(f"❌ Error en competencia: {e}")
+        return {"data": None, "success": False}
+
+@st.cache_data(ttl=300)
+def get_heatmap_actividad(dias: int = 7) -> dict:
+    """Heatmap de actividad por hora del día"""
+    try:
+        query = f"""
+        SELECT 
+            EXTRACT(HOUR FROM fecha_hora) as hora,
+            COUNT(id) as cambios,
+            COUNT(DISTINCT DATE(fecha_hora)) as dias_activos
+        FROM historial_precios
+        WHERE fecha_hora >= NOW() - INTERVAL '{dias} days'
+        GROUP BY EXTRACT(HOUR FROM fecha_hora)
+        ORDER BY hora
+        """
+        df = db.execute_query(query)
+        return {"data": df, "success": not df.empty}
+    except Exception as e:
+        logger.error(f"❌ Error en heatmap: {e}")
+        return {"data": None, "success": False}
+
+@st.cache_data(ttl=300)
+def get_distribucion_precios(dias: int = 7) -> dict:
+    """Distribución de precios por rangos"""
+    try:
+        query = f"""
+        SELECT 
+            CASE 
+                WHEN h.precio_nuestro::float < 100 THEN '$0-100'
+                WHEN h.precio_nuestro::float < 500 THEN '$100-500'
+                WHEN h.precio_nuestro::float < 1000 THEN '$500-1000'
+                WHEN h.precio_nuestro::float < 5000 THEN '$1000-5000'
+                ELSE '$5000+'
+            END as rango_precio,
+            COUNT(DISTINCT c.sku_interno) as cantidad_skus,
+            AVG(h.precio_nuestro::float) as precio_promedio
+        FROM historial_precios h
+        JOIN catalogo_maestro_v3 c ON h.sku_interno = c.sku_interno
+        WHERE h.fecha_hora >= NOW() - INTERVAL '{dias} days'
+            AND c.estatus = 'ACTIVO'
+        GROUP BY rango_precio
+        ORDER BY MIN(h.precio_nuestro::float)
+        """
+        df = db.execute_query(query)
+        return {"data": df, "success": not df.empty}
+    except Exception as e:
+        logger.error(f"❌ Error en distribución: {e}")
+        return {"data": None, "success": False}
+
+@st.cache_data(ttl=300)
+def get_skus_criticos(dias: int = 7) -> dict:
+    """SKUs críticos con baja ganancia o alta pérdida"""
+    try:
+        query = f"""
+        SELECT 
+            c.sku_limpio,
+            c.sku_interno,
+            c.precio_minimo,
+            c.precio_maximo,
+            c.costo_odoo::float as costo,
+            AVG(h.precio_nuestro::float) as precio_promedio,
+            c.estatus,
+            c.regla_estrategia,
+            CASE 
+                WHEN c.costo_odoo IS NOT NULL AND c.costo_odoo != 0 
+                THEN ((AVG(h.precio_nuestro::float) - c.costo_odoo::float) / c.costo_odoo::float * 100)
+                ELSE 0 
+            END as margen_porcentaje
+        FROM catalogo_maestro_v3 c
+        LEFT JOIN historial_precios h ON c.sku_interno = h.sku_interno
+            AND h.fecha_hora >= NOW() - INTERVAL '{dias} days'
+        WHERE c.estatus = 'ACTIVO' AND c.costo_odoo IS NOT NULL AND c.costo_odoo != 0
+        GROUP BY c.sku_limpio, c.sku_interno, c.precio_minimo, c.precio_maximo, c.costo_odoo, c.estatus, c.regla_estrategia
+        HAVING ((AVG(h.precio_nuestro::float) - c.costo_odoo::float) / c.costo_odoo::float * 100) < 10
+        ORDER BY margen_porcentaje ASC
+        LIMIT 15
+        """
+        df = db.execute_query(query)
+        return {"data": df, "success": not df.empty}
+    except Exception as e:
+        logger.error(f"❌ Error en SKUs críticos: {e}")
+        return {"data": None, "success": False}
+
+# ==========================================
+# 🚀 MAIN LOGIC
+# =========================================
 
 def main():
     if "authenticated" not in st.session_state:
