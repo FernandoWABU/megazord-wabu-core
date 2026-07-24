@@ -1,1 +1,1 @@
-web: python -u src/webhook_simple.py
+web: pip install -r requirements-webhook.txt && python -u src/webhook_simple.py
