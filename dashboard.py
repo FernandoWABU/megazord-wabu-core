@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 # ==========================================
-# MEGAZORD WAR ROOM - DASHBOARD ENTERPRISE V2.3
-# Centro de Comando Ejecutivo con BI Real-Time
-# MULTI-TENANT ARCHITECTURE INTEGRATED
-# ✅ COMPATIBLE CON STREAMLIT CLOUD
-# ✅ OPTIMIZADO PARA PERFORMANCE
+# MEGAZORD WAR ROOM - DASHBOARD V3.0
+# Admin + Executive Mode (Dual Interface)
 # ==========================================
 
 import streamlit as st
@@ -53,7 +50,6 @@ DARK_MODE_CSS = """
     }
     
     body, .main { background-color: #0a0e27 !important; color: #ffffff !important; }
-    
     .stContainer { background-color: #0a0e27 !important; }
     
     [data-testid="stSidebar"] {
@@ -74,20 +70,22 @@ DARK_MODE_CSS = """
     }
 
     h1, h2, h3 { color: #00d9ff; text-shadow: 0 0 10px rgba(0, 217, 255, 0.3); font-weight: 700; }
-    .metric-box { background: linear-gradient(135deg, #1a1f3a 0%, #0f2540 100%); border: 2px solid #00d9ff; border-radius: 8px; padding: 20px; box-shadow: 0 0 20px rgba(0, 217, 255, 0.2); transition: all 0.3s ease; }
     .stButton > button { background: linear-gradient(135deg, #00d9ff 0%, #1db954 100%); color: #0a0e27; border: none; border-radius: 6px; font-weight: bold; padding: 12px 24px; transition: all 0.3s ease; text-transform: uppercase; }
     .stDataFrame { background: #1a1f3a; border: 2px solid #00d9ff; }
+    
+    .metric-value { color: #00d9ff; font-size: 2.5em; font-weight: bold; }
+    .metric-label { color: #ffffff; font-size: 1em; }
 </style>
 """
 st.markdown(DARK_MODE_CSS, unsafe_allow_html=True)
 
 # ==========================================
-# 🔐 SEGURIDAD & BD POSTGRESQL (SQLAlchemy)
+# 🔐 SEGURIDAD & BD POSTGRESQL
 # ==========================================
 
 class AuthManager:
     def __init__(self):
-        password_plain = os.getenv("DASHBOARD_PASSWORD", "megazord2025")
+        password_plain = os.getenv("DASHBOARD_PASSWORD", "123")
         self.password_hash = hashlib.sha256(password_plain.encode()).hexdigest()
         self.session_timeout = 3600
 
@@ -108,11 +106,6 @@ class AuthManager:
         return st.session_state.get('authenticated', False)
 
 class PostgreSQLManager:
-    """
-    ✅ COMPATIBLE CON STREAMLIT CLOUD
-    Usa SQLAlchemy en lugar de psycopg2
-    ✅ OPTIMIZADO PARA PERFORMANCE
-    """
     def __init__(self, database_url: str):
         self.database_url = database_url
         self.engine = None
@@ -120,13 +113,11 @@ class PostgreSQLManager:
 
     def _initialize_engine(self):
         try:
-            # ✅ NullPool + timeout corto = mejor para Streamlit
             self.engine = create_engine(
                 self.database_url, 
                 poolclass=NullPool,
-                connect_args={"connect_timeout": 10, "options": "-c statement_timeout=30000"}  # 30s timeout
+                connect_args={"connect_timeout": 10, "options": "-c statement_timeout=30000"}
             )
-            # Test connection
             with self.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             logger.info("✅ Conexión PostgreSQL: EXITOSA")
@@ -134,7 +125,7 @@ class PostgreSQLManager:
             logger.error(f"❌ Error conectando a PostgreSQL: {e}")
             self.engine = None
 
-    def execute_query(self, query: str, params: dict = None, timeout: int = 30) -> pd.DataFrame:
+    def execute_query(self, query: str, params: dict = None) -> pd.DataFrame:
         try:
             if self.engine is None:
                 st.warning("⚠️ Conexión a BD no disponible")
@@ -172,14 +163,11 @@ db = PostgreSQLManager(DATABASE_URL)
 auth = AuthManager()
 
 # ==========================================
-# 📊 CACHED DATA FUNCTIONS (Mejor performance)
+# 📊 CACHED DATA FUNCTIONS
 # ==========================================
 
 @st.cache_data(ttl=300)
 def get_historial_precios(days: int = 7) -> pd.DataFrame:
-    """
-    ✅ OPTIMIZADO: LIMIT 10000 en lugar de 50000
-    """
     query = """
     SELECT h.fecha_hora AS created_at, h.sku_interno, c.sku_limpio,
            h.precio_rival AS precio_ant, h.nuestro_precio AS precio_nuv,
@@ -188,11 +176,9 @@ def get_historial_precios(days: int = 7) -> pd.DataFrame:
     LEFT JOIN catalogo_maestro_v3 c ON h.sku_interno = c.sku_interno
     WHERE h.fecha_hora >= :fecha_desde 
     ORDER BY h.fecha_hora DESC 
-    LIMIT 10000
+    LIMIT 5000
     """
-    return db.execute_query(query, {
-        "fecha_desde": datetime.now() - timedelta(days=days)
-    })
+    return db.execute_query(query, {"fecha_desde": datetime.now() - timedelta(days=days)})
 
 @st.cache_data(ttl=300)
 def get_catalogo_maestro() -> pd.DataFrame:
@@ -218,25 +204,43 @@ def show_login_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown("<br><br><br><div style='text-align: center;'><h1 style='color: #00d9ff;'>⚡ MEGAZORD WAR ROOM</h1></div><br><br>", unsafe_allow_html=True)
-        password = st.text_input("🔐 Contraseña de Acceso", type="password")
-        if st.button("🚀 ACCESO RESTRINGIDO", use_container_width=True):
-            if auth.login(password): 
-                st.rerun()
-            else: 
-                st.error("❌ Contraseña incorrecta")
+        
+        # Dos opciones: Admin o Executive
+        st.markdown("<div style='text-align: center;'><h3>Selecciona tu acceso</h3></div>", unsafe_allow_html=True)
+        
+        access_mode = st.radio("", ["👁️ Vista Ejecutiva (Sin contraseña)", "🔐 Acceso Admin (Con contraseña)"], horizontal=True)
+        
+        if access_mode == "👁️ Vista Ejecutiva (Sin contraseña)":
+            st.session_state['authenticated'] = False
+            st.session_state['admin_mode'] = False
+            st.session_state['executive_mode'] = True
+            st.success("✅ Acceso como Ejecutivo")
+            st.rerun()
+        else:
+            st.markdown("<br>", unsafe_allow_html=True)
+            password = st.text_input("🔐 Contraseña de Acceso", type="password", key="admin_password")
+            if st.button("🚀 ACCESO ADMIN", use_container_width=True):
+                if auth.login(password):
+                    st.session_state['admin_mode'] = True
+                    st.session_state['executive_mode'] = False
+                    st.success("✅ Admin mode activado")
+                    st.rerun()
+                else:
+                    st.error("❌ Contraseña incorrecta")
 
 # ==========================================
-# 🔐 DASHBOARD PRIVADO
+# 🎯 EXECUTIVE VIEW (Read-Only)
 # ==========================================
 
-def show_private_dashboard():
+def show_executive_dashboard():
+    st.markdown("<h1 style='text-align: center; color: #00d9ff;'>⚡ MEGAZORD - Vista Ejecutiva</h1>", unsafe_allow_html=True)
     
-    # 📍 SIDEBAR FILTER
     with st.sidebar:
         st.markdown("---")
-        st.subheader("📍 Selección de Tienda")
+        st.subheader("👁️ Modo: Lectura")
+        st.markdown("*No se puede editar. Solo visualización.*")
+        st.markdown("---")
         
-        # ✅ OPTIMIZADO: Usar cache para cuentas
         cuentas = get_cuentas_disponibles()
         opciones = ["🌍 TODAS LAS CUENTAS"] + [f"✅ {cta}" for cta in cuentas]
         map_cuentas = {"🌍 TODAS LAS CUENTAS": "TODAS"}
@@ -245,14 +249,10 @@ def show_private_dashboard():
         
         cta_label = st.selectbox("Filtrar por cuenta:", opciones)
         id_cuenta_filtro = map_cuentas[cta_label]
-
-        # ==========================================
-        # 📊 MÉTRICAS PRINCIPALES
-        # ==========================================
+        
         st.markdown("---")
         st.subheader("📊 Métricas en Vivo")
         
-        # ✅ OPTIMIZADO: Queries simples y rápidas
         try:
             df_skus = db.execute_query("SELECT COUNT(*) as total FROM catalogo_maestro_v3 WHERE estatus = 'ACTIVO'")
             total_skus = df_skus['total'].values[0] if not df_skus.empty else 0
@@ -270,14 +270,134 @@ def show_private_dashboard():
             st.metric("🎯 SKUs Activos", total_skus)
         with col2:
             st.metric("⚡ Updates/Hora", updates_hora)
+    
+    tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "📈 Histórico", "📋 Catálogo"])
+    
+    with tab1:
+        st.subheader("📊 Resumen en Vivo")
+        
+        with st.spinner("⏳ Cargando datos..."):
+            df_hist = get_historial_precios(days=1)
+        
+        if not df_hist.empty:
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Precios Revisados", len(df_hist))
+            with col2:
+                ajustes = df_hist[df_hist['precio_nuv'] != df_hist['precio_ant']].shape[0]
+                st.metric("Ajustes Realizados", ajustes)
+            with col3:
+                buybox_count = (df_hist['resultado'] == 'GANADOR').sum()
+                st.metric("Ganando Buybox", buybox_count)
+            with col4:
+                porcentaje = (buybox_count/len(df_hist)*100) if len(df_hist) > 0 else 0
+                st.metric("% Ganancia", f"{porcentaje:.1f}%")
+            
+            st.markdown("### 📈 Evolución de Precios (Últimas 24h)")
+            try:
+                fig = px.line(df_hist.head(100), x='created_at', y=['precio_ant', 'precio_nuv'], 
+                             title='Comparación: Rival vs Nuestro Precio',
+                             labels={'price': 'Precio ($)', 'created_at': 'Hora'})
+                fig.update_layout(template="plotly_dark", height=400)
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:
+                st.warning(f"⚠️ No se pudo graficar: {e}")
+        else:
+            st.info("📭 No hay datos disponibles")
+    
+    with tab2:
+        st.subheader("📈 Análisis Histórico")
+        days = st.slider("Días a mostrar:", 1, 30, 7)
+        
+        with st.spinner("⏳ Cargando histórico..."):
+            df_hist = get_historial_precios(days=days)
+        
+        if not df_hist.empty:
+            st.dataframe(df_hist, use_container_width=True, height=400)
+            
+            csv = df_hist.to_csv(index=False)
+            st.download_button(
+                label="📥 Descargar CSV",
+                data=csv,
+                file_name=f"historial_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        else:
+            st.info("📭 No hay datos para descargar")
+    
+    with tab3:
+        st.subheader("📋 Catálogo Maestro")
+        
+        with st.spinner("⏳ Cargando catálogo..."):
+            df_cat = get_catalogo_maestro()
+        
+        if not df_cat.empty:
+            col1, col2 = st.columns(2)
+            with col1:
+                status_filter = st.multiselect("Estado:", df_cat['estatus'].unique(), default=df_cat['estatus'].unique())
+            with col2:
+                sku_filter = st.text_input("Buscar SKU:")
+            
+            df_filtered = df_cat[df_cat['estatus'].isin(status_filter)]
+            if sku_filter:
+                df_filtered = df_filtered[df_filtered['sku_limpio'].str.contains(sku_filter, case=False, na=False)]
+            
+            st.dataframe(df_filtered, use_container_width=True, height=400)
+        else:
+            st.info("📭 No hay catálogo disponible")
 
-    # ==========================================
-    # 📊 MAIN CONTENT
-    # ==========================================
+# ==========================================
+# 🔐 ADMIN VIEW (Full Control)
+# ==========================================
+
+def show_admin_dashboard():
+    st.markdown("<h1 style='text-align: center; color: #00d9ff;'>⚡ MEGAZORD War Room - Admin Panel</h1>", unsafe_allow_html=True)
     
-    st.markdown("<h1 style='text-align: center; color: #00d9ff;'>⚡ MEGAZORD WAR ROOM - Centro de Control</h1>", unsafe_allow_html=True)
+    with st.sidebar:
+        st.markdown("---")
+        st.subheader("🔐 Modo: Administrador")
+        st.markdown("*Acceso completo. Puedes editar.*")
+        st.markdown("---")
+        
+        if st.button("🚪 Cerrar Sesión"):
+            st.session_state['authenticated'] = False
+            st.session_state['admin_mode'] = False
+            st.rerun()
+        
+        st.markdown("---")
+        st.subheader("📍 Selección de Tienda")
+        
+        cuentas = get_cuentas_disponibles()
+        opciones = ["🌍 TODAS LAS CUENTAS"] + [f"✅ {cta}" for cta in cuentas]
+        map_cuentas = {"🌍 TODAS LAS CUENTAS": "TODAS"}
+        for cta in cuentas:
+            map_cuentas[f"✅ {cta}"] = cta
+        
+        cta_label = st.selectbox("Filtrar por cuenta:", opciones)
+        id_cuenta_filtro = map_cuentas[cta_label]
+        
+        st.markdown("---")
+        st.subheader("📊 Métricas en Vivo")
+        
+        try:
+            df_skus = db.execute_query("SELECT COUNT(*) as total FROM catalogo_maestro_v3 WHERE estatus = 'ACTIVO'")
+            total_skus = df_skus['total'].values[0] if not df_skus.empty else 0
+        except:
+            total_skus = 0
+        
+        try:
+            df_updates = db.execute_query("SELECT COUNT(*) as total FROM historial_precios WHERE fecha_hora > NOW() - INTERVAL '1 hour'")
+            updates_hora = df_updates['total'].values[0] if not df_updates.empty else 0
+        except:
+            updates_hora = 0
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("🎯 SKUs Activos", total_skus)
+        with col2:
+            st.metric("⚡ Updates/Hora", updates_hora)
     
-    # Tabs
     tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "📈 Histórico", "📋 Catálogo", "⚙️ Configuración"])
     
     with tab1:
@@ -301,11 +421,12 @@ def show_private_dashboard():
                 porcentaje = (buybox_count/len(df_hist)*100) if len(df_hist) > 0 else 0
                 st.metric("% Ganancia", f"{porcentaje:.1f}%")
             
-            # Gráfico de precios
             st.markdown("### 📈 Evolución de Precios (Últimas 24h)")
             try:
                 fig = px.line(df_hist.head(100), x='created_at', y=['precio_ant', 'precio_nuv'], 
-                             title='Comparación: Rival vs Nuestro Precio')
+                             title='Comparación: Rival vs Nuestro Precio',
+                             labels={'price': 'Precio ($)', 'created_at': 'Hora'})
+                fig.update_layout(template="plotly_dark", height=400)
                 st.plotly_chart(fig, use_container_width=True)
             except Exception as e:
                 st.warning(f"⚠️ No se pudo graficar: {e}")
@@ -322,7 +443,6 @@ def show_private_dashboard():
         if not df_hist.empty:
             st.dataframe(df_hist, use_container_width=True, height=400)
             
-            # Descargar CSV
             csv = df_hist.to_csv(index=False)
             st.download_button(
                 label="📥 Descargar CSV",
@@ -340,14 +460,12 @@ def show_private_dashboard():
             df_cat = get_catalogo_maestro()
         
         if not df_cat.empty:
-            # Filtros
             col1, col2 = st.columns(2)
             with col1:
                 status_filter = st.multiselect("Estado:", df_cat['estatus'].unique(), default=df_cat['estatus'].unique())
             with col2:
                 sku_filter = st.text_input("Buscar SKU:")
             
-            # Aplicar filtros
             df_filtered = df_cat[df_cat['estatus'].isin(status_filter)]
             if sku_filter:
                 df_filtered = df_filtered[df_filtered['sku_limpio'].str.contains(sku_filter, case=False, na=False)]
@@ -359,7 +477,7 @@ def show_private_dashboard():
     with tab4:
         st.subheader("⚙️ Configuración")
         
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             if st.button("🔄 Limpiar Caché"):
@@ -367,18 +485,24 @@ def show_private_dashboard():
                 st.success("✅ Caché limpiado")
         
         with col2:
-            if st.button("🚪 Cerrar Sesión"):
-                st.session_state['authenticated'] = False
+            if st.button("🔄 Recargar Datos"):
                 st.rerun()
         
-        # Info
+        with col3:
+            if st.button("🚪 Cerrar Sesión"):
+                st.session_state['authenticated'] = False
+                st.session_state['admin_mode'] = False
+                st.rerun()
+        
         st.markdown("---")
         st.info("""
         ### 📊 Información del Dashboard
-        - **Versión:** 2.3 (Optimizado)
+        - **Versión:** 3.0 (Dual Mode)
         - **Status:** ✅ Activo
         - **Base de datos:** PostgreSQL
         - **Actualización:** Cada 5 minutos (caché)
+        - **Modo Admin:** Con contraseña
+        - **Modo Executive:** Sin contraseña (solo lectura)
         """)
 
 # ==========================================
@@ -386,8 +510,19 @@ def show_private_dashboard():
 # ==========================================
 
 def main():
-    if auth.is_authenticated():
-        show_private_dashboard()
+    # Inicializar session state
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+    if "admin_mode" not in st.session_state:
+        st.session_state.admin_mode = False
+    if "executive_mode" not in st.session_state:
+        st.session_state.executive_mode = False
+    
+    # Mostrar vista correspondiente
+    if st.session_state.admin_mode and st.session_state.authenticated:
+        show_admin_dashboard()
+    elif st.session_state.executive_mode:
+        show_executive_dashboard()
     else:
         show_login_page()
 
