@@ -277,7 +277,7 @@ def show_login_page():
         with col_exec:
             st.markdown("### 👁️ Ejecutivo")
             st.markdown("*Ver datos (solo lectura)*")
-            if st.button("📊 Acceder como Ejecutivo", use_container_width=True, key="btn_exec"):
+            if st.button("📊 Acceder como Ejecutivo", width="stretch", key="btn_exec"):
                 st.session_state['authenticated'] = False
                 st.session_state['admin_mode'] = False
                 st.session_state['executive_mode'] = True
@@ -289,7 +289,7 @@ def show_login_page():
             st.markdown("*Acceso completo (editar)*")
             
             password = st.text_input("🔐 Contraseña", type="password", key="admin_password")
-            if st.button("🚀 Acceder como Admin", use_container_width=True, key="btn_admin"):
+            if st.button("🚀 Acceder como Admin", width="stretch", key="btn_admin"):
                 if password == "":
                     st.error("❌ Ingresa la contraseña")
                 elif auth.login(password):
@@ -399,7 +399,7 @@ def show_executive_dashboard():
                                  labels={'price': 'Precio ($)', 'created_at': 'Hora'})
                     fig.update_layout(template="plotly_dark", height=350, showlegend=True)
                     fig.update_traces(line=dict(width=2.5))
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
                 except Exception as e:
                     st.warning(f"⚠️ Error al graficar: {e}")
             
@@ -412,7 +412,7 @@ def show_executive_dashboard():
                                 title='Ganador vs Competencia',
                                 color_discrete_sequence=colors)
                     fig.update_layout(template="plotly_dark", height=350)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
                 except Exception as e:
                     st.warning(f"⚠️ Error al graficar: {e}")
         else:
@@ -432,7 +432,7 @@ def show_executive_dashboard():
         
         if not df_hist.empty:
             if show_data:
-                st.dataframe(df_hist, use_container_width=True, height=400)
+                st.dataframe(df_hist, width="stretch", height=400)
             
             col_down1, col_down2 = st.columns(2)
             
@@ -483,7 +483,7 @@ def show_executive_dashboard():
                 df_filtered = df_filtered[df_filtered['sku_limpio'].str.contains(sku_filter, case=False, na=False)]
             
             st.metric(f"Total SKUs encontrados", len(df_filtered))
-            st.dataframe(df_filtered, use_container_width=True, height=400)
+            st.dataframe(df_filtered, width="stretch", height=400)
         else:
             st.info("📭 No hay catálogo disponible")
     
@@ -495,7 +495,7 @@ def show_executive_dashboard():
         col_report1, col_report2 = st.columns(2)
         
         with col_report1:
-            if st.button("📈 Reporte Diario", use_container_width=True):
+            if st.button("📈 Reporte Diario", width="stretch"):
                 with st.spinner("⏳ Generando reporte diario..."):
                     df_daily = get_historial_precios(days=1)
                     if not df_daily.empty:
@@ -511,7 +511,7 @@ def show_executive_dashboard():
                         )
         
         with col_report2:
-            if st.button("📊 Reporte Semanal", use_container_width=True):
+            if st.button("📊 Reporte Semanal", width="stretch"):
                 with st.spinner("⏳ Generando reporte semanal..."):
                     df_weekly = get_historial_precios(days=7)
                     if not df_weekly.empty:
@@ -555,12 +555,12 @@ def show_admin_dashboard():
             "🟩 AMBAS": "both"
         }
         
-        if st.button("▶️ Ejecutar Barrido Ahora", use_container_width=True, key="trigger_barrido"):
+        if st.button("▶️ Ejecutar Barrido Ahora", width="stretch", key="trigger_barrido"):
             st.info(f"⏳ Ejecutando barrido para: {marketplace_ejecutar}")
             st.markdown("```\n✅ Barrido iniciado en Railway/GitHub Actions\nEspera 2-3 minutos...\n```")
         
         # FUTURO: Botón para Coppel (deshabilitado por ahora)
-        if st.button("🟪 Coppel (Próximamente)", use_container_width=True, disabled=True):
+        if st.button("🟪 Coppel (Próximamente)", width="stretch", disabled=True):
             pass
         
         st.markdown("---")
@@ -651,7 +651,7 @@ def show_admin_dashboard():
                     fig = px.line(df_sorted.head(100), x='created_at', y=['precio_ant', 'precio_nuv'],
                                  title='Nuestro Precio vs Rival')
                     fig.update_layout(template="plotly_dark", height=350)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
                 except Exception as e:
                     st.warning(f"⚠️ Error: {e}")
             
@@ -664,7 +664,7 @@ def show_admin_dashboard():
                                 title='Ganador vs Competencia',
                                 color_discrete_sequence=colors)
                     fig.update_layout(template="plotly_dark", height=350)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
                 except Exception as e:
                     st.warning(f"⚠️ Error: {e}")
         else:
@@ -678,7 +678,7 @@ def show_admin_dashboard():
             df_hist = get_historial_precios(days=days)
         
         if not df_hist.empty:
-            st.dataframe(df_hist, use_container_width=True, height=400)
+            st.dataframe(df_hist, width="stretch", height=400)
         else:
             st.info("📭 Sin datos")
     
@@ -689,7 +689,7 @@ def show_admin_dashboard():
             df_cat = get_catalogo_maestro()
         
         if not df_cat.empty:
-            st.dataframe(df_cat, use_container_width=True, height=400)
+            st.dataframe(df_cat, width="stretch", height=400)
         else:
             st.info("📭 Sin catálogo")
     
@@ -866,36 +866,78 @@ def show_admin_dashboard():
                     if new_precio_min >= new_precio_max:
                         st.error("❌ El precio mínimo no puede ser mayor o igual al máximo")
                     else:
-                        if st.button("💾 Guardar Cambios de Precios", use_container_width=True):
-                            st.markdown("""
-                            <div class='warning-box'>
-                            ⚠️ CONFIRMAR CAMBIOS:
-                            Precio Mín: ${:.2f} → ${:.2f}
-                            Precio Máx: ${:.2f} → ${:.2f}
+                        st.markdown("---")
+                        st.subheader("📊 SIMULADOR DE GANANCIA")
+                        
+                        # SIMULADOR: Precio de venta simulado
+                        precio_simulado_venta = st.slider(
+                            "💰 Precio de Venta Simulado (para análisis):",
+                            min_value=float(new_precio_min),
+                            max_value=float(new_precio_max),
+                            value=(float(new_precio_min) + float(new_precio_max)) / 2,
+                            step=0.01,
+                            help="Ajusta para ver cómo cambiaría tu ganancia"
+                        )
+                        
+                        # Calcular ganancias simuladas
+                        ganancia_monetaria_sim = float(precio_simulado_venta) - float(costo_simulado)
+                        ganancia_porcentaje_sim = (ganancia_monetaria_sim / float(costo_simulado) * 100) if float(costo_simulado) > 0 else 0
+                        
+                        col_sim1, col_sim2, col_sim3 = st.columns(3)
+                        
+                        with col_sim1:
+                            st.markdown(f"""
+                            <div style='background: #1a1f3a; border: 2px solid #00d9ff; border-radius: 8px; padding: 15px; text-align: center;'>
+                                <div style='color: #00d9ff; font-size: 0.9em;'>💰 Precio Simulado</div>
+                                <div style='color: #ffffff; font-size: 1.8em; font-weight: bold;'>${float(precio_simulado_venta):.2f}</div>
                             </div>
-                            """.format(sku_data['precio_minimo'], new_precio_min, sku_data['precio_maximo'], new_precio_max), unsafe_allow_html=True)
-                            
+                            """, unsafe_allow_html=True)
+                        
+                        with col_sim2:
+                            color_ganancia_sim = "#1db954" if ganancia_monetaria_sim > 0 else "#ff4757"
+                            st.markdown(f"""
+                            <div style='background: #1a1f3a; border: 2px solid {color_ganancia_sim}; border-radius: 8px; padding: 15px; text-align: center;'>
+                                <div style='color: {color_ganancia_sim}; font-size: 0.9em;'>💵 Ganancia Simulada</div>
+                                <div style='color: {color_ganancia_sim}; font-size: 1.8em; font-weight: bold;'>${ganancia_monetaria_sim:.2f}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        with col_sim3:
+                            color_porc_sim = "#1db954" if ganancia_porcentaje_sim > 0 else "#ff4757"
+                            st.markdown(f"""
+                            <div style='background: #1a1f3a; border: 2px solid {color_porc_sim}; border-radius: 8px; padding: 15px; text-align: center;'>
+                                <div style='color: {color_porc_sim}; font-size: 0.9em;'>📊 Margen Simulado</div>
+                                <div style='color: {color_porc_sim}; font-size: 1.8em; font-weight: bold;'>{ganancia_porcentaje_sim:.1f}%</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        st.markdown("---")
+                        
+                        if st.button("💾 Guardar Cambios de Precios", width="stretch"):
                             col_confirm1, col_confirm2 = st.columns(2)
+                            
                             with col_confirm1:
-                                if st.button("✅ Confirmar Cambios", use_container_width=True, key="confirm_precio"):
-                                    update_query = """
-                                    UPDATE catalogo_maestro_v3 
-                                    SET precio_minimo = :precio_min, precio_maximo = :precio_max
-                                    WHERE sku_interno = :sku_interno
-                                    """
-                                    if db.execute_update(update_query, {
-                                        "precio_min": new_precio_min,
-                                        "precio_max": new_precio_max,
-                                        "sku_interno": sku_data['sku_interno']
-                                    }):
-                                        st.success("✅ Precios actualizados correctamente")
-                                        st.cache_data.clear()
-                                        st.rerun()
-                                    else:
-                                        st.error("❌ Error al actualizar precios")
+                                if st.button("✅ Confirmar Cambios", width="stretch", key="confirm_precio"):
+                                    with st.spinner("⏳ Guardando cambios..."):
+                                        update_query = """
+                                        UPDATE catalogo_maestro_v3 
+                                        SET precio_minimo = :precio_min, precio_maximo = :precio_max
+                                        WHERE sku_interno = :sku_interno
+                                        """
+                                        if db.execute_update(update_query, {
+                                            "precio_min": new_precio_min,
+                                            "precio_max": new_precio_max,
+                                            "sku_interno": sku_data['sku_interno']
+                                        }):
+                                            st.success("✅ Precios actualizados correctamente")
+                                            st.cache_data.clear()
+                                            time.sleep(1)
+                                            st.rerun()
+                                        else:
+                                            st.error("❌ Error al actualizar precios")
                             
                             with col_confirm2:
-                                if st.button("❌ Cancelar", use_container_width=True, key="cancel_precio"):
+                                if st.button("❌ Cancelar", width="stretch", key="cancel_precio"):
                                     st.info("Cambios cancelados")
             else:
                 st.error("❌ No hay catálogo disponible")
@@ -932,34 +974,29 @@ def show_admin_dashboard():
                             key="new_rule_select"
                         )
                     
-                    if st.button("💾 Cambiar Regla", use_container_width=True):
-                        st.markdown(f"""
-                        <div class='warning-box'>
-                        ⚠️ CONFIRMAR CAMBIO:
-                        {sku_data['regla']} → {new_regla}
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
+                    if st.button("💾 Cambiar Regla", width="stretch"):
                         col_confirm1, col_confirm2 = st.columns(2)
                         with col_confirm1:
-                            if st.button("✅ Confirmar Cambio Regla", use_container_width=True, key="confirm_rule"):
-                                update_query = """
-                                UPDATE catalogo_maestro_v3 
-                                SET regla_estrategia = :regla
-                                WHERE sku_interno = :sku_interno
-                                """
-                                if db.execute_update(update_query, {
-                                    "regla": new_regla,
-                                    "sku_interno": sku_data['sku_interno']
-                                }):
-                                    st.success("✅ Regla actualizada correctamente")
-                                    st.cache_data.clear()
-                                    st.rerun()
-                                else:
-                                    st.error("❌ Error al actualizar regla")
+                            if st.button("✅ Confirmar Cambio Regla", width="stretch", key="confirm_rule"):
+                                with st.spinner("⏳ Guardando cambios..."):
+                                    update_query = """
+                                    UPDATE catalogo_maestro_v3 
+                                    SET regla_estrategia = :regla
+                                    WHERE sku_interno = :sku_interno
+                                    """
+                                    if db.execute_update(update_query, {
+                                        "regla": new_regla,
+                                        "sku_interno": sku_data['sku_interno']
+                                    }):
+                                        st.success("✅ Regla actualizada correctamente")
+                                        st.cache_data.clear()
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ Error al actualizar regla")
                         
                         with col_confirm2:
-                            if st.button("❌ Cancelar", use_container_width=True, key="cancel_rule"):
+                            if st.button("❌ Cancelar", width="stretch", key="cancel_rule"):
                                 st.info("Cambios cancelados")
                 else:
                     st.warning("❌ SKU no encontrado")
@@ -996,34 +1033,29 @@ def show_admin_dashboard():
                     with col2:
                         st.markdown(f"**Nuevo Estado:** {nuevo_estatus}")
                     
-                    if st.button("💾 Cambiar Estado", use_container_width=True):
-                        st.markdown(f"""
-                        <div class='warning-box'>
-                        ⚠️ CONFIRMAR CAMBIO:
-                        {estatus_actual} → {nuevo_estatus}
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
+                    if st.button("💾 Cambiar Estado", width="stretch"):
                         col_confirm1, col_confirm2 = st.columns(2)
                         with col_confirm1:
-                            if st.button("✅ Confirmar Cambio Estado", use_container_width=True, key="confirm_status"):
-                                update_query = """
-                                UPDATE catalogo_maestro_v3 
-                                SET estatus = :estatus
-                                WHERE sku_interno = :sku_interno
-                                """
-                                if db.execute_update(update_query, {
-                                    "estatus": nuevo_estatus,
-                                    "sku_interno": sku_data['sku_interno']
-                                }):
-                                    st.success("✅ Estado actualizado correctamente")
-                                    st.cache_data.clear()
-                                    st.rerun()
-                                else:
-                                    st.error("❌ Error al actualizar estado")
+                            if st.button("✅ Confirmar Cambio Estado", width="stretch", key="confirm_status"):
+                                with st.spinner("⏳ Guardando cambios..."):
+                                    update_query = """
+                                    UPDATE catalogo_maestro_v3 
+                                    SET estatus = :estatus
+                                    WHERE sku_interno = :sku_interno
+                                    """
+                                    if db.execute_update(update_query, {
+                                        "estatus": nuevo_estatus,
+                                        "sku_interno": sku_data['sku_interno']
+                                    }):
+                                        st.success("✅ Estado actualizado correctamente")
+                                        st.cache_data.clear()
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ Error al actualizar estado")
                         
                         with col_confirm2:
-                            if st.button("❌ Cancelar", use_container_width=True, key="cancel_status"):
+                            if st.button("❌ Cancelar", width="stretch", key="cancel_status"):
                                 st.info("Cambios cancelados")
                 else:
                     st.warning("❌ SKU no encontrado")
@@ -1056,47 +1088,40 @@ def show_admin_dashboard():
             with col4:
                 estatus = st.selectbox("Estado:", ["ACTIVO", "INACTIVO"])
             
-            if st.button("➕ Crear SKU", use_container_width=True):
+            if st.button("➕ Crear SKU", width="stretch"):
                 if not (sku_limpio and sku_interno and sku_liverpool):
                     st.error("❌ Completa todos los campos obligatorios")
                 elif precio_minimo >= precio_maximo:
                     st.error("❌ Precio mínimo debe ser menor a máximo")
                 else:
-                    st.markdown(f"""
-                    <div class='success-box'>
-                    ✅ CONFIRMAR NUEVO SKU:
-                    SKU: {sku_limpio}
-                    Precio: ${precio_minimo:.2f} - ${precio_maximo:.2f}
-                    Regla: {regla}
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
                     col_confirm1, col_confirm2 = st.columns(2)
                     with col_confirm1:
-                        if st.button("✅ Crear SKU", use_container_width=True, key="confirm_create"):
-                            insert_query = """
-                            INSERT INTO catalogo_maestro_v3 
-                            (sku_limpio, sku_interno, sku_liverpool, precio_minimo, precio_maximo, costo_odoo, regla_estrategia, estatus, id_cuenta)
-                            VALUES (:sku_limpio, :sku_interno, :sku_liverpool, :precio_minimo, :precio_maximo, :costo_odoo, :regla, :estatus, 'LVP_01')
-                            """
-                            if db.execute_update(insert_query, {
-                                "sku_limpio": sku_limpio,
-                                "sku_interno": sku_interno,
-                                "sku_liverpool": sku_liverpool,
-                                "precio_minimo": precio_minimo,
-                                "precio_maximo": precio_maximo,
-                                "costo_odoo": costo_odoo,
-                                "regla": regla,
-                                "estatus": estatus
-                            }):
-                                st.success("✅ SKU creado correctamente")
-                                st.cache_data.clear()
-                                st.rerun()
-                            else:
-                                st.error("❌ Error al crear SKU")
+                        if st.button("✅ Crear SKU", width="stretch", key="confirm_create"):
+                            with st.spinner("⏳ Creando SKU..."):
+                                insert_query = """
+                                INSERT INTO catalogo_maestro_v3 
+                                (sku_limpio, sku_interno, sku_liverpool, precio_minimo, precio_maximo, costo_odoo, regla_estrategia, estatus, id_cuenta)
+                                VALUES (:sku_limpio, :sku_interno, :sku_liverpool, :precio_minimo, :precio_maximo, :costo_odoo, :regla, :estatus, 'LVP_01')
+                                """
+                                if db.execute_update(insert_query, {
+                                    "sku_limpio": sku_limpio,
+                                    "sku_interno": sku_interno,
+                                    "sku_liverpool": sku_liverpool,
+                                    "precio_minimo": precio_minimo,
+                                    "precio_maximo": precio_maximo,
+                                    "costo_odoo": costo_odoo,
+                                    "regla": regla,
+                                    "estatus": estatus
+                                }):
+                                    st.success("✅ SKU creado correctamente")
+                                    st.cache_data.clear()
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Error al crear SKU")
                     
                     with col_confirm2:
-                        if st.button("❌ Cancelar", use_container_width=True, key="cancel_create"):
+                        if st.button("❌ Cancelar", width="stretch", key="cancel_create"):
                             st.info("Creación cancelada")
 
 # ==========================================
