@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # ==========================================
-# MEGAZORD WAR ROOM - DASHBOARD ENTERPRISE V2.2
+# MEGAZORD WAR ROOM - DASHBOARD ENTERPRISE V2.3
 # Centro de Comando Ejecutivo con BI Real-Time
 # MULTI-TENANT ARCHITECTURE INTEGRATED
 # ✅ COMPATIBLE CON STREAMLIT CLOUD
+# ✅ OPTIMIZADO PARA PERFORMANCE
 # ==========================================
 
 import streamlit as st
@@ -86,13 +87,11 @@ st.markdown(DARK_MODE_CSS, unsafe_allow_html=True)
 
 class AuthManager:
     def __init__(self):
-        # 🛡️ Parche de Seguridad: Hasheo en memoria
         password_plain = os.getenv("DASHBOARD_PASSWORD", "megazord2025")
         self.password_hash = hashlib.sha256(password_plain.encode()).hexdigest()
         self.session_timeout = 3600
 
     def login(self, password: str) -> bool:
-        # 🛡️ Comparación segura contra Timing Attacks
         input_hash = hashlib.sha256(password.encode()).hexdigest()
         if hmac.compare_digest(input_hash, self.password_hash):
             st.session_state['authenticated'] = True
@@ -101,7 +100,8 @@ class AuthManager:
         return False
 
     def is_authenticated(self) -> bool:
-        if 'auth_time' not in st.session_state: return False
+        if 'auth_time' not in st.session_state: 
+            return False
         if time.time() - st.session_state['auth_time'] > self.session_timeout:
             st.session_state['authenticated'] = False
             return False
@@ -111,6 +111,7 @@ class PostgreSQLManager:
     """
     ✅ COMPATIBLE CON STREAMLIT CLOUD
     Usa SQLAlchemy en lugar de psycopg2
+    ✅ OPTIMIZADO PARA PERFORMANCE
     """
     def __init__(self, database_url: str):
         self.database_url = database_url
@@ -119,11 +120,11 @@ class PostgreSQLManager:
 
     def _initialize_engine(self):
         try:
-            # ✅ SQLAlchemy es compatible con Streamlit Cloud
+            # ✅ NullPool + timeout corto = mejor para Streamlit
             self.engine = create_engine(
                 self.database_url, 
-                poolclass=NullPool,  # ← Mejor para Streamlit
-                connect_args={"connect_timeout": 5}
+                poolclass=NullPool,
+                connect_args={"connect_timeout": 10, "options": "-c statement_timeout=30000"}  # 30s timeout
             )
             # Test connection
             with self.engine.connect() as conn:
@@ -133,9 +134,10 @@ class PostgreSQLManager:
             logger.error(f"❌ Error conectando a PostgreSQL: {e}")
             self.engine = None
 
-    def execute_query(self, query: str, params: dict = None) -> pd.DataFrame:
+    def execute_query(self, query: str, params: dict = None, timeout: int = 30) -> pd.DataFrame:
         try:
             if self.engine is None:
+                st.warning("⚠️ Conexión a BD no disponible")
                 return pd.DataFrame()
             
             with self.engine.connect() as conn:
@@ -145,6 +147,7 @@ class PostgreSQLManager:
                 return pd.DataFrame(data, columns=columns)
         except Exception as e:
             logger.error(f"❌ Error en query: {e}")
+            st.warning(f"⚠️ Error consultando BD: {str(e)[:100]}")
             return pd.DataFrame()
 
     def execute_update(self, query: str, params: dict = None) -> bool:
@@ -174,6 +177,9 @@ auth = AuthManager()
 
 @st.cache_data(ttl=300)
 def get_historial_precios(days: int = 7) -> pd.DataFrame:
+    """
+    ✅ OPTIMIZADO: LIMIT 10000 en lugar de 50000
+    """
     query = """
     SELECT h.fecha_hora AS created_at, h.sku_interno, c.sku_limpio,
            h.precio_rival AS precio_ant, h.nuestro_precio AS precio_nuv,
@@ -182,7 +188,7 @@ def get_historial_precios(days: int = 7) -> pd.DataFrame:
     LEFT JOIN catalogo_maestro_v3 c ON h.sku_interno = c.sku_interno
     WHERE h.fecha_hora >= :fecha_desde 
     ORDER BY h.fecha_hora DESC 
-    LIMIT 50000
+    LIMIT 10000
     """
     return db.execute_query(query, {
         "fecha_desde": datetime.now() - timedelta(days=days)
@@ -230,15 +236,12 @@ def show_private_dashboard():
         st.markdown("---")
         st.subheader("📍 Selección de Tienda")
         
-        res_ctas = db.execute_query("SELECT id_cuenta, nombre_descriptivo FROM cuentas_liverpool ORDER BY id_cuenta ASC")
-        opciones = ["🌍 TODAS LAS CUENTAS"]
+        # ✅ OPTIMIZADO: Usar cache para cuentas
+        cuentas = get_cuentas_disponibles()
+        opciones = ["🌍 TODAS LAS CUENTAS"] + [f"✅ {cta}" for cta in cuentas]
         map_cuentas = {"🌍 TODAS LAS CUENTAS": "TODAS"}
-        
-        if not res_ctas.empty:
-            for _, r in res_ctas.iterrows():
-                lbl = f"✅ {r['nombre_descriptivo']} ({r['id_cuenta']})"
-                opciones.append(lbl)
-                map_cuentas[lbl] = r['id_cuenta']
+        for cta in cuentas:
+            map_cuentas[f"✅ {cta}"] = cta
         
         cta_label = st.selectbox("Filtrar por cuenta:", opciones)
         id_cuenta_filtro = map_cuentas[cta_label]
@@ -249,13 +252,18 @@ def show_private_dashboard():
         st.markdown("---")
         st.subheader("📊 Métricas en Vivo")
         
-        # SKUs Activos
-        df_skus = db.execute_query("SELECT COUNT(*) as total FROM catalogo_maestro_v3 WHERE estatus = 'ACTIVO'")
-        total_skus = df_skus['total'].values[0] if not df_skus.empty else 0
+        # ✅ OPTIMIZADO: Queries simples y rápidas
+        try:
+            df_skus = db.execute_query("SELECT COUNT(*) as total FROM catalogo_maestro_v3 WHERE estatus = 'ACTIVO'")
+            total_skus = df_skus['total'].values[0] if not df_skus.empty else 0
+        except:
+            total_skus = 0
         
-        # Últimas actualizaciones
-        df_updates = db.execute_query("SELECT COUNT(*) as total FROM historial_precios WHERE fecha_hora > NOW() - INTERVAL '1 hour'")
-        updates_hora = df_updates['total'].values[0] if not df_updates.empty else 0
+        try:
+            df_updates = db.execute_query("SELECT COUNT(*) as total FROM historial_precios WHERE fecha_hora > NOW() - INTERVAL '1 hour'")
+            updates_hora = df_updates['total'].values[0] if not df_updates.empty else 0
+        except:
+            updates_hora = 0
         
         col1, col2 = st.columns(2)
         with col1:
@@ -275,35 +283,44 @@ def show_private_dashboard():
     with tab1:
         st.subheader("📊 Resumen en Vivo")
         
-        df_hist = get_historial_precios(days=1)
+        with st.spinner("⏳ Cargando datos..."):
+            df_hist = get_historial_precios(days=1)
+        
         if not df_hist.empty:
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
                 st.metric("Precios Revisados", len(df_hist))
             with col2:
-                st.metric("Ajustes Realizados", df_hist[df_hist['precio_nuv'] != df_hist['precio_ant']].shape[0])
+                ajustes = df_hist[df_hist['precio_nuv'] != df_hist['precio_ant']].shape[0]
+                st.metric("Ajustes Realizados", ajustes)
             with col3:
                 buybox_count = (df_hist['resultado'] == 'GANADOR').sum()
                 st.metric("Ganando Buybox", buybox_count)
             with col4:
-                st.metric("% Ganancia", f"{(buybox_count/len(df_hist)*100):.1f}%")
+                porcentaje = (buybox_count/len(df_hist)*100) if len(df_hist) > 0 else 0
+                st.metric("% Ganancia", f"{porcentaje:.1f}%")
             
             # Gráfico de precios
             st.markdown("### 📈 Evolución de Precios (Últimas 24h)")
-            fig = px.line(df_hist.head(100), x='created_at', y=['precio_ant', 'precio_nuv'], 
-                         title='Comparación: Rival vs Nuestro Precio')
-            st.plotly_chart(fig, use_container_width=True)
+            try:
+                fig = px.line(df_hist.head(100), x='created_at', y=['precio_ant', 'precio_nuv'], 
+                             title='Comparación: Rival vs Nuestro Precio')
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:
+                st.warning(f"⚠️ No se pudo graficar: {e}")
         else:
             st.info("📭 No hay datos disponibles")
     
     with tab2:
         st.subheader("📈 Análisis Histórico")
         days = st.slider("Días a mostrar:", 1, 30, 7)
-        df_hist = get_historial_precios(days=days)
+        
+        with st.spinner("⏳ Cargando histórico..."):
+            df_hist = get_historial_precios(days=days)
         
         if not df_hist.empty:
-            st.dataframe(df_hist, use_container_width=True)
+            st.dataframe(df_hist, use_container_width=True, height=400)
             
             # Descargar CSV
             csv = df_hist.to_csv(index=False)
@@ -313,10 +330,14 @@ def show_private_dashboard():
                 file_name=f"historial_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv"
             )
+        else:
+            st.info("📭 No hay datos para descargar")
     
     with tab3:
         st.subheader("📋 Catálogo Maestro")
-        df_cat = get_catalogo_maestro()
+        
+        with st.spinner("⏳ Cargando catálogo..."):
+            df_cat = get_catalogo_maestro()
         
         if not df_cat.empty:
             # Filtros
@@ -331,18 +352,34 @@ def show_private_dashboard():
             if sku_filter:
                 df_filtered = df_filtered[df_filtered['sku_limpio'].str.contains(sku_filter, case=False, na=False)]
             
-            st.dataframe(df_filtered, use_container_width=True)
+            st.dataframe(df_filtered, use_container_width=True, height=400)
+        else:
+            st.info("📭 No hay catálogo disponible")
     
     with tab4:
         st.subheader("⚙️ Configuración")
         
-        if st.button("🔄 Limpiar Caché"):
-            st.cache_data.clear()
-            st.success("✅ Caché limpiado")
+        col1, col2 = st.columns(2)
         
-        if st.button("🚪 Cerrar Sesión"):
-            st.session_state['authenticated'] = False
-            st.rerun()
+        with col1:
+            if st.button("🔄 Limpiar Caché"):
+                st.cache_data.clear()
+                st.success("✅ Caché limpiado")
+        
+        with col2:
+            if st.button("🚪 Cerrar Sesión"):
+                st.session_state['authenticated'] = False
+                st.rerun()
+        
+        # Info
+        st.markdown("---")
+        st.info("""
+        ### 📊 Información del Dashboard
+        - **Versión:** 2.3 (Optimizado)
+        - **Status:** ✅ Activo
+        - **Base de datos:** PostgreSQL
+        - **Actualización:** Cada 5 minutos (caché)
+        """)
 
 # ==========================================
 # 🚀 MAIN LOGIC
