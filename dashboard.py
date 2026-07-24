@@ -1272,10 +1272,12 @@ def show_admin_dashboard():
                                 logger.info(f"📝 CREATE SKU: {sku_limpio}")
                                 logger.info(f"📝 SKU Interno: {sku_interno}, Liverpool: {sku_liverpool}")
                                 
+                                # INSERT SIN especificar ID - PostgreSQL lo genera automáticamente
                                 insert_query = f"""
                                 INSERT INTO catalogo_maestro_v3 
                                 (sku_limpio, sku_interno, sku_liverpool, precio_minimo, precio_maximo, costo_odoo, regla_estrategia, estatus, id_cuenta)
                                 VALUES ('{sku_limpio}', '{sku_interno}', '{sku_liverpool}', {float(precio_minimo)}, {float(precio_maximo)}, {float(costo_odoo)}, '{regla}', '{estatus}', 'LVP_01')
+                                RETURNING id
                                 """
                                 resultado = db.execute_update(insert_query)
                                 
@@ -1288,10 +1290,17 @@ def show_admin_dashboard():
                                     st.cache_data.clear()
                                     st.rerun()
                                 else:
-                                    st.error("❌ No se creó - Revisa logs")
+                                    st.error("❌ No se creó - Revisa logs de PostgreSQL")
+                                    logger.error("❌ Posible causa: ID duplicado o secuencia desincronizada")
                             except Exception as e:
                                 st.error(f"❌ ERROR: {str(e)}")
                                 logger.error(f"❌ Excepción: {e}")
+                                st.info("""
+                                💡 Si ves "duplicate key value" o "already exists":
+                                Ejecuta en DBeaver (SQL Editor):
+                                
+                                SELECT setval('catalogo_maestro_v3_id_seq', (SELECT MAX(id) FROM catalogo_maestro_v3));
+                                """)
                 
                 with col_confirm2:
                     if st.button("❌ CANCELAR", width="stretch", key="cancel_final_create"):
