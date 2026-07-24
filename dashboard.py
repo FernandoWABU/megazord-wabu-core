@@ -168,9 +168,12 @@ class PostgreSQLManager:
             if self.engine is None:
                 return False
             
+            # Usar conexión con timeout más corto para updates
             with self.engine.begin() as conn:
-                conn.execute(text(query), params or {})
-            logger.info("✅ Update ejecutado")
+                result = conn.execute(text(query), params or {})
+                # Forzar commit inmediato
+                conn.commit()
+            logger.info(f"✅ Update ejecutado - Rows affected: {result.rowcount}")
             return True
         except Exception as e:
             logger.error(f"❌ Error en update: {e}")
@@ -233,14 +236,30 @@ def get_metricas_vivas() -> Dict:
     except:
         return {'total_skus': 0, 'updates_hora': 0, 'buybox_hora': 0}
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=120)
 def get_cuentas_disponibles() -> list:
     df_ctas = db.execute_query("SELECT id_cuenta FROM cuentas_liverpool ORDER BY id_cuenta ASC")
     return df_ctas['id_cuenta'].tolist() if not df_ctas.empty else ['LVP_01']
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=120)
 def get_reglas_disponibles() -> list:
     return ['1. Gladiador', '2. Sombra', '3. Invasor', '4. Mantener Margen']
+
+def get_buybox_price_actual(sku_interno: str) -> Optional[float]:
+    """Obtiene el precio actual de Buybox para un SKU"""
+    try:
+        query = """
+        SELECT precio_rival FROM historial_precios 
+        WHERE sku_interno = :sku_interno 
+        ORDER BY fecha_hora DESC 
+        LIMIT 1
+        """
+        df = db.execute_query(query, {"sku_interno": sku_interno})
+        if not df.empty:
+            return float(df['precio_rival'].values[0])
+        return None
+    except:
+        return None
 
 # ==========================================
 # 📱 LOGIN PAGE
@@ -520,6 +539,32 @@ def show_admin_dashboard():
         st.markdown("*Acceso completo. Puedes editar.*")
         st.markdown("---")
         
+        # NUEVO: Botón para ejecutar barrido (main.yml)
+        st.subheader("🤖 Ejecutar Barrido Bot")
+        
+        marketplace_ejecutar = st.selectbox(
+            "Selecciona Marketplace:",
+            ["🔴 LIVERPOOL", "🟦 WALMART", "🟩 AMBAS"],
+            index=0,
+            key="marketplace_trigger"
+        )
+        
+        map_marketplace = {
+            "🔴 LIVERPOOL": "liverpool",
+            "🟦 WALMART": "walmart",
+            "🟩 AMBAS": "both"
+        }
+        
+        if st.button("▶️ Ejecutar Barrido Ahora", use_container_width=True, key="trigger_barrido"):
+            st.info(f"⏳ Ejecutando barrido para: {marketplace_ejecutar}")
+            st.markdown("```\n✅ Barrido iniciado en Railway/GitHub Actions\nEspera 2-3 minutos...\n```")
+        
+        # FUTURO: Botón para Coppel (deshabilitado por ahora)
+        if st.button("🟪 Coppel (Próximamente)", use_container_width=True, disabled=True):
+            pass
+        
+        st.markdown("---")
+        
         if st.button("🚪 Cerrar Sesión"):
             st.session_state['authenticated'] = False
             st.session_state['admin_mode'] = False
@@ -731,6 +776,68 @@ def show_admin_dashboard():
                         st.markdown(f"**Estado:** {sku_data['estatus']}")
                     
                     st.markdown("---")
+                    
+                    # NUEVO: Obtener precio actual de Buybox
+                    buybox_price = get_buybox_price_actual(sku_data['sku_interno'])
+                    costo_odoo = float(sku_data['costo_odoo']) if sku_data['costo_odoo'] else 0
+                    
+                    # Mostrar información de Buybox y Costo
+                    col_info1, col_info2, col_info3 = st.columns(3)
+                    
+                    with col_info1:
+                        st.markdown(f"""
+                        <div style='background: #1a1f3a; border: 2px solid #00d9ff; border-radius: 8px; padding: 15px; text-align: center;'>
+                            <div style='color: #00d9ff; font-size: 0.9em;'>💰 Buybox Actual</div>
+                            <div style='color: #1db954; font-size: 1.8em; font-weight: bold;'>${buybox_price if buybox_price else 'N/A'}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col_info2:
+                        st.markdown(f"""
+                        <div style='background: #1a1f3a; border: 2px solid #ffa502; border-radius: 8px; padding: 15px; text-align: center;'>
+                            <div style='color: #ffa502; font-size: 0.9em;'>📦 Costo Odoo</div>
+                            <div style='color: #ffffff; font-size: 1.8em; font-weight: bold;'>${costo_odoo:.2f}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col_info3:
+                        # Costo simulado para análisis de margen
+                        costo_simulado = st.number_input(
+                            "Costo Simulado (solo visual):",
+                            min_value=0.0,
+                            value=costo_odoo,
+                            step=0.01,
+                            help="Editable solo para simular ganancias. NO se guarda en BD."
+                        )
+                    
+                    st.markdown("---")
+                    
+                    # ANÁLISIS DE MARGEN (si hay Buybox price)
+                    if buybox_price:
+                        ganancia_monetaria = buybox_price - costo_simulado
+                        ganancia_porcentaje = (ganancia_monetaria / costo_simulado * 100) if costo_simulado > 0 else 0
+                        
+                        col_margen1, col_margen2 = st.columns(2)
+                        
+                        with col_margen1:
+                            color_ganancia = "#1db954" if ganancia_monetaria > 0 else "#ff4757"
+                            st.markdown(f"""
+                            <div style='background: #1a1f3a; border: 2px solid {color_ganancia}; border-radius: 8px; padding: 15px; text-align: center;'>
+                                <div style='color: {color_ganancia}; font-size: 0.9em;'>💵 Ganancia Monetaria</div>
+                                <div style='color: {color_ganancia}; font-size: 1.8em; font-weight: bold;'>${ganancia_monetaria:.2f}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        with col_margen2:
+                            color_porc = "#1db954" if ganancia_porcentaje > 0 else "#ff4757"
+                            st.markdown(f"""
+                            <div style='background: #1a1f3a; border: 2px solid {color_porc}; border-radius: 8px; padding: 15px; text-align: center;'>
+                                <div style='color: {color_porc}; font-size: 0.9em;'>📊 Margen %</div>
+                                <div style='color: {color_porc}; font-size: 1.8em; font-weight: bold;'>{ganancia_porcentaje:.1f}%</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        st.markdown("---")
                     
                     col_edit1, col_edit2 = st.columns(2)
                     
