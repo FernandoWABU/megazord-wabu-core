@@ -1,0 +1,4 @@
+python-dotenv==1.0.0
+cryptography==41.0.7
+psycopg==3.1.18
+requests==2.31.0
