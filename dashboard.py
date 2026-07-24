@@ -352,10 +352,13 @@ def show_executive_dashboard():
                 """, unsafe_allow_html=True)
             
             with col4:
-                stock_promedio = df_hist['stock'].mean() if 'stock' in df_hist.columns else 0
+                try:
+                    stock_promedio = pd.to_numeric(df_hist['stock'], errors='coerce').mean() if 'stock' in df_hist.columns else 0
+                except:
+                    stock_promedio = 0
                 st.markdown(f"""
                 <div class='metric-card'>
-                    <div class='metric-value'>{stock_promedio:.0f}</div>
+                    <div class='metric-value'>{stock_promedio:.0f if not np.isnan(stock_promedio) else 0}</div>
                     <div class='metric-label'>Stock Promedio</div>
                     <div class='metric-change'>Unidades disponibles</div>
                 </div>
@@ -587,10 +590,13 @@ def show_admin_dashboard():
                 """, unsafe_allow_html=True)
             
             with col4:
-                stock_promedio = df_hist['stock'].mean() if 'stock' in df_hist.columns else 0
+                try:
+                    stock_promedio = pd.to_numeric(df_hist['stock'], errors='coerce').mean() if 'stock' in df_hist.columns else 0
+                except:
+                    stock_promedio = 0
                 st.markdown(f"""
                 <div class='metric-card'>
-                    <div class='metric-value'>{stock_promedio:.0f}</div>
+                    <div class='metric-value'>{stock_promedio:.0f if not np.isnan(stock_promedio) else 0}</div>
                     <div class='metric-label'>Stock Promedio</div>
                 </div>
                 """, unsafe_allow_html=True)
