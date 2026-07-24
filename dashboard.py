@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 # ==========================================
-# MEGAZORD WAR ROOM - DASHBOARD ENTERPRISE V2.1
+# MEGAZORD WAR ROOM - DASHBOARD ENTERPRISE V2.2
 # Centro de Comando Ejecutivo con BI Real-Time
 # MULTI-TENANT ARCHITECTURE INTEGRATED
+# ✅ COMPATIBLE CON STREAMLIT CLOUD
 # ==========================================
 
 import streamlit as st
 import pandas as pd
 import numpy as np
-import psycopg2
-from psycopg2 import pool
+from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
@@ -48,29 +49,22 @@ DARK_MODE_CSS = """
         --primary-dark: #0a0e27;
         --secondary-dark: #1a1f3a;
         --accent-blue: #00d9ff;
-        --accent-green: #1db954;
-        --accent-red: #ff003c;
-        --text-primary: #ffffff;
-        --text-secondary: #b0bec5;
-        --border-color: #00d9ff;
-        /* FORZAR LETRAS NEGRAS EN BOTONES Y DESPLEGABLES */
-        .stButton > button { color: #000000 !important; text-shadow: none !important; }
-        .stButton > button p { color: #000000 !important; font-weight: 900 !important; }
-        div[data-baseweb="select"] * { color: #000000 !important; }
     }
-    .main { background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%); color: #ffffff; }
     
-    /* FIX DE VISIBILIDAD DEL SIDEBAR */
-    [data-testid="stSidebar"] { 
-        background-color: #0f1428 !important; 
-        border-right: 2px solid #00d9ff; 
+    body, .main { background-color: #0a0e27 !important; color: #ffffff !important; }
+    
+    .stContainer { background-color: #0a0e27 !important; }
+    
+    [data-testid="stSidebar"] {
+        background-color: #1a1f3a !important;
+        border-right: 2px solid #00d9ff !important;
     }
-    [data-testid="stSidebar"] label, 
-    [data-testid="stSidebar"] p, 
+    
     [data-testid="stSidebar"] span, 
     [data-testid="stSidebar"] div { 
         color: #ffffff !important; 
     }
+    
     [data-testid="stSidebar"] h1, 
     [data-testid="stSidebar"] h2, 
     [data-testid="stSidebar"] h3 { 
@@ -87,7 +81,7 @@ DARK_MODE_CSS = """
 st.markdown(DARK_MODE_CSS, unsafe_allow_html=True)
 
 # ==========================================
-# 🔐 SEGURIDAD & BD POSTGRESQL
+# 🔐 SEGURIDAD & BD POSTGRESQL (SQLAlchemy)
 # ==========================================
 
 class AuthManager:
@@ -114,78 +108,101 @@ class AuthManager:
         return st.session_state.get('authenticated', False)
 
 class PostgreSQLManager:
+    """
+    ✅ COMPATIBLE CON STREAMLIT CLOUD
+    Usa SQLAlchemy en lugar de psycopg2
+    """
     def __init__(self, database_url: str):
         self.database_url = database_url
-        self._pool = None
-        self._initialize_pool()
+        self.engine = None
+        self._initialize_engine()
 
-    def _initialize_pool(self):
+    def _initialize_engine(self):
         try:
-            self._pool = psycopg2.pool.SimpleConnectionPool(1, 10, self.database_url, connect_timeout=5)
-        except Exception:
-            st.error("❌ No se pudo conectar a PostgreSQL")
+            # ✅ SQLAlchemy es compatible con Streamlit Cloud
+            self.engine = create_engine(
+                self.database_url, 
+                poolclass=NullPool,  # ← Mejor para Streamlit
+                connect_args={"connect_timeout": 5}
+            )
+            # Test connection
+            with self.engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            logger.info("✅ Conexión PostgreSQL: EXITOSA")
+        except Exception as e:
+            logger.error(f"❌ Error conectando a PostgreSQL: {e}")
+            self.engine = None
 
-    def execute_query(self, query: str, params: tuple = None) -> pd.DataFrame:
+    def execute_query(self, query: str, params: dict = None) -> pd.DataFrame:
         try:
-            conn = self._pool.getconn()
-            cursor = conn.cursor()
-            if params: cursor.execute(query, params)
-            else: cursor.execute(query)
-            columns = [desc[0] for desc in cursor.description]
-            data = cursor.fetchall()
-            cursor.close()
-            self._pool.putconn(conn)
-            return pd.DataFrame(data, columns=columns)
-        except Exception:
+            if self.engine is None:
+                return pd.DataFrame()
+            
+            with self.engine.connect() as conn:
+                result = conn.execute(text(query), params or {})
+                columns = result.keys()
+                data = result.fetchall()
+                return pd.DataFrame(data, columns=columns)
+        except Exception as e:
+            logger.error(f"❌ Error en query: {e}")
             return pd.DataFrame()
 
-    def execute_update(self, query: str, params: tuple = None) -> bool:
+    def execute_update(self, query: str, params: dict = None) -> bool:
         try:
-            conn = self._pool.getconn()
-            cursor = conn.cursor()
-            if params: cursor.execute(query, params)
-            else: cursor.execute(query)
-            conn.commit()
-            cursor.close()
-            self._pool.putconn(conn)
+            if self.engine is None:
+                return False
+            
+            with self.engine.begin() as conn:
+                conn.execute(text(query), params or {})
+            logger.info("✅ Update ejecutado")
             return True
         except Exception as e:
-            if conn: conn.rollback()
-            self._pool.putconn(conn)
+            logger.error(f"❌ Error en update: {e}")
             return False
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    st.error("❌ DATABASE_URL no configurada en Streamlit Secrets")
+    st.stop()
+
 db = PostgreSQLManager(DATABASE_URL)
 auth = AuthManager()
 
 # ==========================================
-# 📊 DATA FETCHERS
+# 📊 CACHED DATA FUNCTIONS (Mejor performance)
 # ==========================================
 
 @st.cache_data(ttl=300)
 def get_historial_precios(days: int = 7) -> pd.DataFrame:
     query = """
-    SELECT h.fecha_hora AS created_at, h.fecha_hora, h.sku_interno, c.sku_limpio,
+    SELECT h.fecha_hora AS created_at, h.sku_interno, c.sku_limpio,
            h.precio_rival AS precio_ant, h.nuestro_precio AS precio_nuv,
            h.stock, h.posicion, h.buybox AS resultado, h.id_cuenta
-    FROM historial_precios h LEFT JOIN catalogo_maestro_v3 c ON h.sku_interno = c.sku_interno
-    WHERE h.fecha_hora >= %s ORDER BY h.fecha_hora DESC LIMIT 50000
+    FROM historial_precios h 
+    LEFT JOIN catalogo_maestro_v3 c ON h.sku_interno = c.sku_interno
+    WHERE h.fecha_hora >= :fecha_desde 
+    ORDER BY h.fecha_hora DESC 
+    LIMIT 50000
     """
-    return db.execute_query(query, (datetime.now() - timedelta(days=days),))
+    return db.execute_query(query, {
+        "fecha_desde": datetime.now() - timedelta(days=days)
+    })
 
 @st.cache_data(ttl=300)
 def get_catalogo_maestro() -> pd.DataFrame:
     query = """
-    SELECT id, sku_limpio, sku_limpio as sku, sku_interno, sku_liverpool, sku_walmart, sku_coppel,
+    SELECT id, sku_limpio, sku_interno, sku_liverpool, sku_walmart, sku_coppel,
            precio_minimo, precio_maximo, costo_odoo, estatus, id_cuenta,
            COALESCE(regla_estrategia, '1. Gladiador') AS regla
-    FROM catalogo_maestro_v3 ORDER BY sku_limpio
+    FROM catalogo_maestro_v3 
+    ORDER BY sku_limpio
     """
     return db.execute_query(query)
 
+@st.cache_data(ttl=600)
 def get_cuentas_disponibles() -> list:
     df_ctas = db.execute_query("SELECT id_cuenta FROM cuentas_liverpool ORDER BY id_cuenta ASC")
-    return df_ctas['id_cuenta'].tolist() if not df_ctas.empty else ['LVP_01', 'LVP_02']
+    return df_ctas['id_cuenta'].tolist() if not df_ctas.empty else ['LVP_01']
 
 # ==========================================
 # 📱 LOGIN PAGE
@@ -197,8 +214,10 @@ def show_login_page():
         st.markdown("<br><br><br><div style='text-align: center;'><h1 style='color: #00d9ff;'>⚡ MEGAZORD WAR ROOM</h1></div><br><br>", unsafe_allow_html=True)
         password = st.text_input("🔐 Contraseña de Acceso", type="password")
         if st.button("🚀 ACCESO RESTRINGIDO", use_container_width=True):
-            if auth.login(password): st.rerun()
-            else: st.error("❌ Contraseña incorrecta")
+            if auth.login(password): 
+                st.rerun()
+            else: 
+                st.error("❌ Contraseña incorrecta")
 
 # ==========================================
 # 🔐 DASHBOARD PRIVADO
@@ -209,370 +228,131 @@ def show_private_dashboard():
     # 📍 SIDEBAR FILTER
     with st.sidebar:
         st.markdown("---")
-        st.subheader("📍 Selección de Tienda Global")
-        query_cuentas = "SELECT id_cuenta, nombre_descriptivo, is_active FROM cuentas_liverpool ORDER BY id_cuenta ASC"
-        res_ctas = db.execute_query(query_cuentas)
+        st.subheader("📍 Selección de Tienda")
+        
+        res_ctas = db.execute_query("SELECT id_cuenta, nombre_descriptivo FROM cuentas_liverpool ORDER BY id_cuenta ASC")
         opciones = ["🌍 TODAS LAS CUENTAS"]
         map_cuentas = {"🌍 TODAS LAS CUENTAS": "TODAS"}
+        
         if not res_ctas.empty:
             for _, r in res_ctas.iterrows():
-                lbl = f"{'✅' if r['is_active'] else '⏸️'} {r['nombre_descriptivo']} ({r['id_cuenta']})"
+                lbl = f"✅ {r['nombre_descriptivo']} ({r['id_cuenta']})"
                 opciones.append(lbl)
                 map_cuentas[lbl] = r['id_cuenta']
-        cta_label = st.selectbox("Filtrar Dashboard por:", opciones)
+        
+        cta_label = st.selectbox("Filtrar por cuenta:", opciones)
         id_cuenta_filtro = map_cuentas[cta_label]
 
         # ==========================================
-        # 🚀 CENTRO DE OPERACIONES MULTI-CANAL
+        # 📊 MÉTRICAS PRINCIPALES
         # ==========================================
         st.markdown("---")
-        st.subheader("⚡ Centro de Lanzamiento")
+        st.subheader("📊 Métricas en Vivo")
+        
+        # SKUs Activos
+        df_skus = db.execute_query("SELECT COUNT(*) as total FROM catalogo_maestro_v3 WHERE estatus = 'ACTIVO'")
+        total_skus = df_skus['total'].values[0] if not df_skus.empty else 0
+        
+        # Últimas actualizaciones
+        df_updates = db.execute_query("SELECT COUNT(*) as total FROM historial_precios WHERE fecha_hora > NOW() - INTERVAL '1 hour'")
+        updates_hora = df_updates['total'].values[0] if not df_updates.empty else 0
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("🎯 SKUs Activos", total_skus)
+        with col2:
+            st.metric("⚡ Updates/Hora", updates_hora)
 
-        # 🔐 Credenciales de GitHub
-        try:
-            GITHUB_TOKEN = st.secrets["GITHUB_PAT"] 
-            GITHUB_USER = "FernandoWABU"       
-            GITHUB_REPO = "megazord-wabu-core"   
-        except Exception:
-            st.error("⚠️ Faltan credenciales en los Secrets de Streamlit.")
-            GITHUB_TOKEN = ""
-            GITHUB_USER = ""
-            GITHUB_REPO = ""
-
-        headers_github = {
-            "Authorization": f"token {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github.v3+json"
-        }
-
-        col_btn1, col_btn2 = st.columns(2)
-
-        # 🔵 PANEL COPPEL
-        with col_btn1:
-            st.markdown("**🔵 Coppel**")
-            if st.button("🚀 Lanzar", key="btn_coppel", use_container_width=True):
-                url_coppel = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/actions/workflows/megazord-coppel.yml/dispatches"
-                try:
-                    res = requests.post(url_coppel, headers=headers_github, json={"ref": "main"})
-                    if res.status_code == 204:
-                        st.success("✅ Misil Coppel en camino.")
-                    else:
-                        st.error(f"❌ Error {res.status_code}: Verifica tu GITHUB_PAT o el nombre del repositorio.")
-                except Exception as e:
-                    st.error(f"❌ Error de conexión: {e}")
-
-        # 🔴🟢 PANEL MULTI-TIENDA
-        with col_btn2:
-            st.markdown("**🔴🟢 Multi-Tienda**")
-            objetivo = st.selectbox(
-                "Objetivo:", 
-                ["LIVERPOOL", "WALMART", "AMBAS"], 
-                label_visibility="collapsed"
-            )
-            
-            if st.button("🚀 Disparar", key="btn_multi", type="primary", use_container_width=True):
-                url_main = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/actions/workflows/main.yml/dispatches"
-                payload = {
-                    "ref": "main", 
-                    "inputs": {"tienda": objetivo.lower()}
-                }
-                
-                try:
-                    res = requests.post(url_main, headers=headers_github, json=payload)
-                    if res.status_code == 204:
-                        st.success(f"✅ Misil {objetivo} lanzado con éxito.")
-                    else:
-                        st.error(f"❌ Error {res.status_code}: Verifica tu GITHUB_PAT.")
-                except Exception as e:
-                    st.error(f"❌ Error de conexión: {e}")
-
-    st.markdown("""<h1 style="color: #1db954;">🔐 SALA DE CONTROL EJECUTIVA - MODO COMANDANTE</h1>""", unsafe_allow_html=True)
+    # ==========================================
+    # 📊 MAIN CONTENT
+    # ==========================================
     
-    df_catalogo = get_catalogo_maestro()
-    lista_cuentas = get_cuentas_disponibles()
+    st.markdown("<h1 style='text-align: center; color: #00d9ff;'>⚡ MEGAZORD WAR ROOM - Centro de Control</h1>", unsafe_allow_html=True)
     
-    if id_cuenta_filtro != "TODAS" and not df_catalogo.empty:
-        df_catalogo = df_catalogo[df_catalogo['id_cuenta'] == id_cuenta_filtro]
-        
-    if not df_catalogo.empty:
-        
-        # 1. SELECTOR DE CANAL
-        st.markdown("### 🏬 1. Selecciona el Canal de Venta")
-        tienda_activa = st.selectbox("¿Qué canal deseas inspeccionar o modificar?", ["TODOS", "LIVERPOOL", "WALMART", "COPPEL"], key="tienda_activa_selector")
-        
-        df_canal = df_catalogo.copy()
-        if tienda_activa == "LIVERPOOL": df_canal = df_canal[df_canal['sku_liverpool'].notna() & (df_canal['sku_liverpool'] != '')]
-        elif tienda_activa == "WALMART": df_canal = df_canal[df_canal['sku_walmart'].notna() & (df_canal['sku_walmart'] != '')]
-        elif tienda_activa == "COPPEL": df_canal = df_canal[df_canal['sku_coppel'].notna() & (df_canal['sku_coppel'] != '')]
-
-        st.markdown("---")
-        
-        # =========================================================================
-        # 🎯 2. BUSCADOR PREDICTIVO Y EDITOR DE ESTRATEGIA
-        # =========================================================================
-        st.markdown("### 🎯 2. Buscador Predictivo y Editor de Estrategia")
-        term = st.text_input(f"🔍 Buscar en {tienda_activa} (SKU Interno, Liverpool, Walmart, etc):", placeholder="Ej: HCK13.3atomizador...")
-        
-        df_filtrado = df_canal.copy()
-        if term:
-            df_filtrado = df_canal[
-                df_canal['sku_limpio'].astype(str).str.contains(term, case=False, na=False) |
-                df_canal['sku_interno'].astype(str).str.contains(term, case=False, na=False) |
-                df_canal['sku_liverpool'].astype(str).str.contains(term, case=False, na=False) |
-                df_canal['sku_walmart'].astype(str).str.contains(term, case=False, na=False) |
-                df_canal['sku_coppel'].astype(str).str.contains(term, case=False, na=False)
-            ]
-        
-        if not df_filtrado.empty:
-            ops_fmt = df_filtrado.apply(
-                lambda r: f"🆔 {r['id']} | 📦 {r['sku_limpio']} | Cta: {r.get('id_cuenta', 'N/A')} | LVP: {r.get('sku_liverpool', 'N/A')}", 
-                axis=1
-            ).tolist()
-            
-            sel_idx = st.selectbox(f"Coincidencias en {tienda_activa}:", range(len(df_filtrado)), format_func=lambda x: ops_fmt[x])
-            
-            sku_data = df_filtrado.iloc[sel_idx]
-            row_id = sku_data['id']
-            
-            estatus_lvp_actual = str(sku_data.get('estatus', 'ACTIVO')).strip() == 'ACTIVO'
-            estatus_wmt_actual = str(sku_data.get('estatus_walmart', 'ACTIVO')).strip() == 'ACTIVO'
-            estatus_cpp_actual = str(sku_data.get('estatus_coppel', 'ACTIVO')).strip() == 'ACTIVO'
-            
-            # 📌 DISEÑO DE FILAS DE EDICIÓN
-            col_min, col_max, col_regla, col_cta = st.columns(4) # Removido el costo para darle más espacio
-            with col_min: new_min = st.number_input("P. Mínimo", value=float(sku_data['precio_minimo']), step=0.01)
-            with col_max: new_max = st.number_input("P. Máximo", value=float(sku_data['precio_maximo']), step=0.01)
-            with col_regla:
-                r_list = ["1. Gladiador", "2. Ancla Mínimo", "3. Cosecha Máximo", "4. Analista Histórico", "5. Depredador", "6. Francotirador", "7. Bomba de Tiempo", "8. Liquidador Sabio", "9. Venta Especial"]
-                r_act = str(sku_data['regla']).strip()
-                if r_act not in r_list: r_act = r_list[0]
-                new_rule = st.selectbox("Regla de Repricing", r_list, index=r_list.index(r_act))
-            with col_cta:
-                cta_act = str(sku_data.get('id_cuenta', 'LVP_01'))
-                if cta_act not in lista_cuentas: lista_cuentas.append(cta_act)
-                new_cta = st.selectbox("Tienda Asignada", lista_cuentas, index=lista_cuentas.index(cta_act))
-
-            # =========================================================================
-            # 🧮 SIMULADOR WHAT-IF INTEGRADO (NUEVO)
-            # =========================================================================
-            st.markdown("---")
-            st.markdown("### 🧮 Simulador Financiero en Vivo")
-            st.info("💡 **Nota:** Juega con el costo y precio aquí para ver tu rentabilidad real. **Estos números son simulados y NO alteran tu catálogo al guardar.**")
-
-            # 🤖 Autodetección del precio competidor del historial
-            try:
-                q_last = "SELECT nuestro_precio, precio_rival FROM historial_precios WHERE sku_interno = %s ORDER BY fecha_hora DESC LIMIT 1"
-                df_last = db.execute_query(q_last, (str(sku_data['sku_interno']),))
-                if not df_last.empty:
-                    p_rival_raw = df_last.iloc[0]['precio_rival']
-                    p_nuestro = float(df_last.iloc[0]['nuestro_precio'])
-                    try:
-                        p_rival = float(p_rival_raw)
-                        precio_sim_default = p_rival if p_rival > 0 else p_nuestro
-                    except:
-                        precio_sim_default = p_nuestro
-                else:
-                    precio_sim_default = float(sku_data['precio_maximo'])
-            except:
-                precio_sim_default = float(sku_data['precio_maximo'])
-
-            col_sim1, col_sim2, col_sim3, col_sim4 = st.columns(4)
-            with col_sim1:
-                costo_simulado = st.number_input("Costo Odoo (Simulación)", value=float(sku_data['costo_odoo']), step=10.0, format="%.2f")
-            with col_sim2:
-                precio_simulado = st.number_input(f"Precio Competencia ({tienda_activa})", value=float(precio_sim_default), step=10.0, format="%.2f")
-
-            # Motor Matemático
-            try:
-                costo_con_iva = costo_simulado * 1.16
-                precio_neto_sin_iva = precio_simulado / 1.16
-                retenciones_fiscales = precio_neto_sin_iva * (0.025 + 0.08)
-
-                if tienda_activa == "WALMART":
-                    comision_mkt = precio_simulado * 0.15 + 76
-                elif tienda_activa == "COPPEL":
-                    comision_mkt = precio_simulado * 0.15 + 76
-                else: # LIVERPOOL / TODOS
-                    comision_mkt = precio_simulado * 0.17 + 130
-
-                ingreso_neto = precio_simulado - comision_mkt - retenciones_fiscales
-                ganancia = ingreso_neto - costo_con_iva
-                margen = (ganancia / costo_con_iva) * 100 if costo_con_iva > 0 else 0
-            except:
-                ganancia, margen = 0.0, 0.0
-
-            with col_sim3:
-                st.metric("Utilidad Neta Estimada", f"${ganancia:.2f}")
-            with col_sim4:
-                st.metric("ROI / Margen", f"{margen:.1f}%", delta=f"{margen:.1f}%", delta_color="normal" if margen >= 0 else "inverse")
-
-            st.markdown("---")
-            # =========================================================================
-
-            st.markdown("##### 🔌 Interruptores de Referencia (Estatus del SKU por Tienda)")
-            col_sw_lvp, col_sw_wmt, col_sw_cpp, _ = st.columns([1, 1, 1, 1])
-            
-            with col_sw_lvp:
-                new_status_lvp = st.toggle("Estatus LIVERPOOL", value=estatus_lvp_actual, help="Prende o apaga el repricer para esta referencia en Liverpool")
-            with col_sw_wmt:
-                new_status_wmt = st.toggle("Estatus WALMART", value=estatus_wmt_actual, help="Prende o apaga el repricer para esta referencia en Walmart")
-            with col_sw_cpp:
-                new_status_cpp = st.toggle("Estatus COPPEL", value=estatus_cpp_actual, help="Prende o apaga el repricer para esta referencia en Coppel")
-            
-            val_lvp = 'ACTIVO' if new_status_lvp else 'INACTIVO'
-            val_wmt = 'ACTIVO' if new_status_wmt else 'INACTIVO'
-            val_cpp = 'ACTIVO' if new_status_cpp else 'INACTIVO'
-
-            if st.button("💾 Guardar Configuración de SKU", use_container_width=True):
-                # NOTE: Costo_simulado NO se guarda en la DB, manteniendo Odoo seguro.
-                query_update_individual = """
-                    UPDATE catalogo_maestro_v3 
-                    SET precio_minimo=%s, precio_maximo=%s, regla_estrategia=%s, id_cuenta=%s,
-                        estatus=%s, estatus_wmt=%s, estatus_coppel=%s 
-                    WHERE id=%s
-                """
-                if db.execute_update(query_update_individual, (new_min, new_max, new_rule, new_cta, val_lvp, val_wmt, val_cpp, int(row_id))):
-                    st.success(f"✅ ¡Configuración e Interruptores blindados para el ID {row_id}!")
-                    st.cache_data.clear()
-                    time.sleep(0.5)
-                    st.rerun()
-                else:
-                    st.error("❌ Error al impactar los cambios en el servidor central de PostgreSQL.")
-
-            # ACORDEÓN: RADAR DE PRECIOS
-            with st.expander(f"📈 Radar de Precios (Histórico) - {tienda_activa}", expanded=False):
-                try:
-                    if tienda_activa in ["LIVERPOOL", "TODOS"]:
-                        sku_int = f"%{str(sku_data.get('sku_interno') or '').strip()}%"
-                        if id_cuenta_filtro == "TODAS":
-                            q_lvp = "SELECT fecha_hora as created_at, nuestro_precio, precio_rival, id_cuenta FROM historial_precios WHERE sku_interno ILIKE %s AND fecha_hora >= NOW() - INTERVAL '30 days' ORDER BY fecha_hora ASC"
-                            df_g = db.execute_query(q_lvp, (sku_int,))
-                        else:
-                            q_lvp = "SELECT fecha_hora as created_at, nuestro_precio, precio_rival, id_cuenta FROM historial_precios WHERE sku_interno ILIKE %s AND id_cuenta = %s AND fecha_hora >= NOW() - INTERVAL '30 days' ORDER BY fecha_hora ASC"
-                            df_g = db.execute_query(q_lvp, (sku_int, id_cuenta_filtro))
-                        
-                        if not df_g.empty:
-                            df_g['created_at'] = pd.to_datetime(df_g['created_at'])
-                            fig = px.line(df_g, x='created_at', y='nuestro_precio', color='id_cuenta', markers=True, title="Nuestro Precio por Tienda")
-                            fig.update_layout(plot_bgcolor='#0E1117', paper_bgcolor='#0E1117', font=dict(color='#FFFFFF'))
-                            st.plotly_chart(fig, use_container_width=True)
-                        else: st.info("Sin datos en los últimos 30 días.")
-                except Exception as e: st.error(f"Error Gráfica: {e}")
-
-    st.markdown("---")
+    # Tabs
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "📈 Histórico", "📋 Catálogo", "⚙️ Configuración"])
     
-    # ACORDEÓN: EDITOR MASIVO
-    with st.expander("📊 3. Editor Masivo del Canal Activo", expanded=False):
-        try:
-            if len(df_canal) > 0:
-                st.info("💡 Edita directamente en la tabla y presiona Guardar. ¡Ahora también puedes cambiar la cuenta de múltiples SKUs a la vez!")
-                edited_df = st.data_editor(
-                    df_canal[['id', 'sku_limpio', 'sku_interno', 'precio_minimo', 'precio_maximo', 'regla', 'id_cuenta', 'estatus']],
-                    use_container_width=True, hide_index=True,
-                    column_config={
-                        'id': st.column_config.NumberColumn("ID", disabled=True),
-                        'sku_limpio': st.column_config.TextColumn("SKU Limpio", disabled=True),
-                        'id_cuenta': st.column_config.SelectboxColumn("Cuenta", options=lista_cuentas),
-                        'regla': st.column_config.SelectboxColumn("Regla", options=r_list),
-                        'estatus': st.column_config.SelectboxColumn("Estatus", options=['ACTIVO', 'INACTIVO'])
-                    }
-                )
-                if st.button("💾 Guardar Cambios Masivos", use_container_width=True):
-                    for idx, r in edited_df.iterrows():
-                        orig = df_canal.iloc[idx]
-                        if r['precio_minimo']!=orig['precio_minimo'] or r['id_cuenta']!=orig['id_cuenta'] or r['regla']!=orig['regla']:
-                            db.execute_update(
-                                "UPDATE catalogo_maestro_v3 SET precio_minimo=%s, precio_maximo=%s, regla_estrategia=%s, id_cuenta=%s, estatus=%s WHERE id=%s", 
-                                (r['precio_minimo'], r['precio_maximo'], r['regla'], r['id_cuenta'], r['estatus'], int(r['id']))
-                            )
-                    st.success("✅ Cambios Masivos Guardados.")
-                    st.cache_data.clear()
-                    time.sleep(0.8)
-                    st.rerun()
-        except Exception as e: st.error(f"Error masivo: {e}")
-
-    # ACORDEÓN: CALCULADORA COMPLETA (Se mantiene la general por si acaso)
-    with st.expander("🧮 Calculadora General (Independiente)", expanded=False):
-        col_calc1, col_calc2, col_calc3, col_calc4 = st.columns(4)
-        with col_calc1: mkt_simular = st.selectbox("Marketplace", ["LIVERPOOL", "WALMART", "COPPEL"], key="sim_mkt")
-        with col_calc2: costo_base_sim = st.number_input("Costo Odoo (Sin IVA)", min_value=0.0, value=100.0, step=10.0)
-        with col_calc3: precio_venta_sim = st.number_input("Precio Propuesto", min_value=0.0, value=350.0, step=10.0)
-            
-        costo_con_iva = costo_base_sim * 1.16
-        precio_neto_sin_iva = precio_venta_sim / 1.16
-        retenciones_fiscales = precio_neto_sin_iva * (0.025 + 0.08)
+    with tab1:
+        st.subheader("📊 Resumen en Vivo")
         
-        if mkt_simular == "LIVERPOOL":
-            ingreso_bruto = (precio_venta_sim * 0.83) - 130
-            comision_mkt = precio_venta_sim * 0.17 + 130
+        df_hist = get_historial_precios(days=1)
+        if not df_hist.empty:
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Precios Revisados", len(df_hist))
+            with col2:
+                st.metric("Ajustes Realizados", df_hist[df_hist['precio_nuv'] != df_hist['precio_ant']].shape[0])
+            with col3:
+                buybox_count = (df_hist['resultado'] == 'GANADOR').sum()
+                st.metric("Ganando Buybox", buybox_count)
+            with col4:
+                st.metric("% Ganancia", f"{(buybox_count/len(df_hist)*100):.1f}%")
+            
+            # Gráfico de precios
+            st.markdown("### 📈 Evolución de Precios (Últimas 24h)")
+            fig = px.line(df_hist.head(100), x='created_at', y=['precio_ant', 'precio_nuv'], 
+                         title='Comparación: Rival vs Nuestro Precio')
+            st.plotly_chart(fig, use_container_width=True)
         else:
-            ingreso_bruto = (precio_venta_sim * 0.85) - 76
-            comision_mkt = precio_venta_sim * 0.15 + 76
+            st.info("📭 No hay datos disponibles")
+    
+    with tab2:
+        st.subheader("📈 Análisis Histórico")
+        days = st.slider("Días a mostrar:", 1, 30, 7)
+        df_hist = get_historial_precios(days=days)
+        
+        if not df_hist.empty:
+            st.dataframe(df_hist, use_container_width=True)
             
-        utilidad_neta = ingreso_bruto - costo_con_iva - retenciones_fiscales
-        margen_porcentual = (utilidad_neta / costo_con_iva * 100) if costo_con_iva > 0 else 0.0
+            # Descargar CSV
+            csv = df_hist.to_csv(index=False)
+            st.download_button(
+                label="📥 Descargar CSV",
+                data=csv,
+                file_name=f"historial_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+    
+    with tab3:
+        st.subheader("📋 Catálogo Maestro")
+        df_cat = get_catalogo_maestro()
         
-        with col_calc4:
-            st.markdown(f"**Estatus de Operación**")
-            if utilidad_neta > 0: st.success(f"🟢 RENTABLE ({margen_porcentual:.1f}%)")
-            else: st.error(f"🔴 PÉRDIDA ({margen_porcentual:.1f}%)")
-                
-        mc1, mc2, mc3, mc4 = st.columns(4)
-        mc1.metric("📦 Costo + IVA", f"${costo_con_iva:.2f}")
-        mc2.metric("💸 Comis+Envío", f"${comision_mkt:.2f}")
-        mc3.metric("🏛️ Retención SAT", f"${retenciones_fiscales:.2f}")
-        mc4.metric("💰 Utilidad Neta", f"${utilidad_neta:.2f}")
-
-    # ACORDEÓN: BÓVEDA VIP
-    with st.expander("🔐 Panel de Administración: Bóveda VIP (Tokens y Cookies)", expanded=False):
-        df_b = db.execute_query("SELECT id_cuenta, nombre_descriptivo, email_usuario, is_active, token_autorizacion, cookie_vip FROM cuentas_liverpool ORDER BY id_cuenta ASC")
+        if not df_cat.empty:
+            # Filtros
+            col1, col2 = st.columns(2)
+            with col1:
+                status_filter = st.multiselect("Estado:", df_cat['estatus'].unique(), default=df_cat['estatus'].unique())
+            with col2:
+                sku_filter = st.text_input("Buscar SKU:")
+            
+            # Aplicar filtros
+            df_filtered = df_cat[df_cat['estatus'].isin(status_filter)]
+            if sku_filter:
+                df_filtered = df_filtered[df_filtered['sku_limpio'].str.contains(sku_filter, case=False, na=False)]
+            
+            st.dataframe(df_filtered, use_container_width=True)
+    
+    with tab4:
+        st.subheader("⚙️ Configuración")
         
-        df_e = st.data_editor(
-            df_b, 
-            hide_index=True, 
-            use_container_width=True,
-            column_config={
-                "id_cuenta": st.column_config.TextColumn("ID", disabled=True),
-                "nombre_descriptivo": "Nombre Cuenta",
-                "email_usuario": "Correo Login",
-                "is_active": "Activa",
-                "token_autorizacion": "Token (Bearer)",
-                "cookie_vip": "Cookie VIP"
-            }
-        )
+        if st.button("🔄 Limpiar Caché"):
+            st.cache_data.clear()
+            st.success("✅ Caché limpiado")
         
-        if st.button("💾 Guardar Bóveda"):
-            for _, r in df_e.iterrows():
-                db.execute_update(
-                    "UPDATE cuentas_liverpool SET nombre_descriptivo=%s, email_usuario=%s, is_active=%s, token_autorizacion=%s, cookie_vip=%s WHERE id_cuenta=%s", 
-                    (r['nombre_descriptivo'], r['email_usuario'], r['is_active'], r['token_autorizacion'], r['cookie_vip'], r['id_cuenta'])
-                )
-            st.success("✅ Bóveda Actualizada con Éxito (Tokens y Cookies blindados)")
-            time.sleep(1)
+        if st.button("🚪 Cerrar Sesión"):
+            st.session_state['authenticated'] = False
             st.rerun()
 
-    # ACORDEÓN: HISTORIAL
-    with st.expander("📜 HISTORIAL DE CAMBIOS (Últimos 7 días)", expanded=False):
-        df_h = get_historial_precios(7)
-        if len(df_h) > 0:
-            if id_cuenta_filtro != "TODAS": df_h = df_h[df_h['id_cuenta'] == id_cuenta_filtro]
-            
-            hc1, hc2 = st.columns(2)
-            with hc1: f_sku = st.text_input("Filtrar SKU:")
-            with hc2: f_res = st.selectbox("Resultado:", ["Todos", "EJECUTADO", "NO EJECUTADO", "Ruleta Rusa"])
-            
-            if f_sku: df_h = df_h[df_h['sku_interno'].str.contains(f_sku, case=False, na=False)]
-            if f_res != "Todos": df_h = df_h[df_h['resultado'].astype(str).str.contains(f_res, case=False, na=False)]
-            
-            st.dataframe(df_h.head(200), use_container_width=True, hide_index=True)
-
-    st.markdown("---")
-    if st.button("🚪 Cerrar Sesión"):
-        st.session_state.clear()
-        st.rerun()
+# ==========================================
+# 🚀 MAIN LOGIC
+# ==========================================
 
 def main():
-    if auth.is_authenticated(): show_private_dashboard()
-    else: show_login_page()
+    if auth.is_authenticated():
+        show_private_dashboard()
+    else:
+        show_login_page()
 
 if __name__ == "__main__":
     main()
