@@ -957,7 +957,7 @@ def show_admin_dashboard():
                     
                     # Tabla
                     st.markdown("#### Detalle de Márgenes")
-                    df_marg_display = df_margen[['sku_limpio', 'precio_nuestro', 'precio_rival', 'costo', 'ganancia_monetaria', 'margen_porcentaje']].copy()
+                    df_marg_display = df_margen[['sku_limpio', 'nuestro_precio', 'precio_rival', 'costo', 'ganancia_monetaria', 'margen_porcentaje']].copy()
                     df_marg_display.columns = ['SKU', 'Nuestro $', 'Rival $', 'Costo $', 'Ganancia $', 'Margen %']
                     
                     st.dataframe(
@@ -987,7 +987,7 @@ def show_admin_dashboard():
                 
                 if not df_comp.empty:
                     # Gráfico de diferencia de precio
-                    df_comp['diferencia'] = df_comp['precio_nuestro'] - df_comp['precio_rival']
+                    df_comp['diferencia'] = df_comp['nuestro_precio'] - df_comp['precio_rival']
                     
                     fig_comp = go.Figure()
                     
@@ -1029,7 +1029,7 @@ def show_admin_dashboard():
                     
                     # Tabla
                     st.markdown("#### Detalle Competitivo")
-                    df_comp_display = df_comp[['sku_limpio', 'precio_nuestro', 'precio_rival', 'diferencia', 'posicion', 'total_cambios']].copy()
+                    df_comp_display = df_comp[['sku_limpio', 'nuestro_precio', 'precio_rival', 'diferencia', 'posicion', 'total_cambios']].copy()
                     df_comp_display.columns = ['SKU', 'Nuestro $', 'Rival $', 'Diferencia $', 'Posición', 'Cambios']
                     
                     st.dataframe(
@@ -1829,9 +1829,9 @@ def get_analisis_tendencias(dias: int = 7) -> dict:
         SELECT 
             sku_interno,
             DATE(fecha_hora) as fecha,
-            AVG(precio_nuestro::float) as precio_promedio,
-            MIN(precio_nuestro::float) as precio_min,
-            MAX(precio_nuestro::float) as precio_max,
+            AVG(nuestro_precio::float) as precio_promedio,
+            MIN(nuestro_precio::float) as precio_min,
+            MAX(nuestro_precio::float) as precio_max,
             COUNT(*) as cambios
         FROM historial_precios
         WHERE fecha_hora >= NOW() - INTERVAL '{dias} days'
@@ -1855,12 +1855,12 @@ def get_top_skus_performance(dias: int = 7) -> dict:
             c.precio_minimo,
             c.precio_maximo,
             c.costo_odoo::float as costo,
-            AVG(h.precio_nuestro::float) as precio_promedio,
+            AVG(h.nuestro_precio::float) as precio_promedio,
             COUNT(h.id) as cambios_realizados,
             c.regla_estrategia as regla,
             CASE 
                 WHEN c.costo_odoo IS NOT NULL AND c.costo_odoo != 0 
-                THEN (AVG(h.precio_nuestro::float) - c.costo_odoo::float)
+                THEN (AVG(h.nuestro_precio::float) - c.costo_odoo::float)
                 ELSE 0 
             END as ganancia_monetaria
         FROM catalogo_maestro_v3 c
@@ -1885,16 +1885,16 @@ def get_analisis_margen(dias: int = 7) -> dict:
         SELECT 
             c.sku_limpio,
             c.sku_interno,
-            AVG(h.precio_nuestro::float) as precio_nuestro,
+            AVG(h.nuestro_precio::float) as nuestro_precio,
             AVG(h.precio_rival::float) as precio_rival,
             c.costo_odoo::float as costo,
-            (AVG(h.precio_nuestro::float) - c.costo_odoo::float) as ganancia_monetaria,
+            (AVG(h.nuestro_precio::float) - c.costo_odoo::float) as ganancia_monetaria,
             CASE 
                 WHEN c.costo_odoo IS NOT NULL AND c.costo_odoo != 0 
-                THEN ((AVG(h.precio_nuestro::float) - c.costo_odoo::float) / c.costo_odoo::float * 100)
+                THEN ((AVG(h.nuestro_precio::float) - c.costo_odoo::float) / c.costo_odoo::float * 100)
                 ELSE 0 
             END as margen_porcentaje,
-            (AVG(h.precio_nuestro::float) - AVG(h.precio_rival::float)) as diferencia_precio
+            (AVG(h.nuestro_precio::float) - AVG(h.precio_rival::float)) as diferencia_precio
         FROM catalogo_maestro_v3 c
         LEFT JOIN historial_precios h ON c.sku_interno = h.sku_interno
             AND h.fecha_hora >= NOW() - INTERVAL '{dias} days'
@@ -1916,13 +1916,13 @@ def get_competencia_precios(dias: int = 7) -> dict:
         SELECT 
             c.sku_limpio,
             c.sku_interno,
-            AVG(h.precio_nuestro::float) as precio_nuestro,
+            AVG(h.nuestro_precio::float) as nuestro_precio,
             AVG(h.precio_rival::float) as precio_rival,
             COUNT(DISTINCT h.fecha_hora::date) as dias_monitoreados,
             COUNT(h.id) as total_cambios,
             CASE 
-                WHEN AVG(h.precio_rival::float) > AVG(h.precio_nuestro::float) THEN '✅ MÁS BAJO'
-                WHEN AVG(h.precio_rival::float) < AVG(h.precio_nuestro::float) THEN '⚠️ MÁS ALTO'
+                WHEN AVG(h.precio_rival::float) > AVG(h.nuestro_precio::float) THEN '✅ MÁS BAJO'
+                WHEN AVG(h.precio_rival::float) < AVG(h.nuestro_precio::float) THEN '⚠️ MÁS ALTO'
                 ELSE '⚖️ IGUAL'
             END as posicion
         FROM catalogo_maestro_v3 c
@@ -1930,7 +1930,7 @@ def get_competencia_precios(dias: int = 7) -> dict:
             AND h.fecha_hora >= NOW() - INTERVAL '{dias} days'
         WHERE c.estatus = 'ACTIVO' AND h.precio_rival IS NOT NULL
         GROUP BY c.sku_limpio, c.sku_interno
-        ORDER BY ABS(AVG(h.precio_rival::float) - AVG(h.precio_nuestro::float)) DESC
+        ORDER BY ABS(AVG(h.precio_rival::float) - AVG(h.nuestro_precio::float)) DESC
         LIMIT 20
         """
         df = db.execute_query(query)
@@ -1966,20 +1966,20 @@ def get_distribucion_precios(dias: int = 7) -> dict:
         query = f"""
         SELECT 
             CASE 
-                WHEN h.precio_nuestro::float < 100 THEN '$0-100'
-                WHEN h.precio_nuestro::float < 500 THEN '$100-500'
-                WHEN h.precio_nuestro::float < 1000 THEN '$500-1000'
-                WHEN h.precio_nuestro::float < 5000 THEN '$1000-5000'
+                WHEN h.nuestro_precio::float < 100 THEN '$0-100'
+                WHEN h.nuestro_precio::float < 500 THEN '$100-500'
+                WHEN h.nuestro_precio::float < 1000 THEN '$500-1000'
+                WHEN h.nuestro_precio::float < 5000 THEN '$1000-5000'
                 ELSE '$5000+'
             END as rango_precio,
             COUNT(DISTINCT c.sku_interno) as cantidad_skus,
-            AVG(h.precio_nuestro::float) as precio_promedio
+            AVG(h.nuestro_precio::float) as precio_promedio
         FROM historial_precios h
         JOIN catalogo_maestro_v3 c ON h.sku_interno = c.sku_interno
         WHERE h.fecha_hora >= NOW() - INTERVAL '{dias} days'
             AND c.estatus = 'ACTIVO'
         GROUP BY rango_precio
-        ORDER BY MIN(h.precio_nuestro::float)
+        ORDER BY MIN(h.nuestro_precio::float)
         """
         df = db.execute_query(query)
         return {"data": df, "success": not df.empty}
@@ -1998,12 +1998,12 @@ def get_skus_criticos(dias: int = 7) -> dict:
             c.precio_minimo,
             c.precio_maximo,
             c.costo_odoo::float as costo,
-            AVG(h.precio_nuestro::float) as precio_promedio,
+            AVG(h.nuestro_precio::float) as precio_promedio,
             c.estatus,
             c.regla_estrategia,
             CASE 
                 WHEN c.costo_odoo IS NOT NULL AND c.costo_odoo != 0 
-                THEN ((AVG(h.precio_nuestro::float) - c.costo_odoo::float) / c.costo_odoo::float * 100)
+                THEN ((AVG(h.nuestro_precio::float) - c.costo_odoo::float) / c.costo_odoo::float * 100)
                 ELSE 0 
             END as margen_porcentaje
         FROM catalogo_maestro_v3 c
@@ -2011,7 +2011,7 @@ def get_skus_criticos(dias: int = 7) -> dict:
             AND h.fecha_hora >= NOW() - INTERVAL '{dias} days'
         WHERE c.estatus = 'ACTIVO' AND c.costo_odoo IS NOT NULL AND c.costo_odoo != 0
         GROUP BY c.sku_limpio, c.sku_interno, c.precio_minimo, c.precio_maximo, c.costo_odoo, c.estatus, c.regla_estrategia
-        HAVING ((AVG(h.precio_nuestro::float) - c.costo_odoo::float) / c.costo_odoo::float * 100) < 10
+        HAVING ((AVG(h.nuestro_precio::float) - c.costo_odoo::float) / c.costo_odoo::float * 100) < 10
         ORDER BY margen_porcentaje ASC
         LIMIT 15
         """
