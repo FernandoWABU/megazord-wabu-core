@@ -588,18 +588,36 @@ def show_admin_dashboard():
                     # ╚═══════════════════════════════════════════════════════════════╝
                     
                     if marketplace_ejecutar == "🔴 LIVERPOOL":
-                        # TODO: Llamar a tu webhook en Railway o ejecutar bot local
-                        # resultado = ejecutar_barrido_liverpool()
-                        resultado = ejecutar_barrido_simulado()
+                        print("🚀 Llamando ejecutar_barrido_liverpool_real()...", flush=True)
+                        resultado = ejecutar_barrido_liverpool_real()  # ✨ LLAMAR FUNCIÓN REAL
+                        
                     elif marketplace_ejecutar == "🟦 WALMART":
-                        # TODO: Llamar a tu webhook de Walmart
-                        # resultado = ejecutar_barrido_walmart()
-                        resultado = ejecutar_barrido_simulado()
+                        print("🚀 Llamando ejecutar_barrido_walmart_real()...", flush=True)
+                        resultado = ejecutar_barrido_walmart_real()    # ✨ LLAMAR FUNCIÓN REAL
+                        
                     elif marketplace_ejecutar == "🟩 AMBAS":
-                        # TODO: Ejecutar ambos
-                        # resultado_lv = ejecutar_barrido_liverpool()
-                        # resultado_wm = ejecutar_barrido_walmart()
-                        resultado = ejecutar_barrido_simulado()
+                        print("🚀 Llamando barridos paralelos...", flush=True)
+                        # Ejecutar ambos en paralelo
+                        import concurrent.futures
+                        
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                            future_lv = executor.submit(ejecutar_barrido_liverpool_real)
+                            future_wm = executor.submit(ejecutar_barrido_walmart_real)
+                            
+                            resultado_lv = future_lv.result()
+                            resultado_wm = future_wm.result()
+                        
+                        # Combinar resultados
+                        resultado = {
+                            "exito": resultado_lv["exito"] and resultado_wm["exito"],
+                            "mensaje": f"""🎯 BARRIDO COMPLETO - AMBAS PLATAFORMAS
+
+🔴 LIVERPOOL:
+{resultado_lv['mensaje']}
+
+🟦 WALMART:
+{resultado_wm['mensaje']}"""
+                        }
                     
                     st.session_state.barrido_resultado = resultado
                     st.rerun()
@@ -1449,14 +1467,15 @@ def show_admin_dashboard():
                         st.subheader("📊 SIMULADOR DE GANANCIA - CÁLCULO CORRECTO")
                         st.info("💡 Ajusta el precio para ver cómo cambia tu ganancia REAL (con impuestos, comisiones y costos)")
                         
-                        # SIMULADOR: Precio de venta simulado
-                        precio_simulado_venta = st.slider(
+                        # SIMULADOR: Precio de venta simulado - INPUT DIRECTO (no slider)
+                        precio_simulado_venta = st.number_input(
                             "💰 Precio de Venta Simulado (para análisis):",
                             min_value=float(new_precio_min),
                             max_value=float(new_precio_max),
                             value=(float(new_precio_min) + float(new_precio_max)) / 2,
                             step=0.01,
-                            help="Ajusta para ver cómo cambiaría tu ganancia REAL"
+                            help="Ingresa el precio directamente para ver cómo cambiaría tu ganancia REAL",
+                            key="price_simulator_input"
                         )
                         
                         # Calcular ganancias CORRECTAS usando la función maestra
@@ -2287,61 +2306,122 @@ def ejecutar_barrido_simulado() -> dict:
     }
 
 def ejecutar_barrido_liverpool_real() -> dict:
-    """
-    PLACEHOLDER: Implementar llamada real a webhook en Railway
+    """Ejecutar barrido en Railway via webhook HTTP"""
+    import requests
     
-    Opciones:
-    1. Llamar webhook HTTP en Railway:
-       POST https://megazord-wabu-core-production.up.railway.app/trigger
-       Headers: {'Authorization': 'Bearer TOKEN'}
-       Body: {'marketplace': 'liverpool', 'action': 'scan_prices'}
+    webhook_url = "https://megazord-wabu-core-production.up.railway.app/trigger"
+    webhook_secret = os.getenv('WEBHOOK_SECRET', 'render_webhook_secret_fernando_2026_v2_safe')
     
-    2. Ejecutar GitHub Actions workflow:
-       POST https://api.github.com/repos/FernandoWABU/megazord-wabu-core/dispatches
-       Headers: {'Authorization': 'token GITHUB_TOKEN'}
-       Body: {'event_type': 'manual_scan', 'client_payload': {'marketplace': 'liverpool'}}
-    
-    3. Ejecutar en local si está disponible:
-       subprocess.run(['python', 'megazord_liverpool.py'], timeout=600)
-    """
     try:
-        import requests
+        print(f"🚀 Llamando webhook Liverpool: {webhook_url}", flush=True)
+        logger.info(f"🚀 POST {webhook_url} con marketplace=liverpool")
         
-        # OPCIÓN 1: Webhook en Railway (comentado - necesita configuración)
-        # webhook_url = "https://megazord-wabu-core-production.up.railway.app/trigger"
-        # response = requests.post(
-        #     webhook_url,
-        #     json={"marketplace": "liverpool", "action": "scan_prices"},
-        #     headers={"Authorization": "Bearer YOUR_WEBHOOK_SECRET"},
-        #     timeout=30
-        # )
-        # if response.status_code == 200:
-        #     return {"exito": True, "mensaje": "✅ Barrido iniciado en Railway"}
+        response = requests.post(
+            webhook_url,
+            json={"marketplace": "liverpool"},
+            headers={"Authorization": f"Bearer {webhook_secret}"},
+            timeout=30
+        )
         
-        # Por ahora, retornar simulado
-        return ejecutar_barrido_simulado()
+        print(f"📤 Respuesta HTTP: {response.status_code}", flush=True)
+        logger.info(f"📤 Status code: {response.status_code}")
         
+        if response.status_code == 200:
+            data = response.json()
+            print(f"✅ Barrido Liverpool aceptado: {data}", flush=True)
+            
+            return {
+                "exito": True,
+                "mensaje": f"""✅ BARRIDO COMPLETADO
+
+📊 Estadísticas:
+• SKUs revisados: {data.get('skus_revisados', 0)}
+• Precios actualizados: {data.get('precios_actualizados', 0)}
+• Buybox ganados: {data.get('buybox_ganados', 0)}
+• Duración: {data.get('duration_seconds', 0)}s
+• ⏰ {data.get('timestamp', datetime.now().isoformat())}
+                """,
+                "skus_revisados": data.get('skus_revisados', 0),
+                "precios_actualizados": data.get('precios_actualizados', 0),
+                "buybox_ganados": data.get('buybox_ganados', 0)
+            }
+        else:
+            error_msg = f"HTTP {response.status_code}: {response.text}"
+            print(f"❌ Error HTTP: {error_msg}", flush=True)
+            logger.error(f"❌ {error_msg}")
+            return {"exito": False, "mensaje": f"❌ Error: {error_msg}"}
+    
+    except requests.exceptions.Timeout:
+        print(f"❌ Timeout en barrido Liverpool", flush=True)
+        logger.error(f"❌ Timeout en barrido Liverpool")
+        return {"exito": False, "mensaje": "❌ Timeout - El barrido tardó más de lo esperado"}
+    except requests.exceptions.ConnectionError as e:
+        print(f"❌ Error de conexión: {e}", flush=True)
+        logger.error(f"❌ Error conexión: {e}")
+        return {"exito": False, "mensaje": f"❌ Error de conexión: {str(e)}"}
     except Exception as e:
-        logger.error(f"❌ Error al ejecutar barrido: {e}")
-        return {
-            "exito": False,
-            "mensaje": f"❌ Error: {str(e)}"
-        }
+        print(f"❌ Error CRÍTICO en barrido Liverpool: {e}", flush=True)
+        logger.error(f"❌ Error crítico Liverpool: {e}")
+        return {"exito": False, "mensaje": f"❌ Error: {str(e)}"}
 
 def ejecutar_barrido_walmart_real() -> dict:
-    """
-    PLACEHOLDER: Implementar llamada real a webhook de Walmart
-    Ver documentación en ejecutar_barrido_liverpool_real()
-    """
+    """Ejecutar barrido de Walmart en Railway via webhook HTTP"""
+    import requests
+    
+    webhook_url = "https://megazord-wabu-core-production.up.railway.app/trigger"
+    webhook_secret = os.getenv('WEBHOOK_SECRET', 'render_webhook_secret_fernando_2026_v2_safe')
+    
     try:
-        # TODO: Implementar lógica de Walmart
-        return ejecutar_barrido_simulado()
+        print(f"🚀 Llamando webhook Walmart: {webhook_url}", flush=True)
+        logger.info(f"🚀 POST {webhook_url} con marketplace=walmart")
+        
+        response = requests.post(
+            webhook_url,
+            json={"marketplace": "walmart"},
+            headers={"Authorization": f"Bearer {webhook_secret}"},
+            timeout=30
+        )
+        
+        print(f"📤 Respuesta HTTP: {response.status_code}", flush=True)
+        logger.info(f"📤 Status code: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            print(f"✅ Barrido Walmart aceptado: {data}", flush=True)
+            
+            return {
+                "exito": True,
+                "mensaje": f"""✅ BARRIDO WALMART COMPLETADO
+
+📊 Estadísticas:
+• SKUs revisados: {data.get('skus_revisados', 0)}
+• Precios actualizados: {data.get('precios_actualizados', 0)}
+• Buybox ganados: {data.get('buybox_ganados', 0)}
+• Duración: {data.get('duration_seconds', 0)}s
+• ⏰ {data.get('timestamp', datetime.now().isoformat())}
+                """,
+                "skus_revisados": data.get('skus_revisados', 0),
+                "precios_actualizados": data.get('precios_actualizados', 0),
+                "buybox_ganados": data.get('buybox_ganados', 0)
+            }
+        else:
+            error_msg = f"HTTP {response.status_code}: {response.text}"
+            print(f"❌ Error HTTP Walmart: {error_msg}", flush=True)
+            logger.error(f"❌ {error_msg}")
+            return {"exito": False, "mensaje": f"❌ Error: {error_msg}"}
+    
+    except requests.exceptions.Timeout:
+        print(f"❌ Timeout en barrido Walmart", flush=True)
+        logger.error(f"❌ Timeout en barrido Walmart")
+        return {"exito": False, "mensaje": "❌ Timeout - El barrido tardó más de lo esperado"}
+    except requests.exceptions.ConnectionError as e:
+        print(f"❌ Error de conexión Walmart: {e}", flush=True)
+        logger.error(f"❌ Error conexión Walmart: {e}")
+        return {"exito": False, "mensaje": f"❌ Error de conexión: {str(e)}"}
     except Exception as e:
-        logger.error(f"❌ Error al ejecutar barrido Walmart: {e}")
-        return {
-            "exito": False,
-            "mensaje": f"❌ Error: {str(e)}"
-        }
+        print(f"❌ Error CRÍTICO en barrido Walmart: {e}", flush=True)
+        logger.error(f"❌ Error crítico Walmart: {e}")
+        return {"exito": False, "mensaje": f"❌ Error: {str(e)}"}
 
 # ==========================================
 # 💰 FUNCIÓN MAESTRA DE CÁLCULO DE GANANCIA
