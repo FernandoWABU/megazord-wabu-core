@@ -446,7 +446,7 @@ def show_executive_dashboard():
         
         if not df_hist.empty:
             if show_data:
-                st.dataframe(df_hist, width="stretch", height=400)
+                st.dataframe(convertir_decimal_a_float(df_hist), width="stretch", height=400)
             
             col_down1, col_down2 = st.columns(2)
             
@@ -497,7 +497,7 @@ def show_executive_dashboard():
                 df_filtered = df_filtered[df_filtered['sku_limpio'].str.contains(sku_filter, case=False, na=False)]
             
             st.metric(f"Total SKUs encontrados", len(df_filtered))
-            st.dataframe(df_filtered, width="stretch", height=400)
+            st.dataframe(convertir_decimal_a_float(df_filtered), width="stretch", height=400)
         else:
             st.info("📭 No hay catálogo disponible")
     
@@ -728,7 +728,7 @@ def show_admin_dashboard():
             df_hist = get_historial_precios(days=days)
         
         if not df_hist.empty:
-            st.dataframe(df_hist, width="stretch", height=400)
+            st.dataframe(convertir_decimal_a_float(df_hist), width="stretch", height=400)
         else:
             st.info("📭 Sin datos")
     
@@ -739,7 +739,7 @@ def show_admin_dashboard():
             df_cat = get_catalogo_maestro()
         
         if not df_cat.empty:
-            st.dataframe(df_cat, width="stretch", height=400)
+            st.dataframe(convertir_decimal_a_float(df_cat), width="stretch", height=400)
         else:
             st.info("📭 Sin catálogo")
     
@@ -907,6 +907,7 @@ def show_admin_dashboard():
                     st.markdown("#### Detalle de SKUs")
                     df_top_display = df_top[['sku_limpio', 'precio_actual', 'costo', 'ganancia_neta', 'ganancia_porcentaje', 'cambios_realizados', 'regla']].copy()
                     df_top_display.columns = ['SKU', 'Precio Actual', 'Costo', 'Ganancia Neta', 'Margen %', 'Cambios', 'Regla']
+                    df_top_display = convertir_decimal_a_float(df_top_display)  # ✨ Convertir Decimal a float
                     
                     st.dataframe(
                         df_top_display.style.format({
@@ -980,6 +981,7 @@ def show_admin_dashboard():
                     st.markdown("#### Detalle de Márgenes")
                     df_marg_display = df_margen[['sku_limpio', 'nuestro_precio', 'precio_rival', 'costo', 'ganancia_neta', 'margen_porcentaje']].copy()
                     df_marg_display.columns = ['SKU', 'Nuestro $', 'Rival $', 'Costo $', 'Ganancia $', 'Margen %']
+                    df_marg_display = convertir_decimal_a_float(df_marg_display)  # ✨ Convertir Decimal a float
                     
                     st.dataframe(
                         df_marg_display.sort_values('Margen %', ascending=False).style.format({
@@ -1052,6 +1054,7 @@ def show_admin_dashboard():
                     st.markdown("#### Detalle Competitivo")
                     df_comp_display = df_comp[['sku_limpio', 'nuestro_precio', 'precio_rival', 'diferencia', 'posicion', 'total_cambios']].copy()
                     df_comp_display.columns = ['SKU', 'Nuestro $', 'Rival $', 'Diferencia $', 'Posición', 'Cambios']
+                    df_comp_display = convertir_decimal_a_float(df_comp_display)  # ✨ Convertir Decimal a float
                     
                     st.dataframe(
                         df_comp_display.sort_values('Diferencia $').style.format({
@@ -1122,6 +1125,7 @@ def show_admin_dashboard():
                     st.markdown("#### Actividad por hora")
                     df_heat_display = df_heat.copy()
                     df_heat_display['hora'] = df_heat_display['hora'].astype(int).astype(str) + ':00'
+                    df_heat_display = convertir_decimal_a_float(df_heat_display)  # ✨ Convertir Decimal a float
                     st.dataframe(df_heat_display.sort_values('cambios', ascending=False), width="stretch")
             else:
                 st.warning("❌ No hay datos de actividad")
@@ -1160,6 +1164,7 @@ def show_admin_dashboard():
                     st.markdown("#### Detalle por rango")
                     df_dist_display = df_dist[['rango_precio', 'cantidad_skus', 'precio_promedio']].copy()
                     df_dist_display.columns = ['Rango Precio', 'Cantidad SKUs', 'Precio Promedio']
+                    df_dist_display = convertir_decimal_a_float(df_dist_display)  # ✨ Convertir Decimal a float
                     
                     st.dataframe(
                         df_dist_display.style.format({
@@ -1218,6 +1223,7 @@ def show_admin_dashboard():
                     st.markdown("#### SKUs a Revisar Urgentemente")
                     df_crit_display = df_critico[['sku_limpio', 'precio_minimo', 'precio_maximo', 'precio_actual', 'costo', 'margen_porcentaje', 'regla_estrategia']].copy()
                     df_crit_display.columns = ['SKU', 'Precio Mín', 'Precio Máx', 'Precio Actual', 'Costo', 'Margen %', 'Regla']
+                    df_crit_display = convertir_decimal_a_float(df_crit_display)  # ✨ Convertir Decimal a float
                     
                     st.dataframe(
                         df_crit_display.sort_values('Margen %').style.format({
@@ -2195,6 +2201,43 @@ def get_ultimo_precio_valido(sku_interno: str, dias: int = 7) -> float:
     except Exception as e:
         logger.error(f"❌ Error obteniendo último precio para {sku_interno}: {e}")
         return None
+
+def convertir_decimal_a_float(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convierte TODOS los valores Decimal a float en un DataFrame.
+    
+    Esto evita el error de PyArrow cuando intenta serializar para Streamlit.
+    
+    Error que previene:
+    "Could not convert Decimal with type decimal.Decimal: tried to convert to double"
+    """
+    try:
+        # Convertir todas las columnas object que contengan Decimal
+        for col in df.columns:
+            if df[col].dtype == 'object':
+                # Intentar convertir a float si es posible
+                try:
+                    df[col] = pd.to_numeric(df[col], errors='ignore')
+                except:
+                    pass
+        
+        # Convertir específicamente columnas numéricas conocidas
+        columnas_numericas = [
+            'precio_promedio', 'precio_min', 'precio_max', 'nuestro_precio', 
+            'precio_rival', 'costo', 'costo_odoo', 'ganancia_neta', 
+            'ganancia_porcentaje', 'margen_porcentaje', 'ingreso_neto', 
+            'precio_actual', 'diferencia_precio', 'precio_minimo', 'precio_maximo',
+            'cambios_realizados', 'cambios', 'stock_val'
+        ]
+        
+        for col in columnas_numericas:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        return df
+    except Exception as e:
+        logger.warning(f"⚠️ Error al convertir Decimal a float: {e}")
+        return df
 
 # ==========================================
 # 💰 FUNCIÓN MAESTRA DE CÁLCULO DE GANANCIA
