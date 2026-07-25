@@ -1209,6 +1209,147 @@ def extraer_precio_actual(precio_cell):
     return None
 
 
+# ╔═══════════════════════════════════════════════════════════════╗
+# ║         ⚡ BÚSQUEDA PARALELA LIVERPOOL + SUBURBIA v5.5       ║
+# ║         (Agregado sin romper código existente - 2x más rápido)║
+# ╚═══════════════════════════════════════════════════════════════╝
+
+def buscar_en_plataforma_thread(nombre_plataforma: str, sku_id: str, timeout=15) -> dict:
+    """
+    🔍 Busca en UNA plataforma (thread separado)
+    Retorna rivales con precio más bajo primero
+    """
+    
+    if nombre_plataforma == 'liverpool':
+        url = f"https://www.liverpool.com.mx/tienda/mirakl/offerListing?productId={sku_id}&skuId={sku_id}"
+    elif nombre_plataforma == 'suburbia':
+        url = f"https://www.suburbia.com.mx/tienda/mirakl/offerListing?productId={sku_id}&skuId={sku_id}"
+    else:
+        return {'plataforma': nombre_plataforma, 'exito': False, 'rivales': [], 'tiempo': 0}
+    
+    inicio = time.time()
+    
+    try:
+        logger.info(f"🔍 [THREAD] [{nombre_plataforma.upper()}] Buscando...")
+        
+        response = requests.get(url, headers=HEADERS_STEALTH, timeout=timeout, allow_redirects=True)
+        tiempo = time.time() - inicio
+        
+        if response.status_code != 200:
+            logger.warning(f"⚠️ [{nombre_plataforma.upper()}] HTTP {response.status_code}")
+            return {'plataforma': nombre_plataforma, 'exito': False, 'rivales': [], 'tiempo': tiempo}
+        
+        if "Access Denied" in response.text or "CAPTCHA" in response.text or len(response.text) < 1000:
+            logger.warning(f"⚠️ [{nombre_plataforma.upper()}] Bloqueo WAF")
+            return {'plataforma': nombre_plataforma, 'exito': False, 'rivales': [], 'tiempo': tiempo}
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        rivales = []
+        tabla = soup.find('table')
+        
+        if tabla:
+            headers = tabla.find('tr')
+            if headers:
+                header_cells = headers.find_all('th')
+                idx_precio = None
+                idx_vendedor = None
+                
+                for i, th in enumerate(header_cells):
+                    text = th.get_text().lower()
+                    if 'precio' in text:
+                        idx_precio = i
+                    elif 'vendido' in text or 'vendedor' in text or 'seller' in text:
+                        idx_vendedor = i
+                
+                if idx_precio is not None and idx_vendedor is not None:
+                    for row in tabla.find_all('tr')[1:]:
+                        try:
+                            celdas = row.find_all('td')
+                            if len(celdas) <= max(idx_precio, idx_vendedor):
+                                continue
+                            
+                            precio_cell = celdas[idx_precio]
+                            precio = extraer_precio_actual(precio_cell)
+                            if precio is None:
+                                continue
+                            
+                            vendedor_cell = celdas[idx_vendedor]
+                            vendedor_link = vendedor_cell.find('a')
+                            vendedor_nombre = vendedor_link.get_text(strip=True) if vendedor_link else vendedor_cell.get_text(strip=True).split('Entrega')[0].strip()
+                            if not vendedor_nombre:
+                                continue
+                            
+                            rival_info = {
+                                'precio': precio,
+                                'vendedor': vendedor_nombre,
+                                'vendedor_id': '',
+                                'plataforma_origen': nombre_plataforma
+                            }
+                            rivales.append(rival_info)
+                        except:
+                            continue
+                    
+                    rivales = sorted(rivales, key=lambda x: x['precio'])
+                    logger.info(f"✅ [{nombre_plataforma.upper()}] {len(rivales)} rivales en {tiempo:.2f}s")
+                    return {'plataforma': nombre_plataforma, 'exito': True, 'rivales': rivales, 'tiempo': tiempo}
+        
+        return {'plataforma': nombre_plataforma, 'exito': False, 'rivales': [], 'tiempo': tiempo}
+    
+    except Exception as e:
+        tiempo = time.time() - inicio
+        logger.error(f"❌ [{nombre_plataforma.upper()}] Error: {e}")
+        return {'plataforma': nombre_plataforma, 'exito': False, 'rivales': [], 'tiempo': tiempo}
+
+
+def obtener_info_rivales_paralelo(token, liverpool_sku, timeout=15):
+    """
+    ⚡ BÚSQUEDA PARALELA - Liverpool + Suburbia simultáneamente
+    2 VECES MÁS RÁPIDO - Fallback automático
+    """
+    
+    inicio_total = time.time()
+    logger.info(f"⚡ BÚSQUEDA PARALELA iniciada para SKU {liverpool_sku}")
+    
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {
+            executor.submit(buscar_en_plataforma_thread, 'liverpool', liverpool_sku, timeout): 'liverpool',
+            executor.submit(buscar_en_plataforma_thread, 'suburbia', liverpool_sku, timeout): 'suburbia'
+        }
+        
+        resultados = []
+        for future in as_completed(futures, timeout=timeout+5):
+            try:
+                resultado = future.result()
+                resultados.append(resultado)
+            except Exception as e:
+                logger.error(f"❌ Error thread: {e}")
+    
+    tiempo_total = time.time() - inicio_total
+    exitosos = [r for r in resultados if r['exito'] and r['rivales']]
+    
+    if exitosos:
+        todos_rivales = []
+        for r in exitosos:
+            todos_rivales.extend(r['rivales'])
+        
+        todos_rivales = sorted(todos_rivales, key=lambda x: x['precio'])
+        
+        vistos = set()
+        rivales_unicos = []
+        for rival in todos_rivales:
+            vendedor_key = f"{rival['vendedor']}_{rival['precio']}"
+            if vendedor_key not in vistos:
+                vistos.add(vendedor_key)
+                rivales_unicos.append(rival)
+        
+        logger.info(f"🏆 PARALELO: {len(rivales_unicos)} rivales en {tiempo_total:.2f}s")
+        return rivales_unicos
+    
+    logger.warning(f"❌ No encontrado. ⚡ {tiempo_total:.2f}s")
+    return []
+
+# ╚═══════════════════════════════════════════════════════════════╝
+
 # ============================================================
 # INTEGRAR EN obtener_info_rivales()
 # ============================================================
