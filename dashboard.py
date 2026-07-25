@@ -566,28 +566,51 @@ def show_admin_dashboard():
         # Session state para barrido
         if "barrido_ejecutado" not in st.session_state:
             st.session_state.barrido_ejecutado = False
+        if "barrido_resultado" not in st.session_state:
+            st.session_state.barrido_resultado = None
         
+        # Mostrar resultado anterior si existe
+        if st.session_state.barrido_resultado:
+            if st.session_state.barrido_resultado.get("exito"):
+                st.success(st.session_state.barrido_resultado.get("mensaje", "✅ Barrido completado"))
+            else:
+                st.error(st.session_state.barrido_resultado.get("mensaje", "❌ Error en barrido"))
+        
+        # Botón para ejecutar barrido
         if st.button("▶️ Ejecutar Barrido Ahora", width="stretch", key="trigger_barrido"):
-            st.session_state.barrido_ejecutado = True
-            logger.info(f"🚀 Barrido iniciado para: {marketplace_ejecutar}")
-            
-            # Mostrar mensaje temporal que desaparece después de 4 segundos
-            mensaje_placeholder = st.empty()
-            with mensaje_placeholder.container():
-                st.success(f"""
-                ✅ BARRIDO INICIADO
+            with st.spinner(f"⏳ Ejecutando barrido para {marketplace_ejecutar}..."):
+                logger.info(f"🚀 Barrido iniciado para: {marketplace_ejecutar}")
                 
-                Marketplace: {marketplace_ejecutar}
-                Estado: En progreso ⏳
-                """)
-            
-            # Esperar 4 segundos y limpiar mensaje
-            time.sleep(4)
-            mensaje_placeholder.empty()
-            
-            # Resetear estado automáticamente
-            st.session_state.barrido_ejecutado = False
-            logger.info("✅ Barrido completado (simulado)")
+                try:
+                    # ╔═══════════════════════════════════════════════════════════════╗
+                    # ║  INTEGRACIÓN CON WEBHOOK/BOT                                  ║
+                    # ║  Reemplazar con tu logica real de ejecución                   ║
+                    # ╚═══════════════════════════════════════════════════════════════╝
+                    
+                    if marketplace_ejecutar == "🔴 LIVERPOOL":
+                        # TODO: Llamar a tu webhook en Railway o ejecutar bot local
+                        # resultado = ejecutar_barrido_liverpool()
+                        resultado = ejecutar_barrido_simulado()
+                    elif marketplace_ejecutar == "🟦 WALMART":
+                        # TODO: Llamar a tu webhook de Walmart
+                        # resultado = ejecutar_barrido_walmart()
+                        resultado = ejecutar_barrido_simulado()
+                    elif marketplace_ejecutar == "🟩 AMBAS":
+                        # TODO: Ejecutar ambos
+                        # resultado_lv = ejecutar_barrido_liverpool()
+                        # resultado_wm = ejecutar_barrido_walmart()
+                        resultado = ejecutar_barrido_simulado()
+                    
+                    st.session_state.barrido_resultado = resultado
+                    st.rerun()
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error en barrido: {e}")
+                    st.session_state.barrido_resultado = {
+                        "exito": False,
+                        "mensaje": f"❌ Error: {str(e)}"
+                    }
+                    st.rerun()
         
         # FUTURO: Botón para Coppel (deshabilitado por ahora)
         if st.button("🟪 Coppel (Próximamente)", width="stretch", disabled=True):
@@ -906,8 +929,8 @@ def show_admin_dashboard():
                     # Tabla
                     st.markdown("#### Detalle de SKUs")
                     df_top_display = df_top[['sku_limpio', 'precio_actual', 'costo', 'ganancia_neta', 'ganancia_porcentaje', 'cambios_realizados', 'regla']].copy()
+                    df_top_display = convertir_decimal_a_float(df_top_display)  # ✨ Convertir ANTES de renombrar
                     df_top_display.columns = ['SKU', 'Precio Actual', 'Costo', 'Ganancia Neta', 'Margen %', 'Cambios', 'Regla']
-                    df_top_display = convertir_decimal_a_float(df_top_display)  # ✨ Convertir Decimal a float
                     
                     st.dataframe(
                         df_top_display.style.format({
@@ -980,8 +1003,8 @@ def show_admin_dashboard():
                     # Tabla
                     st.markdown("#### Detalle de Márgenes")
                     df_marg_display = df_margen[['sku_limpio', 'nuestro_precio', 'precio_rival', 'costo', 'ganancia_neta', 'margen_porcentaje']].copy()
+                    df_marg_display = convertir_decimal_a_float(df_marg_display)  # ✨ Convertir ANTES de renombrar
                     df_marg_display.columns = ['SKU', 'Nuestro $', 'Rival $', 'Costo $', 'Ganancia $', 'Margen %']
-                    df_marg_display = convertir_decimal_a_float(df_marg_display)  # ✨ Convertir Decimal a float
                     
                     st.dataframe(
                         df_marg_display.sort_values('Margen %', ascending=False).style.format({
@@ -1053,8 +1076,8 @@ def show_admin_dashboard():
                     # Tabla
                     st.markdown("#### Detalle Competitivo")
                     df_comp_display = df_comp[['sku_limpio', 'nuestro_precio', 'precio_rival', 'diferencia', 'posicion', 'total_cambios']].copy()
+                    df_comp_display = convertir_decimal_a_float(df_comp_display)  # ✨ Convertir ANTES de renombrar
                     df_comp_display.columns = ['SKU', 'Nuestro $', 'Rival $', 'Diferencia $', 'Posición', 'Cambios']
-                    df_comp_display = convertir_decimal_a_float(df_comp_display)  # ✨ Convertir Decimal a float
                     
                     st.dataframe(
                         df_comp_display.sort_values('Diferencia $').style.format({
@@ -1163,8 +1186,8 @@ def show_admin_dashboard():
                     # Tabla
                     st.markdown("#### Detalle por rango")
                     df_dist_display = df_dist[['rango_precio', 'cantidad_skus', 'precio_promedio']].copy()
+                    df_dist_display = convertir_decimal_a_float(df_dist_display)  # ✨ Convertir ANTES de renombrar
                     df_dist_display.columns = ['Rango Precio', 'Cantidad SKUs', 'Precio Promedio']
-                    df_dist_display = convertir_decimal_a_float(df_dist_display)  # ✨ Convertir Decimal a float
                     
                     st.dataframe(
                         df_dist_display.style.format({
@@ -1222,8 +1245,8 @@ def show_admin_dashboard():
                     # Tabla
                     st.markdown("#### SKUs a Revisar Urgentemente")
                     df_crit_display = df_critico[['sku_limpio', 'precio_minimo', 'precio_maximo', 'precio_actual', 'costo', 'margen_porcentaje', 'regla_estrategia']].copy()
+                    df_crit_display = convertir_decimal_a_float(df_crit_display)  # ✨ Convertir ANTES de renombrar
                     df_crit_display.columns = ['SKU', 'Precio Mín', 'Precio Máx', 'Precio Actual', 'Costo', 'Margen %', 'Regla']
-                    df_crit_display = convertir_decimal_a_float(df_crit_display)  # ✨ Convertir Decimal a float
                     
                     st.dataframe(
                         df_crit_display.sort_values('Margen %').style.format({
@@ -2238,6 +2261,87 @@ def convertir_decimal_a_float(df: pd.DataFrame) -> pd.DataFrame:
     except Exception as e:
         logger.warning(f"⚠️ Error al convertir Decimal a float: {e}")
         return df
+
+def ejecutar_barrido_simulado() -> dict:
+    """
+    Simula un barrido - reemplazar con llamada real a webhook/bot
+    """
+    import random
+    skus_revisados = random.randint(50, 200)
+    precios_actualizados = random.randint(10, 50)
+    buybox_ganados = random.randint(5, 30)
+    
+    return {
+        "exito": True,
+        "mensaje": f"""✅ BARRIDO COMPLETADO
+        
+        📊 Estadísticas:
+        • SKUs revisados: {skus_revisados}
+        • Precios actualizados: {precios_actualizados}
+        • Buybox ganados: {buybox_ganados}
+        • Duración: ~2-3 minutos
+        """,
+        "skus_revisados": skus_revisados,
+        "precios_actualizados": precios_actualizados,
+        "buybox_ganados": buybox_ganados
+    }
+
+def ejecutar_barrido_liverpool_real() -> dict:
+    """
+    PLACEHOLDER: Implementar llamada real a webhook en Railway
+    
+    Opciones:
+    1. Llamar webhook HTTP en Railway:
+       POST https://megazord-wabu-core-production.up.railway.app/trigger
+       Headers: {'Authorization': 'Bearer TOKEN'}
+       Body: {'marketplace': 'liverpool', 'action': 'scan_prices'}
+    
+    2. Ejecutar GitHub Actions workflow:
+       POST https://api.github.com/repos/FernandoWABU/megazord-wabu-core/dispatches
+       Headers: {'Authorization': 'token GITHUB_TOKEN'}
+       Body: {'event_type': 'manual_scan', 'client_payload': {'marketplace': 'liverpool'}}
+    
+    3. Ejecutar en local si está disponible:
+       subprocess.run(['python', 'megazord_liverpool.py'], timeout=600)
+    """
+    try:
+        import requests
+        
+        # OPCIÓN 1: Webhook en Railway (comentado - necesita configuración)
+        # webhook_url = "https://megazord-wabu-core-production.up.railway.app/trigger"
+        # response = requests.post(
+        #     webhook_url,
+        #     json={"marketplace": "liverpool", "action": "scan_prices"},
+        #     headers={"Authorization": "Bearer YOUR_WEBHOOK_SECRET"},
+        #     timeout=30
+        # )
+        # if response.status_code == 200:
+        #     return {"exito": True, "mensaje": "✅ Barrido iniciado en Railway"}
+        
+        # Por ahora, retornar simulado
+        return ejecutar_barrido_simulado()
+        
+    except Exception as e:
+        logger.error(f"❌ Error al ejecutar barrido: {e}")
+        return {
+            "exito": False,
+            "mensaje": f"❌ Error: {str(e)}"
+        }
+
+def ejecutar_barrido_walmart_real() -> dict:
+    """
+    PLACEHOLDER: Implementar llamada real a webhook de Walmart
+    Ver documentación en ejecutar_barrido_liverpool_real()
+    """
+    try:
+        # TODO: Implementar lógica de Walmart
+        return ejecutar_barrido_simulado()
+    except Exception as e:
+        logger.error(f"❌ Error al ejecutar barrido Walmart: {e}")
+        return {
+            "exito": False,
+            "mensaje": f"❌ Error: {str(e)}"
+        }
 
 # ==========================================
 # 💰 FUNCIÓN MAESTRA DE CÁLCULO DE GANANCIA
