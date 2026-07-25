@@ -625,80 +625,100 @@ def show_admin_dashboard():
     with tab1:
         st.subheader("📊 Resumen Ejecutivo (Admin View)")
         
-        with st.spinner("⏳ Cargando dashboard..."):
-            df_hist = get_historial_precios(days=1)
+        with st.spinner("⏳ Cargando métricas..."):
+            metricas_dash = get_metricas_dashboard(dias=1)
         
-        if not df_hist.empty:
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.markdown(f"""
-                <div class='metric-card'>
-                    <div class='metric-value'>{len(df_hist)}</div>
-                    <div class='metric-label'>Precios Revisados</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col2:
-                ajustes = df_hist[df_hist['precio_nuv'] != df_hist['precio_ant']].shape[0]
-                st.markdown(f"""
-                <div class='metric-card'>
-                    <div class='metric-value'>{ajustes}</div>
-                    <div class='metric-label'>Ajustes Realizados</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col3:
-                buybox_count = (df_hist['resultado'] == 'GANADOR').sum()
-                st.markdown(f"""
-                <div class='metric-card'>
-                    <div class='metric-value'>{buybox_count}</div>
-                    <div class='metric-label'>Ganando Buybox</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col4:
-                try:
-                    stock_temp = pd.to_numeric(df_hist['stock'], errors='coerce').mean() if 'stock' in df_hist.columns else 0
-                    stock_promedio = 0 if (pd.isna(stock_temp) or np.isnan(stock_temp)) else int(stock_temp)
-                except:
-                    stock_promedio = 0
-                st.markdown(f"""
-                <div class='metric-card'>
-                    <div class='metric-value'>{stock_promedio}</div>
-                    <div class='metric-label'>Stock Promedio</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            st.markdown("---")
-            
-            col_graph1, col_graph2 = st.columns(2)
-            
-            with col_graph1:
-                st.markdown("### 📈 Evolución de Precios (24h)")
-                try:
-                    df_sorted = df_hist.sort_values('created_at')
-                    fig = px.line(df_sorted.head(100), x='created_at', y=['precio_ant', 'precio_nuv'],
-                                 title='Nuestro Precio vs Rival')
-                    fig.update_layout(template="plotly_dark", height=350)
-                    st.plotly_chart(fig, width="stretch")
-                except Exception as e:
-                    st.warning(f"⚠️ Error: {e}")
-            
-            with col_graph2:
-                st.markdown("### 🎯 Distribución de Resultados")
-                try:
-                    resultado_counts = df_hist['resultado'].value_counts()
-                    colors = ['#1db954', '#ff4757', '#ffa502']
-                    fig = px.pie(values=resultado_counts.values, names=resultado_counts.index,
-                                title='Ganador vs Competencia',
-                                color_discrete_sequence=colors)
-                    fig.update_layout(template="plotly_dark", height=350)
-                    st.plotly_chart(fig, width="stretch")
-                except Exception as e:
-                    st.warning(f"⚠️ Error: {e}")
-        else:
-            st.info("📭 No hay datos")
+        # NUEVAS MÉTRICAS
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric(
+                "📊 Precios Revisados",
+                metricas_dash['precios_revisados'],
+                help="Total de actualizaciones en el último día"
+            )
+        
+        with col2:
+            st.metric(
+                "🎯 SKUs Ganando Buybox",
+                metricas_dash['ganando_buybox'],
+                help="SKUs con precio <= competencia (más competitivos)"
+            )
+        
+        with col3:
+            st.metric(
+                "✅ SKUs Saludables",
+                metricas_dash['skus_saludables'],
+                help="SKUs con margen >= 10%"
+            )
+        
+        with col4:
+            st.metric(
+                "💰 Ganancia Neta Total",
+                f"${metricas_dash['ganancia_neta_total']:.2f}",
+                help="Ganancia neta acumulada (últimas 24h)"
+            )
+        
+        st.markdown("---")
+        
+        # GRÁFICAS DEL DASHBOARD - REEMPLAZADAS
+        tab_tendencias, tab_actividad = st.tabs(["📈 Tendencias de Precio", "🔥 Heatmap de Actividad"])
+        
+        with tab_tendencias:
+            st.markdown("### 📈 Tendencias de Precio (últimas 24h)")
+            try:
+                tendencias_result = get_analisis_tendencias(dias=1)
+                if tendencias_result['success'] and tendencias_result['data'] is not None:
+                    df_tendencias = tendencias_result['data']
+                    
+                    fig = px.line(
+                        df_tendencias.head(50),
+                        x='fecha',
+                        y=['precio_promedio'],
+                        title='Evolución de Precios Promedio',
+                        labels={'valor': 'Precio ($)', 'fecha': 'Fecha'}
+                    )
+                    fig.update_layout(template="plotly_dark", height=400, hovermode='x unified')
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Tabla de tendencias
+                    st.markdown("#### Detalle de Tendencias")
+                    st.dataframe(
+                        df_tendencias[['sku_interno', 'fecha', 'precio_promedio', 'precio_min', 'precio_max']].head(20),
+                        width="stretch"
+                    )
+                else:
+                    st.warning("⚠️ No hay datos de tendencias")
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
+        
+        with tab_actividad:
+            st.markdown("### 🔥 Actividad Horaria (últimas 24h)")
+            try:
+                actividad_result = get_heatmap_actividad(dias=1)
+                if actividad_result['success'] and actividad_result['data'] is not None:
+                    df_actividad = actividad_result['data']
+                    
+                    fig = px.bar(
+                        df_actividad,
+                        x='hora',
+                        y='cambios',
+                        title='Cambios de Precio por Hora',
+                        labels={'cambios': 'Número de Cambios', 'hora': 'Hora del Día'}
+                    )
+                    fig.update_layout(template="plotly_dark", height=400, showlegend=False)
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Tabla de actividad
+                    st.markdown("#### Detalle de Actividad")
+                    st.dataframe(
+                        df_actividad,
+                        width="stretch"
+                    )
+                else:
+                    st.warning("⚠️ No hay datos de actividad")
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
     
     with tab2:
         st.subheader("📈 Análisis Histórico")
@@ -1457,7 +1477,7 @@ def show_admin_dashboard():
                             st.markdown(f"""
                             **Ingreso Bruto:** ${ganancia_sim['ingreso_bruto']:.2f}
                             - Precio: ${precio_simulado_venta:.2f}
-                            - Comisión (-15%): ${precio_simulado_venta * 0.15:.2f}
+                            - Comisión (-17%): ${ganancia_sim['comision']:.2f}
                             - Guía (-130): $130.00
                             """)
                         
@@ -1918,6 +1938,90 @@ def show_admin_dashboard():
                         st.session_state.create_sku_confirm = False
                         st.rerun()
 
+@st.cache_data(ttl=60)
+def get_metricas_dashboard(dias: int = 1) -> dict:
+    """
+    Obtiene métricas principales para el dashboard.
+    
+    Retorna:
+    - precios_revisados: Total de registros en historial
+    - ajustes_realizados: SKUs donde precio cambió
+    - ganando_buybox: SKUs donde nuestro precio <= precio_rival
+    - skus_con_ganancia_saludable: SKUs con margen >= 10%
+    - ingreso_neto_total: Suma de ingresos netos
+    - ganancia_neta_total: Suma de ganancias netas
+    """
+    try:
+        # Obtener datos recientes
+        query = f"""
+        SELECT 
+            h.sku_interno,
+            h.nuestro_precio,
+            h.precio_rival,
+            c.costo_odoo,
+            COUNT(*) as cambios
+        FROM historial_precios h
+        LEFT JOIN catalogo_maestro_v3 c ON h.sku_interno = c.sku_interno
+        WHERE h.fecha_hora >= NOW() - INTERVAL '{dias} days'
+            AND c.estatus = 'ACTIVO'
+        GROUP BY h.sku_interno, h.nuestro_precio, h.precio_rival, c.costo_odoo
+        """
+        
+        df = db.execute_query(query)
+        
+        if df.empty:
+            return {
+                'precios_revisados': 0,
+                'ajustes_realizados': 0,
+                'ganando_buybox': 0,
+                'skus_saludables': 0,
+                'ingreso_neto_total': 0.0,
+                'ganancia_neta_total': 0.0
+            }
+        
+        # CALCULAR MÉTRICAS
+        precios_revisados = len(df)
+        
+        # Ajustes: contar cambios > 1 (significa que hubo ajuste)
+        ajustes_realizados = (df['cambios'] > 1).sum()
+        
+        # GANANDO BUYBOX: nuestro precio <= precio_rival (más competitivo)
+        df['nuestro_precio_float'] = pd.to_numeric(df['nuestro_precio'], errors='coerce')
+        df['precio_rival_float'] = pd.to_numeric(df['precio_rival'], errors='coerce')
+        ganando_buybox = (df['nuestro_precio_float'] <= df['precio_rival_float']).sum()
+        
+        # Calcular ganancias para cada SKU
+        ingreso_neto_total = 0.0
+        ganancia_neta_total = 0.0
+        skus_saludables = 0
+        
+        for idx, row in df.iterrows():
+            if pd.notna(row['nuestro_precio_float']) and row['costo_odoo']:
+                resultado = calcular_ganancia_correcta(row['nuestro_precio_float'], row['costo_odoo'])
+                ingreso_neto_total += resultado['ingreso_neto']
+                ganancia_neta_total += resultado['ganancia_neta']
+                if resultado['margen_saludable']:
+                    skus_saludables += 1
+        
+        return {
+            'precios_revisados': precios_revisados,
+            'ajustes_realizados': ajustes_realizados,
+            'ganando_buybox': ganando_buybox,
+            'skus_saludables': skus_saludables,
+            'ingreso_neto_total': round(ingreso_neto_total, 2),
+            'ganancia_neta_total': round(ganancia_neta_total, 2)
+        }
+    except Exception as e:
+        logger.error(f"❌ Error en métricas dashboard: {e}")
+        return {
+            'precios_revisados': 0,
+            'ajustes_realizados': 0,
+            'ganando_buybox': 0,
+            'skus_saludables': 0,
+            'ingreso_neto_total': 0.0,
+            'ganancia_neta_total': 0.0
+        }
+
 # ==========================================
 # 💰 FUNCIÓN MAESTRA DE CÁLCULO DE GANANCIA
 # ==========================================
@@ -1928,9 +2032,11 @@ def calcular_ganancia_correcta(precio_venta: float, costo_odoo: float) -> dict:
     
     Constantes:
     - GUIA: 130 (costo fijo de envío/guía)
-    - CP: 15% (comisión plataforma Liverpool)
+    - CP: 17% (comisión plataforma Liverpool) ✅ ACTUALIZADO
     - ISR: 2.5% (impuesto sobre ingresos)
     - IVA: 8% (impuesto valor agregado)
+    
+    ✨ CADA OPERACIÓN SE REDONDEA A 2 DECIMALES
     
     Retorna:
     {
@@ -1946,34 +2052,39 @@ def calcular_ganancia_correcta(precio_venta: float, costo_odoo: float) -> dict:
     }
     """
     try:
+        # ✨ CONVERTIR DECIMAL A FLOAT (PostgreSQL retorna Decimal)
+        precio_venta = float(precio_venta) if precio_venta else 0.0
+        costo_odoo = float(costo_odoo) if costo_odoo else 0.0
+        
         # CONSTANTES
         GUIA = 130.0
-        CP = 0.15  # Comisión 15%
+        CP = 0.17  # ✅ ACTUALIZADO: Comisión 17% (era 15%)
         ISR_RATE = 0.025  # 2.5%
         IVA_RATE = 0.08  # 8%
         MARGEN_MINIMO = 10.0  # 10%
         
-        # Paso 1: INGRESO BRUTO
-        ingreso_bruto = (precio_venta * (1 - CP)) - GUIA
+        # ✨ Paso 1: INGRESO BRUTO (REDONDEADO)
+        comision = round(precio_venta * CP, 2)  # ✨ REDONDEAR COMISIÓN
+        ingreso_bruto = round((precio_venta - comision - GUIA), 2)  # ✨ REDONDEAR BRUTO
         
-        # Paso 2-3: IMPUESTOS (ISR + IVA)
-        base_impuesto = precio_venta / 1.16
-        isr = base_impuesto * ISR_RATE
-        iva = base_impuesto * IVA_RATE
-        impuestos_totales = isr + iva
+        # ✨ Paso 2-3: IMPUESTOS (ISR + IVA) (REDONDEADOS)
+        base_impuesto = round(precio_venta / 1.16, 2)  # ✨ REDONDEAR BASE
+        isr = round(base_impuesto * ISR_RATE, 2)  # ✨ REDONDEAR ISR
+        iva = round(base_impuesto * IVA_RATE, 2)  # ✨ REDONDEAR IVA
+        impuestos_totales = round(isr + iva, 2)  # ✨ REDONDEAR TOTAL IMPUESTOS
         
-        # Paso 4: INGRESO NETO
-        ingreso_neto = ingreso_bruto - impuestos_totales
+        # ✨ Paso 4: INGRESO NETO (REDONDEADO)
+        ingreso_neto = round(ingreso_bruto - impuestos_totales, 2)  # ✨ REDONDEAR NETO
         
-        # Paso 5: COSTO CON IVA (del catálogo)
-        costo_con_iva = costo_odoo * 1.16 if costo_odoo else 0.0
+        # ✨ Paso 5: COSTO CON IVA (REDONDEADO)
+        costo_con_iva = round(costo_odoo * 1.16, 2) if costo_odoo else 0.0  # ✨ REDONDEAR COSTO
         
-        # Paso 6: GANANCIA NETA
-        ganancia_neta = ingreso_neto - costo_con_iva
+        # ✨ Paso 6: GANANCIA NETA (REDONDEADA)
+        ganancia_neta = round(ingreso_neto - costo_con_iva, 2)  # ✨ REDONDEAR GANANCIA
         
-        # Paso 7: GANANCIA PORCENTUAL
+        # ✨ Paso 7: GANANCIA PORCENTUAL (REDONDEADA)
         if costo_con_iva > 0:
-            ganancia_porcentaje = ((ingreso_neto / costo_con_iva) - 1) * 100
+            ganancia_porcentaje = round(((ingreso_neto / costo_con_iva) - 1) * 100, 2)  # ✨ REDONDEAR %
         else:
             ganancia_porcentaje = 0.0
         
@@ -1981,15 +2092,16 @@ def calcular_ganancia_correcta(precio_venta: float, costo_odoo: float) -> dict:
         margen_saludable = ganancia_porcentaje >= MARGEN_MINIMO
         
         return {
-            'ingreso_bruto': round(ingreso_bruto, 2),
-            'isr': round(isr, 2),
-            'iva': round(iva, 2),
-            'impuestos_totales': round(impuestos_totales, 2),
-            'ingreso_neto': round(ingreso_neto, 2),
+            'ingreso_bruto': ingreso_bruto,
+            'comision': comision,  # ✨ NUEVO: mostrar comisión
+            'isr': isr,
+            'iva': iva,
+            'impuestos_totales': impuestos_totales,
+            'ingreso_neto': ingreso_neto,
             'costo_odoo': round(costo_odoo, 2) if costo_odoo else 0.0,
-            'costo_con_iva': round(costo_con_iva, 2),
-            'ganancia_neta': round(ganancia_neta, 2),
-            'ganancia_porcentaje': round(ganancia_porcentaje, 2),
+            'costo_con_iva': costo_con_iva,
+            'ganancia_neta': ganancia_neta,
+            'ganancia_porcentaje': ganancia_porcentaje,
             'margen_saludable': margen_saludable,
             'mensaje_margen': "✅ MARGEN SALUDABLE" if margen_saludable else "⚠️ MARGEN BAJO"
         }
@@ -1997,6 +2109,7 @@ def calcular_ganancia_correcta(precio_venta: float, costo_odoo: float) -> dict:
         logger.error(f"❌ Error en cálculo de ganancia: {e}")
         return {
             'ingreso_bruto': 0.0,
+            'comision': 0.0,
             'isr': 0.0,
             'iva': 0.0,
             'impuestos_totales': 0.0,
