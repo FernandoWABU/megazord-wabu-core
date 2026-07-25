@@ -808,7 +808,7 @@ def show_admin_dashboard():
                         hovermode='x unified'
                     )
                     
-                    st.plotly_chart(fig_trend, use_container_width=True)
+                    st.plotly_chart(fig_trend, width="stretch")
                     
                     # Tabla de tendencias
                     st.markdown("#### Resumen de Tendencias")
@@ -825,7 +825,7 @@ def show_admin_dashboard():
                     st.markdown("#### Datos detallados")
                     st.dataframe(
                         df_trend.sort_values('fecha', ascending=False),
-                        use_container_width=True
+                        width="stretch"
                     )
             else:
                 st.warning("❌ No hay datos de tendencias disponibles")
@@ -869,7 +869,7 @@ def show_admin_dashboard():
                         showlegend=False
                     )
                     
-                    st.plotly_chart(fig_top, use_container_width=True)
+                    st.plotly_chart(fig_top, width="stretch")
                     
                     # Métricas
                     col_top1, col_top2, col_top3, col_top4 = st.columns(4)
@@ -894,7 +894,7 @@ def show_admin_dashboard():
                             'Costo': '${:.2f}',
                             'Ganancia': '${:.2f}'
                         }),
-                        use_container_width=True
+                        width="stretch"
                     )
             else:
                 st.warning("❌ No hay datos de top SKUs")
@@ -939,7 +939,7 @@ def show_admin_dashboard():
                         hovermode='closest'
                     )
                     
-                    st.plotly_chart(fig_margen, use_container_width=True)
+                    st.plotly_chart(fig_margen, width="stretch")
                     
                     # Métricas
                     col_marg1, col_marg2, col_marg3 = st.columns(3)
@@ -968,7 +968,7 @@ def show_admin_dashboard():
                             'Ganancia $': '${:.2f}',
                             'Margen %': '{:.1f}%'
                         }),
-                        use_container_width=True
+                        width="stretch"
                     )
             else:
                 st.warning("❌ No hay datos de margen")
@@ -1012,7 +1012,7 @@ def show_admin_dashboard():
                         showlegend=False
                     )
                     
-                    st.plotly_chart(fig_comp, use_container_width=True)
+                    st.plotly_chart(fig_comp, width="stretch")
                     
                     # Resumen competitivo
                     mas_bajos = len(df_comp[df_comp['diferencia'] <= 0])
@@ -1038,7 +1038,7 @@ def show_admin_dashboard():
                             'Rival $': '${:.2f}',
                             'Diferencia $': '${:.2f}'
                         }),
-                        use_container_width=True
+                        width="stretch"
                     )
             else:
                 st.warning("❌ No hay datos de competencia")
@@ -1082,7 +1082,7 @@ def show_admin_dashboard():
                         xaxis=dict(tickmode='linear', tick0=0, dtick=1)
                     )
                     
-                    st.plotly_chart(fig_heat, use_container_width=True)
+                    st.plotly_chart(fig_heat, width="stretch")
                     
                     # Métricas
                     hora_pico = df_heat.loc[df_heat['cambios'].idxmax(), 'hora'] if not df_heat.empty else 0
@@ -1101,7 +1101,7 @@ def show_admin_dashboard():
                     st.markdown("#### Actividad por hora")
                     df_heat_display = df_heat.copy()
                     df_heat_display['hora'] = df_heat_display['hora'].astype(int).astype(str) + ':00'
-                    st.dataframe(df_heat_display.sort_values('cambios', ascending=False), use_container_width=True)
+                    st.dataframe(df_heat_display.sort_values('cambios', ascending=False), width="stretch")
             else:
                 st.warning("❌ No hay datos de actividad")
         
@@ -1133,7 +1133,7 @@ def show_admin_dashboard():
                         height=500
                     )
                     
-                    st.plotly_chart(fig_dist, use_container_width=True)
+                    st.plotly_chart(fig_dist, width="stretch")
                     
                     # Tabla
                     st.markdown("#### Detalle por rango")
@@ -1144,7 +1144,7 @@ def show_admin_dashboard():
                         df_dist_display.style.format({
                             'Precio Promedio': '${:.2f}'
                         }),
-                        use_container_width=True
+                        width="stretch"
                     )
             else:
                 st.warning("❌ No hay datos de distribución")
@@ -1188,7 +1188,7 @@ def show_admin_dashboard():
                         showlegend=False
                     )
                     
-                    st.plotly_chart(fig_critico, use_container_width=True)
+                    st.plotly_chart(fig_critico, width="stretch")
                     
                     # Alerta
                     st.error(f"⚠️ {len(df_critico)} SKUs con margen < 10% - Requieren revisión urgente")
@@ -1206,7 +1206,7 @@ def show_admin_dashboard():
                             'Costo': '${:.2f}',
                             'Margen %': '{:.1f}%'
                         }),
-                        use_container_width=True
+                        width="stretch"
                     )
             else:
                 st.warning("❌ No hay SKUs críticos (¡Buen trabajo!)")
@@ -1389,7 +1389,8 @@ def show_admin_dashboard():
                         st.error("❌ El precio mínimo no puede ser mayor o igual al máximo")
                     else:
                         st.markdown("---")
-                        st.subheader("📊 SIMULADOR DE GANANCIA")
+                        st.subheader("📊 SIMULADOR DE GANANCIA - CÁLCULO CORRECTO")
+                        st.info("💡 Ajusta el precio para ver cómo cambia tu ganancia REAL (con impuestos, comisiones y costos)")
                         
                         # SIMULADOR: Precio de venta simulado
                         precio_simulado_venta = st.slider(
@@ -1398,40 +1399,79 @@ def show_admin_dashboard():
                             max_value=float(new_precio_max),
                             value=(float(new_precio_min) + float(new_precio_max)) / 2,
                             step=0.01,
-                            help="Ajusta para ver cómo cambiaría tu ganancia"
+                            help="Ajusta para ver cómo cambiaría tu ganancia REAL"
                         )
                         
-                        # Calcular ganancias simuladas
-                        ganancia_monetaria_sim = float(precio_simulado_venta) - float(costo_simulado)
-                        ganancia_porcentaje_sim = (ganancia_monetaria_sim / float(costo_simulado) * 100) if float(costo_simulado) > 0 else 0
+                        # Calcular ganancias CORRECTAS usando la función maestra
+                        ganancia_sim = calcular_ganancia_correcta(float(precio_simulado_venta), float(costo_simulado))
                         
-                        col_sim1, col_sim2, col_sim3 = st.columns(3)
+                        col_sim1, col_sim2, col_sim3, col_sim4 = st.columns(4)
                         
                         with col_sim1:
                             st.markdown(f"""
-                            <div style='background: #1a1f3a; border: 2px solid #00d9ff; border-radius: 8px; padding: 15px; text-align: center;'>
-                                <div style='color: #00d9ff; font-size: 0.9em;'>💰 Precio Simulado</div>
-                                <div style='color: #ffffff; font-size: 1.8em; font-weight: bold;'>${float(precio_simulado_venta):.2f}</div>
+                            <div style='background: #1a1f3a; border: 2px solid #00d9ff; border-radius: 8px; padding: 12px; text-align: center;'>
+                                <div style='color: #00d9ff; font-size: 0.8em;'>💰 Precio Venta</div>
+                                <div style='color: #ffffff; font-size: 1.6em; font-weight: bold;'>${float(precio_simulado_venta):.2f}</div>
                             </div>
                             """, unsafe_allow_html=True)
                         
                         with col_sim2:
-                            color_ganancia_sim = "#1db954" if ganancia_monetaria_sim > 0 else "#ff4757"
                             st.markdown(f"""
-                            <div style='background: #1a1f3a; border: 2px solid {color_ganancia_sim}; border-radius: 8px; padding: 15px; text-align: center;'>
-                                <div style='color: {color_ganancia_sim}; font-size: 0.9em;'>💵 Ganancia Simulada</div>
-                                <div style='color: {color_ganancia_sim}; font-size: 1.8em; font-weight: bold;'>${ganancia_monetaria_sim:.2f}</div>
+                            <div style='background: #1a1f3a; border: 2px solid #ffa502; border-radius: 8px; padding: 12px; text-align: center;'>
+                                <div style='color: #ffa502; font-size: 0.8em;'>📦 Ingreso Neto</div>
+                                <div style='color: #ffffff; font-size: 1.6em; font-weight: bold;'>${ganancia_sim['ingreso_neto']:.2f}</div>
                             </div>
                             """, unsafe_allow_html=True)
                         
                         with col_sim3:
-                            color_porc_sim = "#1db954" if ganancia_porcentaje_sim > 0 else "#ff4757"
+                            color_gan = "#1db954" if ganancia_sim['ganancia_neta'] > 0 else "#ff4757"
                             st.markdown(f"""
-                            <div style='background: #1a1f3a; border: 2px solid {color_porc_sim}; border-radius: 8px; padding: 15px; text-align: center;'>
-                                <div style='color: {color_porc_sim}; font-size: 0.9em;'>📊 Margen Simulado</div>
-                                <div style='color: {color_porc_sim}; font-size: 1.8em; font-weight: bold;'>{ganancia_porcentaje_sim:.1f}%</div>
+                            <div style='background: #1a1f3a; border: 2px solid {color_gan}; border-radius: 8px; padding: 12px; text-align: center;'>
+                                <div style='color: {color_gan}; font-size: 0.8em;'>💵 Ganancia Neta</div>
+                                <div style='color: {color_gan}; font-size: 1.6em; font-weight: bold;'>${ganancia_sim['ganancia_neta']:.2f}</div>
                             </div>
                             """, unsafe_allow_html=True)
+                        
+                        with col_sim4:
+                            color_porc = "#1db954" if ganancia_sim['ganancia_porcentaje'] >= 10 else "#ff4757"
+                            st.markdown(f"""
+                            <div style='background: #1a1f3a; border: 2px solid {color_porc}; border-radius: 8px; padding: 12px; text-align: center;'>
+                                <div style='color: {color_porc}; font-size: 0.8em;'>📊 Margen %</div>
+                                <div style='color: {color_porc}; font-size: 1.6em; font-weight: bold;'>{ganancia_sim['ganancia_porcentaje']:.1f}%</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        # Mostrar detalles del cálculo
+                        st.markdown("#### 📋 Detalles del Cálculo:")
+                        col_det1, col_det2, col_det3 = st.columns(3)
+                        
+                        with col_det1:
+                            st.markdown(f"""
+                            **Ingreso Bruto:** ${ganancia_sim['ingreso_bruto']:.2f}
+                            - Precio: ${precio_simulado_venta:.2f}
+                            - Comisión (-15%): ${precio_simulado_venta * 0.15:.2f}
+                            - Guía (-130): $130.00
+                            """)
+                        
+                        with col_det2:
+                            st.markdown(f"""
+                            **Impuestos:** ${ganancia_sim['impuestos_totales']:.2f}
+                            - ISR (2.5%): ${ganancia_sim['isr']:.2f}
+                            - IVA (8%): ${ganancia_sim['iva']:.2f}
+                            """)
+                        
+                        with col_det3:
+                            st.markdown(f"""
+                            **Costo:** ${ganancia_sim['costo_con_iva']:.2f}
+                            - Costo ODOO: ${ganancia_sim['costo_odoo']:.2f}
+                            - + IVA (x1.16): ${ganancia_sim['costo_con_iva']:.2f}
+                            """)
+                        
+                        # Indicador de margen saludable
+                        if ganancia_sim['margen_saludable']:
+                            st.success(f"✅ {ganancia_sim['mensaje_margen']} ({ganancia_sim['ganancia_porcentaje']:.1f}% >= 10%)")
+                        else:
+                            st.error(f"⚠️ {ganancia_sim['mensaje_margen']} ({ganancia_sim['ganancia_porcentaje']:.1f}% < 10%)")
                         
                         st.markdown("---")
                         
@@ -1725,6 +1765,59 @@ def show_admin_dashboard():
                     help="LVP_01 = Tienda Principal (Precio Genial)\nLVP_02 = Tienda Secundaria (futuro)"
                 )
             
+            # ✨ NUEVO: CALCULADOR DE GANANCIA REAL
+            st.markdown("---")
+            st.subheader("📊 PREVISIÓN DE GANANCIA")
+            
+            if costo_odoo > 0 and (precio_minimo + precio_maximo) > 0:
+                # Calcular ganancia con precio promedio (entre min y max)
+                precio_promedio = (precio_minimo + precio_maximo) / 2
+                ganancia_prevista = calcular_ganancia_correcta(precio_promedio, costo_odoo)
+                
+                col_prev1, col_prev2, col_prev3, col_prev4 = st.columns(4)
+                
+                with col_prev1:
+                    st.markdown(f"""
+                    <div style='background: #1a1f3a; border: 2px solid #00d9ff; border-radius: 8px; padding: 12px; text-align: center;'>
+                        <div style='color: #00d9ff; font-size: 0.8em;'>💰 Precio Promedio</div>
+                        <div style='color: #ffffff; font-size: 1.5em; font-weight: bold;'>${precio_promedio:.2f}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col_prev2:
+                    st.markdown(f"""
+                    <div style='background: #1a1f3a; border: 2px solid #ffa502; border-radius: 8px; padding: 12px; text-align: center;'>
+                        <div style='color: #ffa502; font-size: 0.8em;'>📦 Ingreso Neto</div>
+                        <div style='color: #ffffff; font-size: 1.5em; font-weight: bold;'>${ganancia_prevista['ingreso_neto']:.2f}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col_prev3:
+                    color_gan = "#1db954" if ganancia_prevista['ganancia_neta'] > 0 else "#ff4757"
+                    st.markdown(f"""
+                    <div style='background: #1a1f3a; border: 2px solid {color_gan}; border-radius: 8px; padding: 12px; text-align: center;'>
+                        <div style='color: {color_gan}; font-size: 0.8em;'>💵 Ganancia Neta</div>
+                        <div style='color: {color_gan}; font-size: 1.5em; font-weight: bold;'>${ganancia_prevista['ganancia_neta']:.2f}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col_prev4:
+                    color_porc = "#1db954" if ganancia_prevista['ganancia_porcentaje'] >= 10 else "#ff4757"
+                    st.markdown(f"""
+                    <div style='background: #1a1f3a; border: 2px solid {color_porc}; border-radius: 8px; padding: 12px; text-align: center;'>
+                        <div style='color: {color_porc}; font-size: 0.8em;'>📊 Margen %</div>
+                        <div style='color: {color_porc}; font-size: 1.5em; font-weight: bold;'>{ganancia_prevista['ganancia_porcentaje']:.1f}%</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Indicador de margen saludable
+                if ganancia_prevista['margen_saludable']:
+                    st.success(f"✅ {ganancia_prevista['mensaje_margen']} ({ganancia_prevista['ganancia_porcentaje']:.1f}% >= 10%)")
+                else:
+                    st.error(f"⚠️ {ganancia_prevista['mensaje_margen']} ({ganancia_prevista['ganancia_porcentaje']:.1f}% < 10%)")
+            
+            st.markdown("---")
+            
             # VALIDAR PRIMERO
             # Costo Odoo NO es obligatorio - ODOO lo actualiza automáticamente
             # Si está en 0, poner como None (NULL en BD)
@@ -1818,6 +1911,97 @@ def show_admin_dashboard():
                         st.rerun()
 
 # ==========================================
+# 💰 FUNCIÓN MAESTRA DE CÁLCULO DE GANANCIA
+# ==========================================
+
+def calcular_ganancia_correcta(precio_venta: float, costo_odoo: float) -> dict:
+    """
+    Calcula ganancia CORRECTA con todos los impuestos y costos.
+    
+    Constantes:
+    - GUIA: 130 (costo fijo de envío/guía)
+    - CP: 15% (comisión plataforma Liverpool)
+    - ISR: 2.5% (impuesto sobre ingresos)
+    - IVA: 8% (impuesto valor agregado)
+    
+    Retorna:
+    {
+        'ingreso_bruto': float,
+        'isr': float,
+        'iva': float,
+        'impuestos_totales': float,
+        'ingreso_neto': float,
+        'costo_con_iva': float,
+        'ganancia_neta': float,
+        'ganancia_porcentaje': float,
+        'margen_saludable': bool (>=10%)
+    }
+    """
+    try:
+        # CONSTANTES
+        GUIA = 130.0
+        CP = 0.15  # Comisión 15%
+        ISR_RATE = 0.025  # 2.5%
+        IVA_RATE = 0.08  # 8%
+        MARGEN_MINIMO = 10.0  # 10%
+        
+        # Paso 1: INGRESO BRUTO
+        ingreso_bruto = (precio_venta * (1 - CP)) - GUIA
+        
+        # Paso 2-3: IMPUESTOS (ISR + IVA)
+        base_impuesto = precio_venta / 1.16
+        isr = base_impuesto * ISR_RATE
+        iva = base_impuesto * IVA_RATE
+        impuestos_totales = isr + iva
+        
+        # Paso 4: INGRESO NETO
+        ingreso_neto = ingreso_bruto - impuestos_totales
+        
+        # Paso 5: COSTO CON IVA (del catálogo)
+        costo_con_iva = costo_odoo * 1.16 if costo_odoo else 0.0
+        
+        # Paso 6: GANANCIA NETA
+        ganancia_neta = ingreso_neto - costo_con_iva
+        
+        # Paso 7: GANANCIA PORCENTUAL
+        if costo_con_iva > 0:
+            ganancia_porcentaje = ((ingreso_neto / costo_con_iva) - 1) * 100
+        else:
+            ganancia_porcentaje = 0.0
+        
+        # Paso 8: ¿MARGEN SALUDABLE?
+        margen_saludable = ganancia_porcentaje >= MARGEN_MINIMO
+        
+        return {
+            'ingreso_bruto': round(ingreso_bruto, 2),
+            'isr': round(isr, 2),
+            'iva': round(iva, 2),
+            'impuestos_totales': round(impuestos_totales, 2),
+            'ingreso_neto': round(ingreso_neto, 2),
+            'costo_odoo': round(costo_odoo, 2) if costo_odoo else 0.0,
+            'costo_con_iva': round(costo_con_iva, 2),
+            'ganancia_neta': round(ganancia_neta, 2),
+            'ganancia_porcentaje': round(ganancia_porcentaje, 2),
+            'margen_saludable': margen_saludable,
+            'mensaje_margen': "✅ MARGEN SALUDABLE" if margen_saludable else "⚠️ MARGEN BAJO"
+        }
+    except Exception as e:
+        logger.error(f"❌ Error en cálculo de ganancia: {e}")
+        return {
+            'ingreso_bruto': 0.0,
+            'isr': 0.0,
+            'iva': 0.0,
+            'impuestos_totales': 0.0,
+            'ingreso_neto': 0.0,
+            'costo_odoo': 0.0,
+            'costo_con_iva': 0.0,
+            'ganancia_neta': 0.0,
+            'ganancia_porcentaje': 0.0,
+            'margen_saludable': False,
+            'mensaje_margen': '❌ ERROR EN CÁLCULO'
+        }
+
+# ==========================================
 # 📊 FUNCIONES DE ANÁLISIS AVANZADO - FASE 3B
 # ==========================================
 
@@ -1846,7 +2030,7 @@ def get_analisis_tendencias(dias: int = 7) -> dict:
 
 @st.cache_data(ttl=300)
 def get_top_skus_performance(dias: int = 7) -> dict:
-    """Obtiene Top 10 SKUs por ganancia"""
+    """Obtiene Top 10 SKUs por ganancia CORRECTA"""
     try:
         query = f"""
         SELECT 
@@ -1857,53 +2041,101 @@ def get_top_skus_performance(dias: int = 7) -> dict:
             c.costo_odoo::float as costo,
             AVG(h.nuestro_precio::float) as precio_promedio,
             COUNT(h.id) as cambios_realizados,
-            c.regla_estrategia as regla,
-            CASE 
-                WHEN c.costo_odoo IS NOT NULL AND c.costo_odoo != 0 
-                THEN (AVG(h.nuestro_precio::float) - c.costo_odoo::float)
-                ELSE 0 
-            END as ganancia_monetaria
+            c.regla_estrategia as regla
         FROM catalogo_maestro_v3 c
         LEFT JOIN historial_precios h ON c.sku_interno = h.sku_interno
             AND h.fecha_hora >= NOW() - INTERVAL '{dias} days'
-        WHERE c.estatus = 'ACTIVO'
+        WHERE c.estatus = 'ACTIVO' AND c.costo_odoo IS NOT NULL AND c.costo_odoo > 0
         GROUP BY c.sku_limpio, c.sku_interno, c.precio_minimo, c.precio_maximo, c.costo_odoo, c.regla_estrategia
-        ORDER BY ganancia_monetaria DESC NULLS LAST
-        LIMIT 10
+        ORDER BY c.sku_interno
         """
         df = db.execute_query(query)
-        return {"data": df, "success": not df.empty}
+        
+        if df.empty:
+            return {"data": None, "success": False}
+        
+        # ✨ APLICAR FÓRMULA CORRECTA A CADA ROW
+        ganancia_neta_list = []
+        ganancia_porc_list = []
+        margen_saludable_list = []
+        
+        for idx, row in df.iterrows():
+            precio_venta = row['precio_promedio'] if row['precio_promedio'] > 0 else (row['precio_minimo'] + row['precio_maximo']) / 2
+            resultado = calcular_ganancia_correcta(precio_venta, row['costo'])
+            
+            ganancia_neta_list.append(resultado['ganancia_neta'])
+            ganancia_porc_list.append(resultado['ganancia_porcentaje'])
+            margen_saludable_list.append(resultado['margen_saludable'])
+        
+        df['ganancia_neta'] = ganancia_neta_list
+        df['ganancia_porcentaje'] = ganancia_porc_list
+        df['margen_saludable'] = margen_saludable_list
+        
+        # Ordenar por ganancia neta descendente
+        df = df.sort_values('ganancia_neta', ascending=False).head(10)
+        
+        return {"data": df, "success": True}
     except Exception as e:
         logger.error(f"❌ Error en top SKUs: {e}")
         return {"data": None, "success": False}
 
 @st.cache_data(ttl=300)
 def get_analisis_margen(dias: int = 7) -> dict:
-    """Análisis de margen vs rivales"""
+    """Análisis de margen CORRECTO con impuestos y comisiones"""
     try:
         query = f"""
         SELECT 
             c.sku_limpio,
             c.sku_interno,
+            c.precio_minimo,
+            c.precio_maximo,
             AVG(h.nuestro_precio::float) as nuestro_precio,
-            AVG(h.precio_rival::float) as precio_rival,
-            c.costo_odoo::float as costo,
-            (AVG(h.nuestro_precio::float) - c.costo_odoo::float) as ganancia_monetaria,
-            CASE 
-                WHEN c.costo_odoo IS NOT NULL AND c.costo_odoo != 0 
-                THEN ((AVG(h.nuestro_precio::float) - c.costo_odoo::float) / c.costo_odoo::float * 100)
-                ELSE 0 
-            END as margen_porcentaje,
-            (AVG(h.nuestro_precio::float) - AVG(h.precio_rival::float)) as diferencia_precio
+            AVG(CASE WHEN h.precio_rival ~ '^[0-9.]+$' THEN h.precio_rival::float ELSE NULL END) as precio_rival,
+            c.costo_odoo::float as costo
         FROM catalogo_maestro_v3 c
         LEFT JOIN historial_precios h ON c.sku_interno = h.sku_interno
             AND h.fecha_hora >= NOW() - INTERVAL '{dias} days'
-        WHERE c.estatus = 'ACTIVO'
-        GROUP BY c.sku_limpio, c.sku_interno, c.costo_odoo
-        ORDER BY margen_porcentaje DESC NULLS LAST
+        WHERE c.estatus = 'ACTIVO' AND c.costo_odoo IS NOT NULL AND c.costo_odoo > 0
+        GROUP BY c.sku_limpio, c.sku_interno, c.precio_minimo, c.precio_maximo, c.costo_odoo
+        ORDER BY c.sku_interno
         """
         df = db.execute_query(query)
-        return {"data": df, "success": not df.empty}
+        
+        if df.empty:
+            return {"data": None, "success": False}
+        
+        # ✨ APLICAR FÓRMULA CORRECTA A CADA ROW
+        ingreso_neto_list = []
+        ganancia_neta_list = []
+        ganancia_porc_list = []
+        margen_saludable_list = []
+        diferencia_precio_list = []
+        
+        for idx, row in df.iterrows():
+            precio_venta = row['nuestro_precio'] if row['nuestro_precio'] > 0 else (row['precio_minimo'] + row['precio_maximo']) / 2
+            resultado = calcular_ganancia_correcta(precio_venta, row['costo'])
+            
+            ingreso_neto_list.append(resultado['ingreso_neto'])
+            ganancia_neta_list.append(resultado['ganancia_neta'])
+            ganancia_porc_list.append(resultado['ganancia_porcentaje'])
+            margen_saludable_list.append(resultado['margen_saludable'])
+            
+            # Diferencia de precio vs rivales
+            if pd.notna(row['precio_rival']):
+                diferencia_precio_list.append(precio_venta - row['precio_rival'])
+            else:
+                diferencia_precio_list.append(0.0)
+        
+        df['ingreso_neto'] = ingreso_neto_list
+        df['ganancia_neta'] = ganancia_neta_list
+        df['margen_porcentaje'] = ganancia_porc_list
+        df['margen_saludable'] = margen_saludable_list
+        df['diferencia_precio'] = diferencia_precio_list
+        
+        # Ordenar por margen porcentaje descendente
+        df = df.sort_values('margen_porcentaje', ascending=False)
+        
+        return {"data": df, "success": True}
     except Exception as e:
         logger.error(f"❌ Error en margen: {e}")
         return {"data": None, "success": False}
@@ -1917,12 +2149,12 @@ def get_competencia_precios(dias: int = 7) -> dict:
             c.sku_limpio,
             c.sku_interno,
             AVG(h.nuestro_precio::float) as nuestro_precio,
-            AVG(h.precio_rival::float) as precio_rival,
+            AVG(CASE WHEN h.precio_rival ~ '^[0-9.]+$' THEN h.precio_rival::float ELSE NULL END) as precio_rival,
             COUNT(DISTINCT h.fecha_hora::date) as dias_monitoreados,
             COUNT(h.id) as total_cambios,
             CASE 
-                WHEN AVG(h.precio_rival::float) > AVG(h.nuestro_precio::float) THEN '✅ MÁS BAJO'
-                WHEN AVG(h.precio_rival::float) < AVG(h.nuestro_precio::float) THEN '⚠️ MÁS ALTO'
+                WHEN AVG(CASE WHEN h.precio_rival ~ '^[0-9.]+$' THEN h.precio_rival::float ELSE NULL END) > AVG(h.nuestro_precio::float) THEN '✅ MÁS BAJO'
+                WHEN AVG(CASE WHEN h.precio_rival ~ '^[0-9.]+$' THEN h.precio_rival::float ELSE NULL END) < AVG(h.nuestro_precio::float) THEN '⚠️ MÁS ALTO'
                 ELSE '⚖️ IGUAL'
             END as posicion
         FROM catalogo_maestro_v3 c
@@ -1930,7 +2162,7 @@ def get_competencia_precios(dias: int = 7) -> dict:
             AND h.fecha_hora >= NOW() - INTERVAL '{dias} days'
         WHERE c.estatus = 'ACTIVO' AND h.precio_rival IS NOT NULL
         GROUP BY c.sku_limpio, c.sku_interno
-        ORDER BY ABS(AVG(h.precio_rival::float) - AVG(h.nuestro_precio::float)) DESC
+        ORDER BY ABS(AVG(CASE WHEN h.precio_rival ~ '^[0-9.]+$' THEN h.precio_rival::float ELSE NULL END) - AVG(h.nuestro_precio::float)) DESC
         LIMIT 20
         """
         df = db.execute_query(query)
@@ -1989,7 +2221,7 @@ def get_distribucion_precios(dias: int = 7) -> dict:
 
 @st.cache_data(ttl=300)
 def get_skus_criticos(dias: int = 7) -> dict:
-    """SKUs críticos con baja ganancia o alta pérdida"""
+    """SKUs críticos con margen < 10% (ALERTA ROJA)"""
     try:
         query = f"""
         SELECT 
@@ -2000,23 +2232,40 @@ def get_skus_criticos(dias: int = 7) -> dict:
             c.costo_odoo::float as costo,
             AVG(h.nuestro_precio::float) as precio_promedio,
             c.estatus,
-            c.regla_estrategia,
-            CASE 
-                WHEN c.costo_odoo IS NOT NULL AND c.costo_odoo != 0 
-                THEN ((AVG(h.nuestro_precio::float) - c.costo_odoo::float) / c.costo_odoo::float * 100)
-                ELSE 0 
-            END as margen_porcentaje
+            c.regla_estrategia
         FROM catalogo_maestro_v3 c
         LEFT JOIN historial_precios h ON c.sku_interno = h.sku_interno
             AND h.fecha_hora >= NOW() - INTERVAL '{dias} days'
-        WHERE c.estatus = 'ACTIVO' AND c.costo_odoo IS NOT NULL AND c.costo_odoo != 0
+        WHERE c.estatus = 'ACTIVO' AND c.costo_odoo IS NOT NULL AND c.costo_odoo > 0
         GROUP BY c.sku_limpio, c.sku_interno, c.precio_minimo, c.precio_maximo, c.costo_odoo, c.estatus, c.regla_estrategia
-        HAVING ((AVG(h.nuestro_precio::float) - c.costo_odoo::float) / c.costo_odoo::float * 100) < 10
-        ORDER BY margen_porcentaje ASC
-        LIMIT 15
+        ORDER BY c.sku_interno
         """
         df = db.execute_query(query)
-        return {"data": df, "success": not df.empty}
+        
+        if df.empty:
+            return {"data": None, "success": False}
+        
+        # ✨ APLICAR FÓRMULA CORRECTA A CADA ROW
+        margen_porc_list = []
+        margen_saludable_list = []
+        ganancia_neta_list = []
+        
+        for idx, row in df.iterrows():
+            precio_venta = row['precio_promedio'] if row['precio_promedio'] > 0 else (row['precio_minimo'] + row['precio_maximo']) / 2
+            resultado = calcular_ganancia_correcta(precio_venta, row['costo'])
+            
+            margen_porc_list.append(resultado['ganancia_porcentaje'])
+            margen_saludable_list.append(resultado['margen_saludable'])
+            ganancia_neta_list.append(resultado['ganancia_neta'])
+        
+        df['margen_porcentaje'] = margen_porc_list
+        df['margen_saludable'] = margen_saludable_list
+        df['ganancia_neta'] = ganancia_neta_list
+        
+        # FILTRAR: Solo SKUs con margen < 10%
+        df_criticos = df[df['margen_porcentaje'] < 10].sort_values('margen_porcentaje', ascending=True).head(15)
+        
+        return {"data": df_criticos if not df_criticos.empty else None, "success": not df_criticos.empty}
     except Exception as e:
         logger.error(f"❌ Error en SKUs críticos: {e}")
         return {"data": None, "success": False}
