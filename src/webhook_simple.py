@@ -21,7 +21,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
-import psycopg
+import psycopg2
 import requests
 import threading
 import time
@@ -166,7 +166,7 @@ def procesar_barrido_en_background(marketplace: str):
         
         # Guardar resultado en BD (OPCIONAL)
         try:
-            with psycopg.connect(DATABASE_URL) as conn:
+            with psycopg2.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cur:
                     cur.execute("""
                         INSERT INTO barrido_log 
@@ -246,7 +246,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 
                 try:
-                    with psycopg.connect(DATABASE_URL) as conn:
+                    with psycopg2.connect(DATABASE_URL) as conn:
                         with conn.cursor() as cur:
                             cur.execute("UPDATE config_sistema SET valor = 'true' WHERE clave = 'reset_circuit_breaker'")
                             conn.commit()
@@ -378,7 +378,7 @@ class Handler(BaseHTTPRequestHandler):
 
                 print(f"🔄 Conectando BD...", flush=True)
                 
-                with psycopg.connect(DATABASE_URL) as conn:
+                with psycopg2.connect(DATABASE_URL) as conn:
                     print(f"✅ BD OK", flush=True)
                     
                     with conn.cursor() as cur:
