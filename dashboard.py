@@ -679,7 +679,7 @@ def show_admin_dashboard():
                         labels={'valor': 'Precio ($)', 'fecha': 'Fecha'}
                     )
                     fig.update_layout(template="plotly_dark", height=400, hovermode='x unified')
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
                     
                     # Tabla de tendencias
                     st.markdown("#### Detalle de Tendencias")
@@ -707,7 +707,7 @@ def show_admin_dashboard():
                         labels={'cambios': 'Número de Cambios', 'hora': 'Hora del Día'}
                     )
                     fig.update_layout(template="plotly_dark", height=400, showlegend=False)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
                     
                     # Tabla de actividad
                     st.markdown("#### Detalle de Actividad")
@@ -905,12 +905,12 @@ def show_admin_dashboard():
                     
                     # Tabla
                     st.markdown("#### Detalle de SKUs")
-                    df_top_display = df_top[['sku_limpio', 'precio_promedio', 'costo', 'ganancia_neta', 'ganancia_porcentaje', 'cambios_realizados', 'regla']].copy()
-                    df_top_display.columns = ['SKU', 'Precio Promedio', 'Costo', 'Ganancia Neta', 'Margen %', 'Cambios', 'Regla']
+                    df_top_display = df_top[['sku_limpio', 'precio_actual', 'costo', 'ganancia_neta', 'ganancia_porcentaje', 'cambios_realizados', 'regla']].copy()
+                    df_top_display.columns = ['SKU', 'Precio Actual', 'Costo', 'Ganancia Neta', 'Margen %', 'Cambios', 'Regla']
                     
                     st.dataframe(
                         df_top_display.style.format({
-                            'Precio Promedio': '${:.2f}',
+                            'Precio Actual': '${:.2f}',
                             'Costo': '${:.2f}',
                             'Ganancia Neta': '${:.2f}',
                             'Margen %': '{:.1f}%'
@@ -1938,6 +1938,76 @@ def show_admin_dashboard():
                         st.session_state.create_sku_confirm = False
                         st.rerun()
 
+
+# ==========================================
+# 💡 FUNCIONES PARA ÚLTIMO PRECIO (Dinámico)
+# ==========================================
+
+@st.cache_data(ttl=120)
+def get_ultimo_precio_sku(sku_interno: str) -> float:
+    """
+    Obtiene el ÚLTIMO PRECIO registrado de un SKU.
+    ✨ Dinámico - Si está en stock out, usa último precio ANTES del stock out
+    ✨ NO PROMEDIA - Toma el más reciente
+    """
+    try:
+        query = f"""
+        SELECT nuestro_precio::float
+        FROM historial_precios
+        WHERE sku_interno = '{sku_interno}'
+            AND nuestro_precio IS NOT NULL
+            AND nuestro_precio ~ '^[0-9.]+$'
+        ORDER BY fecha_hora DESC
+        LIMIT 1
+        """
+        result = db.execute_query(query)
+        
+        if not result.empty:
+            precio = float(result.iloc[0]['nuestro_precio'])
+            return precio if precio > 0 else 0.0
+        else:
+            return 0.0
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo último precio para {sku_interno}: {e}")
+        return 0.0
+
+@st.cache_data(ttl=120)
+def get_ultimos_precios_batch(dias: int = 7) -> dict:
+    """
+    Obtiene el ÚLTIMO PRECIO para CADA SKU (batch - más eficiente).
+    
+    ✨ Dinámico - Toma último precio registrado de cada SKU
+    ✨ Retorna: {sku_interno: último_precio}
+    """
+    try:
+        query = f"""
+        SELECT 
+            sku_interno,
+            nuestro_precio::float as precio
+        FROM (
+            SELECT 
+                sku_interno,
+                nuestro_precio,
+                ROW_NUMBER() OVER (PARTITION BY sku_interno ORDER BY fecha_hora DESC) as rn
+            FROM historial_precios
+            WHERE fecha_hora >= NOW() - INTERVAL '{dias} days'
+                AND nuestro_precio IS NOT NULL
+                AND nuestro_precio ~ '^[0-9.]+$'
+                AND CAST(nuestro_precio AS FLOAT) > 0
+        ) ranked
+        WHERE rn = 1
+        """
+        df = db.execute_query(query)
+        
+        if not df.empty:
+            precio_dict = dict(zip(df['sku_interno'], df['precio']))
+            return precio_dict
+        else:
+            return {}
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo últimos precios batch: {e}")
+        return {}
+
 @st.cache_data(ttl=60)
 def get_metricas_dashboard(dias: int = 1) -> dict:
     """
@@ -2021,6 +2091,110 @@ def get_metricas_dashboard(dias: int = 1) -> dict:
             'ingreso_neto_total': 0.0,
             'ganancia_neta_total': 0.0
         }
+
+def get_ultimos_precios_batch(dias: int = 7) -> dict:
+    """
+    Obtiene el ÚLTIMO PRECIO VÁLIDO para TODOS los SKUs en UN QUERY.
+    
+    Estrategia por SKU:
+    1️⃣ Si hay registros con STOCK > 0 → promedio de esos precios
+    2️⃣ Si NO → último precio histórico
+    
+    Retorna: {sku_interno: precio_valido, ...}
+    """
+    try:
+        query = f"""
+        WITH precios_con_stock AS (
+            -- Precios donde hay STOCK > 0
+            SELECT 
+                h.sku_interno,
+                AVG(h.nuestro_precio::float) as precio_promedio_valido
+            FROM historial_precios h
+            WHERE h.fecha_hora >= NOW() - INTERVAL '{dias} days'
+                AND CAST(h.stock AS float) > 0
+            GROUP BY h.sku_interno
+        ),
+        ultimos_precios AS (
+            -- Último precio registrado (por si no hay stock)
+            SELECT 
+                DISTINCT ON (sku_interno) sku_interno,
+                nuestro_precio::float as ultimo_precio
+            FROM historial_precios
+            WHERE fecha_hora >= NOW() - INTERVAL '{dias} days'
+            ORDER BY sku_interno, fecha_hora DESC
+        )
+        SELECT 
+            COALESCE(pcs.sku_interno, up.sku_interno) as sku_interno,
+            COALESCE(pcs.precio_promedio_valido, up.ultimo_precio) as precio_final
+        FROM precios_con_stock pcs
+        FULL OUTER JOIN ultimos_precios up ON pcs.sku_interno = up.sku_interno
+        """
+        
+        df = db.execute_query(query)
+        
+        if df.empty:
+            return {}
+        
+        # Convertir a diccionario {sku_interno: precio}
+        resultado = {}
+        for idx, row in df.iterrows():
+            sku = row['sku_interno']
+            precio = float(row['precio_final']) if row['precio_final'] else 0.0
+            resultado[sku] = round(precio, 2)
+        
+        return resultado
+    
+    except Exception as e:
+        logger.error(f"❌ Error en batch de precios: {e}")
+        return {}
+
+@st.cache_data(ttl=300)
+def get_ultimo_precio_valido(sku_interno: str, dias: int = 7) -> float:
+    """
+    Obtiene el ÚLTIMO PRECIO válido para un SKU.
+    
+    Estrategia:
+    1️⃣ Si hay registros con STOCK > 0 → USA EL PROMEDIO (representa venta activa)
+    2️⃣ Si NO hay stock > 0 → USA EL ÚLTIMO PRECIO HISTÓRICO (antes de stock out)
+    
+    Esto evita que el promedio se vea afectado por períodos de stock out (0).
+    
+    Retorna: float (precio válido) o None
+    """
+    try:
+        # Obtener histórico reciente
+        query = f"""
+        SELECT 
+            h.nuestro_precio::float as precio,
+            CAST(h.stock AS float) as stock_val,
+            h.fecha_hora
+        FROM historial_precios h
+        WHERE h.sku_interno = '{sku_interno}'
+            AND h.fecha_hora >= NOW() - INTERVAL '{dias} days'
+        ORDER BY h.fecha_hora DESC
+        LIMIT 500
+        """
+        
+        df = db.execute_query(query)
+        
+        if df.empty:
+            return None
+        
+        # ESTRATEGIA 1: Buscar precios con STOCK > 0
+        df_con_stock = df[pd.to_numeric(df['stock_val'], errors='coerce') > 0]
+        
+        if not df_con_stock.empty:
+            # ✅ Hay stock → usar promedio de precios válidos
+            precio_valido = df_con_stock['precio'].mean()
+            return round(float(precio_valido), 2)
+        else:
+            # ⚠️ NO hay stock > 0 → usar el último precio histórico
+            ultimo_precio = df['precio'].iloc[0]  # Primera fila = más reciente (DESC)
+            return round(float(ultimo_precio), 2)
+    
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo último precio para {sku_interno}: {e}")
+        return None
 
 # ==========================================
 # 💰 FUNCIÓN MAESTRA DE CÁLCULO DE GANANCIA
@@ -2151,7 +2325,7 @@ def get_analisis_tendencias(dias: int = 7) -> dict:
 
 @st.cache_data(ttl=300)
 def get_top_skus_performance(dias: int = 7) -> dict:
-    """Obtiene Top 10 SKUs por ganancia CORRECTA"""
+    """Obtiene Top 10 SKUs por ganancia CORRECTA - Usa ÚLTIMO PRECIO (dinámico)"""
     try:
         query = f"""
         SELECT 
@@ -2160,9 +2334,8 @@ def get_top_skus_performance(dias: int = 7) -> dict:
             c.precio_minimo,
             c.precio_maximo,
             c.costo_odoo::float as costo,
-            AVG(h.nuestro_precio::float) as precio_promedio,
-            COUNT(h.id) as cambios_realizados,
-            c.regla_estrategia as regla
+            c.regla_estrategia as regla,
+            COUNT(h.id) as cambios_realizados
         FROM catalogo_maestro_v3 c
         LEFT JOIN historial_precios h ON c.sku_interno = h.sku_interno
             AND h.fecha_hora >= NOW() - INTERVAL '{dias} days'
@@ -2175,19 +2348,33 @@ def get_top_skus_performance(dias: int = 7) -> dict:
         if df.empty:
             return {"data": None, "success": False}
         
-        # ✨ APLICAR FÓRMULA CORRECTA A CADA ROW
+        # ✨ OBTENER ÚLTIMOS PRECIOS EN BATCH (más eficiente)
+        ultimos_precios = get_ultimos_precios_batch(dias)
+        
+        # ✨ APLICAR FÓRMULA CORRECTA A CADA ROW - Usa ÚLTIMO PRECIO
         ganancia_neta_list = []
         ganancia_porc_list = []
         margen_saludable_list = []
+        precio_actual_list = []
         
         for idx, row in df.iterrows():
-            precio_venta = row['precio_promedio'] if row['precio_promedio'] > 0 else (row['precio_minimo'] + row['precio_maximo']) / 2
+            # ✨ Obtener último precio registrado (dinámico)
+            ultimo_precio = ultimos_precios.get(row['sku_interno'], 0.0)
+            
+            if ultimo_precio <= 0:
+                # Si no hay último precio, usar promedio entre min y max
+                precio_venta = (row['precio_minimo'] + row['precio_maximo']) / 2
+            else:
+                precio_venta = ultimo_precio  # ✨ USA ÚLTIMO PRECIO
+            
+            precio_actual_list.append(precio_venta)
             resultado = calcular_ganancia_correcta(precio_venta, row['costo'])
             
             ganancia_neta_list.append(resultado['ganancia_neta'])
             ganancia_porc_list.append(resultado['ganancia_porcentaje'])
             margen_saludable_list.append(resultado['margen_saludable'])
         
+        df['precio_actual'] = precio_actual_list  # ✨ NUEVO: muestra último precio
         df['ganancia_neta'] = ganancia_neta_list
         df['ganancia_porcentaje'] = ganancia_porc_list
         df['margen_saludable'] = margen_saludable_list
@@ -2202,7 +2389,7 @@ def get_top_skus_performance(dias: int = 7) -> dict:
 
 @st.cache_data(ttl=300)
 def get_analisis_margen(dias: int = 7) -> dict:
-    """Análisis de margen CORRECTO con impuestos y comisiones"""
+    """Análisis de margen CORRECTO - Usa ÚLTIMO PRECIO (dinámico, no promedio)"""
     try:
         query = f"""
         SELECT 
@@ -2210,7 +2397,6 @@ def get_analisis_margen(dias: int = 7) -> dict:
             c.sku_interno,
             c.precio_minimo,
             c.precio_maximo,
-            AVG(h.nuestro_precio::float) as nuestro_precio,
             AVG(CASE WHEN h.precio_rival ~ '^[0-9.]+$' THEN h.precio_rival::float ELSE NULL END) as precio_rival,
             c.costo_odoo::float as costo
         FROM catalogo_maestro_v3 c
@@ -2225,15 +2411,27 @@ def get_analisis_margen(dias: int = 7) -> dict:
         if df.empty:
             return {"data": None, "success": False}
         
-        # ✨ APLICAR FÓRMULA CORRECTA A CADA ROW
+        # ✨ OBTENER ÚLTIMOS PRECIOS EN BATCH
+        ultimos_precios = get_ultimos_precios_batch(dias)
+        
+        # ✨ APLICAR FÓRMULA CORRECTA A CADA ROW - Usa ÚLTIMO PRECIO
         ingreso_neto_list = []
         ganancia_neta_list = []
         ganancia_porc_list = []
         margen_saludable_list = []
         diferencia_precio_list = []
+        nuestro_precio_list = []
         
         for idx, row in df.iterrows():
-            precio_venta = row['nuestro_precio'] if row['nuestro_precio'] > 0 else (row['precio_minimo'] + row['precio_maximo']) / 2
+            # ✨ Obtener último precio (dinámico)
+            ultimo_precio = ultimos_precios.get(row['sku_interno'], 0.0)
+            
+            if ultimo_precio <= 0:
+                precio_venta = (row['precio_minimo'] + row['precio_maximo']) / 2
+            else:
+                precio_venta = ultimo_precio  # ✨ USA ÚLTIMO PRECIO
+            
+            nuestro_precio_list.append(precio_venta)
             resultado = calcular_ganancia_correcta(precio_venta, row['costo'])
             
             ingreso_neto_list.append(resultado['ingreso_neto'])
@@ -2247,6 +2445,7 @@ def get_analisis_margen(dias: int = 7) -> dict:
             else:
                 diferencia_precio_list.append(0.0)
         
+        df['nuestro_precio'] = nuestro_precio_list  # ✨ ACTUAL (último precio)
         df['ingreso_neto'] = ingreso_neto_list
         df['ganancia_neta'] = ganancia_neta_list
         df['margen_porcentaje'] = ganancia_porc_list
@@ -2342,7 +2541,7 @@ def get_distribucion_precios(dias: int = 7) -> dict:
 
 @st.cache_data(ttl=300)
 def get_skus_criticos(dias: int = 7) -> dict:
-    """SKUs críticos con margen < 10% (ALERTA ROJA)"""
+    """SKUs críticos con margen < 10% (ALERTA ROJA) - Usa ÚLTIMO PRECIO"""
     try:
         query = f"""
         SELECT 
@@ -2351,14 +2550,10 @@ def get_skus_criticos(dias: int = 7) -> dict:
             c.precio_minimo,
             c.precio_maximo,
             c.costo_odoo::float as costo,
-            AVG(h.nuestro_precio::float) as precio_promedio,
             c.estatus,
             c.regla_estrategia
         FROM catalogo_maestro_v3 c
-        LEFT JOIN historial_precios h ON c.sku_interno = h.sku_interno
-            AND h.fecha_hora >= NOW() - INTERVAL '{dias} days'
         WHERE c.estatus = 'ACTIVO' AND c.costo_odoo IS NOT NULL AND c.costo_odoo > 0
-        GROUP BY c.sku_limpio, c.sku_interno, c.precio_minimo, c.precio_maximo, c.costo_odoo, c.estatus, c.regla_estrategia
         ORDER BY c.sku_interno
         """
         df = db.execute_query(query)
@@ -2366,19 +2561,32 @@ def get_skus_criticos(dias: int = 7) -> dict:
         if df.empty:
             return {"data": None, "success": False}
         
-        # ✨ APLICAR FÓRMULA CORRECTA A CADA ROW
+        # ✨ OBTENER ÚLTIMOS PRECIOS EN BATCH
+        ultimos_precios = get_ultimos_precios_batch(dias)
+        
+        # ✨ APLICAR FÓRMULA CORRECTA A CADA ROW - Usa ÚLTIMO PRECIO
         margen_porc_list = []
         margen_saludable_list = []
         ganancia_neta_list = []
+        precio_actual_list = []
         
         for idx, row in df.iterrows():
-            precio_venta = row['precio_promedio'] if row['precio_promedio'] > 0 else (row['precio_minimo'] + row['precio_maximo']) / 2
+            # ✨ Obtener último precio (dinámico)
+            ultimo_precio = ultimos_precios.get(row['sku_interno'], 0.0)
+            
+            if ultimo_precio <= 0:
+                precio_venta = (row['precio_minimo'] + row['precio_maximo']) / 2
+            else:
+                precio_venta = ultimo_precio  # ✨ USA ÚLTIMO PRECIO
+            
+            precio_actual_list.append(precio_venta)
             resultado = calcular_ganancia_correcta(precio_venta, row['costo'])
             
             margen_porc_list.append(resultado['ganancia_porcentaje'])
             margen_saludable_list.append(resultado['margen_saludable'])
             ganancia_neta_list.append(resultado['ganancia_neta'])
         
+        df['precio_actual'] = precio_actual_list  # ✨ NUEVO: precio dinámico
         df['margen_porcentaje'] = margen_porc_list
         df['margen_saludable'] = margen_saludable_list
         df['ganancia_neta'] = ganancia_neta_list
