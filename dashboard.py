@@ -848,14 +848,14 @@ def show_admin_dashboard():
                     
                     fig_top.add_trace(go.Bar(
                         y=df_top['sku_limpio'],
-                        x=df_top['ganancia_monetaria'],
+                        x=df_top['ganancia_neta'],
                         orientation='h',
                         marker=dict(
-                            color=df_top['ganancia_monetaria'],
+                            color=df_top['ganancia_neta'],
                             colorscale='Greens',
                             showscale=True
                         ),
-                        text=[f"${v:.2f}" for v in df_top['ganancia_monetaria']],
+                        text=[f"${v:.2f}" for v in df_top['ganancia_neta']],
                         textposition='auto',
                         hovertemplate='<b>%{y}</b><br>Ganancia: $%{x:.2f}<extra></extra>'
                     ))
@@ -875,9 +875,9 @@ def show_admin_dashboard():
                     col_top1, col_top2, col_top3, col_top4 = st.columns(4)
                     
                     with col_top1:
-                        st.metric("Ganancia Total", f"${df_top['ganancia_monetaria'].sum():.2f}")
+                        st.metric("Ganancia Total", f"${df_top['ganancia_neta'].sum():.2f}")
                     with col_top2:
-                        st.metric("Ganancia Promedio", f"${df_top['ganancia_monetaria'].mean():.2f}")
+                        st.metric("Ganancia Promedio", f"${df_top['ganancia_neta'].mean():.2f}")
                     with col_top3:
                         st.metric("Cambios realizados", int(df_top['cambios_realizados'].sum()))
                     with col_top4:
@@ -885,14 +885,15 @@ def show_admin_dashboard():
                     
                     # Tabla
                     st.markdown("#### Detalle de SKUs")
-                    df_top_display = df_top[['sku_limpio', 'precio_promedio', 'costo', 'ganancia_monetaria', 'cambios_realizados', 'regla']].copy()
-                    df_top_display.columns = ['SKU', 'Precio Promedio', 'Costo', 'Ganancia', 'Cambios', 'Regla']
+                    df_top_display = df_top[['sku_limpio', 'precio_promedio', 'costo', 'ganancia_neta', 'ganancia_porcentaje', 'cambios_realizados', 'regla']].copy()
+                    df_top_display.columns = ['SKU', 'Precio Promedio', 'Costo', 'Ganancia Neta', 'Margen %', 'Cambios', 'Regla']
                     
                     st.dataframe(
                         df_top_display.style.format({
                             'Precio Promedio': '${:.2f}',
                             'Costo': '${:.2f}',
-                            'Ganancia': '${:.2f}'
+                            'Ganancia Neta': '${:.2f}',
+                            'Margen %': '{:.1f}%'
                         }),
                         width="stretch"
                     )
@@ -945,7 +946,7 @@ def show_admin_dashboard():
                     col_marg1, col_marg2, col_marg3 = st.columns(3)
                     
                     margen_avg = df_margen[df_margen['margen_porcentaje'] > 0]['margen_porcentaje'].mean()
-                    ganancia_total = df_margen['ganancia_monetaria'].sum()
+                    ganancia_total = df_margen['ganancia_neta'].sum()
                     skus_perdida = len(df_margen[df_margen['margen_porcentaje'] < 0])
                     
                     with col_marg1:
@@ -957,7 +958,7 @@ def show_admin_dashboard():
                     
                     # Tabla
                     st.markdown("#### Detalle de Márgenes")
-                    df_marg_display = df_margen[['sku_limpio', 'nuestro_precio', 'precio_rival', 'costo', 'ganancia_monetaria', 'margen_porcentaje']].copy()
+                    df_marg_display = df_margen[['sku_limpio', 'nuestro_precio', 'precio_rival', 'costo', 'ganancia_neta', 'margen_porcentaje']].copy()
                     df_marg_display.columns = ['SKU', 'Nuestro $', 'Rival $', 'Costo $', 'Ganancia $', 'Margen %']
                     
                     st.dataframe(
@@ -1339,29 +1340,36 @@ def show_admin_dashboard():
                     
                     st.markdown("---")
                     
-                    # ANÁLISIS DE MARGEN (si hay Buybox price)
+                    # ANÁLISIS DE MARGEN (si hay Buybox price) - FÓRMULA CORRECTA
                     if buybox_price:
                         buybox_price = float(buybox_price)  # Asegurar que es float puro
-                        ganancia_monetaria = buybox_price - float(costo_simulado)
-                        ganancia_porcentaje = (ganancia_monetaria / float(costo_simulado) * 100) if float(costo_simulado) > 0 else 0
+                        ganancia_buybox = calcular_ganancia_correcta(buybox_price, float(costo_simulado))
                         
-                        col_margen1, col_margen2 = st.columns(2)
+                        col_margen1, col_margen2, col_margen3 = st.columns(3)
                         
                         with col_margen1:
-                            color_ganancia = "#1db954" if ganancia_monetaria > 0 else "#ff4757"
                             st.markdown(f"""
-                            <div style='background: #1a1f3a; border: 2px solid {color_ganancia}; border-radius: 8px; padding: 15px; text-align: center;'>
-                                <div style='color: {color_ganancia}; font-size: 0.9em;'>💵 Ganancia Monetaria</div>
-                                <div style='color: {color_ganancia}; font-size: 1.8em; font-weight: bold;'>${ganancia_monetaria:.2f}</div>
+                            <div style='background: #1a1f3a; border: 2px solid #ffa502; border-radius: 8px; padding: 12px; text-align: center;'>
+                                <div style='color: #ffa502; font-size: 0.8em;'>📦 Ingreso Neto</div>
+                                <div style='color: #ffffff; font-size: 1.6em; font-weight: bold;'>${ganancia_buybox['ingreso_neto']:.2f}</div>
                             </div>
                             """, unsafe_allow_html=True)
                         
                         with col_margen2:
-                            color_porc = "#1db954" if ganancia_porcentaje > 0 else "#ff4757"
+                            color_gan = "#1db954" if ganancia_buybox['ganancia_neta'] > 0 else "#ff4757"
                             st.markdown(f"""
-                            <div style='background: #1a1f3a; border: 2px solid {color_porc}; border-radius: 8px; padding: 15px; text-align: center;'>
-                                <div style='color: {color_porc}; font-size: 0.9em;'>📊 Margen %</div>
-                                <div style='color: {color_porc}; font-size: 1.8em; font-weight: bold;'>{ganancia_porcentaje:.1f}%</div>
+                            <div style='background: #1a1f3a; border: 2px solid {color_gan}; border-radius: 8px; padding: 12px; text-align: center;'>
+                                <div style='color: {color_gan}; font-size: 0.8em;'>💵 Ganancia Neta</div>
+                                <div style='color: {color_gan}; font-size: 1.6em; font-weight: bold;'>${ganancia_buybox['ganancia_neta']:.2f}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        with col_margen3:
+                            color_porc = "#1db954" if ganancia_buybox['ganancia_porcentaje'] >= 10 else "#ff4757"
+                            st.markdown(f"""
+                            <div style='background: #1a1f3a; border: 2px solid {color_porc}; border-radius: 8px; padding: 12px; text-align: center;'>
+                                <div style='color: {color_porc}; font-size: 0.8em;'>📊 Margen %</div>
+                                <div style='color: {color_porc}; font-size: 1.6em; font-weight: bold;'>{ganancia_buybox['ganancia_porcentaje']:.1f}%</div>
                             </div>
                             """, unsafe_allow_html=True)
                         
