@@ -2287,44 +2287,46 @@ def ejecutar_barrido_simulado() -> dict:
     }
 
 def ejecutar_barrido_liverpool_real() -> dict:
-    """Ejecutar barrido en Railway via webhook"""
-    import requests
+    """
+    PLACEHOLDER: Implementar llamada real a webhook en Railway
     
-    webhook_url = "https://megazord-wabu-core-production.up.railway.app/trigger"
-    webhook_secret = os.getenv('WEBHOOK_SECRET', 'render_webhook_secret_fernando_2026_v2_safe')
+    Opciones:
+    1. Llamar webhook HTTP en Railway:
+       POST https://megazord-wabu-core-production.up.railway.app/trigger
+       Headers: {'Authorization': 'Bearer TOKEN'}
+       Body: {'marketplace': 'liverpool', 'action': 'scan_prices'}
     
+    2. Ejecutar GitHub Actions workflow:
+       POST https://api.github.com/repos/FernandoWABU/megazord-wabu-core/dispatches
+       Headers: {'Authorization': 'token GITHUB_TOKEN'}
+       Body: {'event_type': 'manual_scan', 'client_payload': {'marketplace': 'liverpool'}}
+    
+    3. Ejecutar en local si está disponible:
+       subprocess.run(['python', 'megazord_liverpool.py'], timeout=600)
+    """
     try:
-        response = requests.post(
-            webhook_url,
-            json={"marketplace": "liverpool", "action": "scan_prices"},
-            headers={"Authorization": f"Bearer {webhook_secret}"},
-            timeout=30
-        )
+        import requests
         
-        if response.status_code == 200:
-            data = response.json()
-            return {
-                "exito": True,
-                "mensaje": f"""✅ BARRIDO COMPLETADO
-                
-📊 Estadísticas:
-- SKUs revisados: {data.get('skus_revisados', 0)}
-- Precios actualizados: {data.get('precios_actualizados', 0)}
-- Buybox ganados: {data.get('buybox_ganados', 0)}
-- Duración: {data.get('duration_seconds', 0)}s
-                """,
-                "skus_revisados": data.get('skus_revisados', 0),
-                "precios_actualizados": data.get('precios_actualizados', 0),
-                "buybox_ganados": data.get('buybox_ganados', 0)
-            }
-        else:
-            return {"exito": False, "mensaje": f"❌ Error HTTP {response.status_code}"}
-    
-    except requests.exceptions.Timeout:
-        return {"exito": False, "mensaje": "❌ Timeout - Barrido tardó más de lo esperado"}
+        # OPCIÓN 1: Webhook en Railway (comentado - necesita configuración)
+        # webhook_url = "https://megazord-wabu-core-production.up.railway.app/trigger"
+        # response = requests.post(
+        #     webhook_url,
+        #     json={"marketplace": "liverpool", "action": "scan_prices"},
+        #     headers={"Authorization": "Bearer YOUR_WEBHOOK_SECRET"},
+        #     timeout=30
+        # )
+        # if response.status_code == 200:
+        #     return {"exito": True, "mensaje": "✅ Barrido iniciado en Railway"}
+        
+        # Por ahora, retornar simulado
+        return ejecutar_barrido_simulado()
+        
     except Exception as e:
-        logger.error(f"❌ Error en barrido: {e}")
-        return {"exito": False, "mensaje": f"❌ Error: {str(e)}"}
+        logger.error(f"❌ Error al ejecutar barrido: {e}")
+        return {
+            "exito": False,
+            "mensaje": f"❌ Error: {str(e)}"
+        }
 
 def ejecutar_barrido_walmart_real() -> dict:
     """
