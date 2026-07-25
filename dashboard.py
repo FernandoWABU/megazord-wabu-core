@@ -1467,19 +1467,35 @@ def show_admin_dashboard():
                         st.subheader("📊 SIMULADOR DE GANANCIA - CÁLCULO CORRECTO")
                         st.info("💡 Ajusta el precio para ver cómo cambia tu ganancia REAL (con impuestos, comisiones y costos)")
                         
-                        # SIMULADOR: Precio de venta simulado - INPUT DIRECTO (no slider)
-                        precio_simulado_venta = st.number_input(
-                            "💰 Precio de Venta Simulado (para análisis):",
-                            min_value=float(new_precio_min),
-                            max_value=float(new_precio_max),
-                            value=(float(new_precio_min) + float(new_precio_max)) / 2,
-                            step=0.01,
-                            help="Ingresa el precio directamente para ver cómo cambiaría tu ganancia REAL",
-                            key="price_simulator_input"
-                        )
+                        # SIMULADOR: Precio de venta simulado - LIBRE (sin límites)
+                        col_precio_sim, col_costo_sim = st.columns(2)
+                        
+                        with col_precio_sim:
+                            precio_simulado_venta = st.number_input(
+                                "💰 Precio de Venta Simulado:",
+                                min_value=0.01,  # ✨ Solo mínimo absoluto (0.01)
+                                value=(float(new_precio_min) + float(new_precio_max)) / 2,
+                                step=0.01,
+                                help="💡 LIBRE - Puedes poner cualquier valor, sin límite de min/max",
+                                key="price_simulator_input"
+                            )
+                        
+                        with col_costo_sim:
+                            # ✨ NUEVO: Input para editar COSTO en la simulación (no afecta BD)
+                            costo_simulado_editable = st.number_input(
+                                "📦 Costo Odoo Simulado:",
+                                min_value=0.01,
+                                value=float(costo_simulado) if costo_simulado else 0.0,
+                                step=0.01,
+                                help="💡 SIMULACIÓN - Solo para análisis, no modifica la BD",
+                                key="costo_simulator_input"
+                            )
+                        
+                        # Usar el costo simulado en vez del costo original
+                        costo_para_calculo = costo_simulado_editable
                         
                         # Calcular ganancias CORRECTAS usando la función maestra
-                        ganancia_sim = calcular_ganancia_correcta(float(precio_simulado_venta), float(costo_simulado))
+                        ganancia_sim = calcular_ganancia_correcta(float(precio_simulado_venta), float(costo_para_calculo))
                         
                         col_sim1, col_sim2, col_sim3, col_sim4 = st.columns(4)
                         
