@@ -1216,14 +1216,14 @@ def show_admin_dashboard():
                     
                     # Tabla
                     st.markdown("#### SKUs a Revisar Urgentemente")
-                    df_crit_display = df_critico[['sku_limpio', 'precio_minimo', 'precio_maximo', 'precio_promedio', 'costo', 'margen_porcentaje', 'regla_estrategia']].copy()
-                    df_crit_display.columns = ['SKU', 'Precio Mín', 'Precio Máx', 'Precio Prom', 'Costo', 'Margen %', 'Regla']
+                    df_crit_display = df_critico[['sku_limpio', 'precio_minimo', 'precio_maximo', 'precio_actual', 'costo', 'margen_porcentaje', 'regla_estrategia']].copy()
+                    df_crit_display.columns = ['SKU', 'Precio Mín', 'Precio Máx', 'Precio Actual', 'Costo', 'Margen %', 'Regla']
                     
                     st.dataframe(
                         df_crit_display.sort_values('Margen %').style.format({
                             'Precio Mín': '${:.2f}',
                             'Precio Máx': '${:.2f}',
-                            'Precio Prom': '${:.2f}',
+                            'Precio Actual': '${:.2f}',
                             'Costo': '${:.2f}',
                             'Margen %': '{:.1f}%'
                         }),
