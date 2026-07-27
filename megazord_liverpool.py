@@ -38,6 +38,8 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # ==========================================
+
+# ==========================================
 # 🧪 MODO SIMULACRO (DRY-RUN)
 # ==========================================
 MODO_SIMULACION = False  
@@ -2179,25 +2181,25 @@ def ejecutar_bot():
         id_cuenta, nombre_desc, email_usuario, token_cuenta, cookie_vip, timestamp_token = cuenta
         
         # 🔐 DESENCRIPTAR TOKEN DE BD
-            FERNET_ENCRYPTION_KEY = os.getenv("FERNET_ENCRYPTION_KEY")
-            print(f"🔐 Intentando leer token de BD...")
-            print(f"🔐 FERNET_ENCRYPTION_KEY existe?: {bool(FERNET_ENCRYPTION_KEY)}")
-            logger.info(f"🔐 FERNET_ENCRYPTION_KEY existe?: {bool(FERNET_ENCRYPTION_KEY)}")
+        FERNET_ENCRYPTION_KEY = os.getenv("FERNET_ENCRYPTION_KEY")
+        print(f"🔐 Intentando leer token de BD...")
+        print(f"🔐 FERNET_ENCRYPTION_KEY existe?: {bool(FERNET_ENCRYPTION_KEY)}")
+        logger.info(f"🔐 FERNET_ENCRYPTION_KEY existe?: {bool(FERNET_ENCRYPTION_KEY)}")
 
-            if FERNET_ENCRYPTION_KEY and token_cuenta:
-                try:
-                    cipher = Fernet(FERNET_ENCRYPTION_KEY.encode())
-                    token_cuenta = cipher.decrypt(token_cuenta.encode()).decode()
-                    print(f"✅ Token desencriptado! (primeros 50 chars): {token_cuenta[:50]}")
-                    logger.info(f"✅ Token desencriptado! (primeros 50 chars): {token_cuenta[:50]}")
-                except Exception as e:
-                    print(f"❌ Error desencriptando: {e}")
-                    logger.error(f"❌ Error desencriptando: {e}")
-                    continue
-            else:
-                print(f"⚠️ No hay clave o token es nulo")
-                logger.warning(f"⚠️ No hay clave o token es nulo")
+        if FERNET_ENCRYPTION_KEY and token_cuenta:
+            try:
+                cipher = Fernet(FERNET_ENCRYPTION_KEY.encode())
+                token_cuenta = cipher.decrypt(token_cuenta.encode()).decode()
+                print(f"✅ Token desencriptado! (primeros 50 chars): {token_cuenta[:50]}")
+                logger.info(f"✅ Token desencriptado! (primeros 50 chars): {token_cuenta[:50]}")
+            except Exception as e:
+                print(f"❌ Error desencriptando: {e}")
+                logger.error(f"❌ Error desencriptando: {e}")
                 continue
+        else:
+            print(f"⚠️ No hay clave o token es nulo")
+            logger.warning(f"⚠️ No hay clave o token es nulo")
+            continue
         
         logger.info(f"\n==========================================")
         logger.info(f"🏪 CARGANDO MOTOR PARA: {nombre_desc} ({id_cuenta})")
