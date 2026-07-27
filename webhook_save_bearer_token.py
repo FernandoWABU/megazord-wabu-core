@@ -1,13 +1,7 @@
 """
 🤖 MEGAZORD - Webhook para guardar Bearer Token en DBeaver
-AJUSTADO para tabla existente: bearer_token_history
-Estructura de tabla:
-  - id (serial4)
-  - id_cuenta (varchar)
-  - token_encriptado (varchar)
-  - captured_at (timestamp)
-  - token_order (int4)
-  - status (varchar) default 'active'
+VERSIÓN: CON CORS HABILITADO
+Resuelve: "Response to preflight request doesn't pass access control check"
 """
 
 from flask import Flask, request, jsonify
@@ -29,29 +23,63 @@ DATABASE_URL = os.getenv(
 )
 
 print('═══════════════════════════════════════════════════════════')
-print('🤖 MEGAZORD - Webhook Bearer Token (AJUSTADO)')
+print('🤖 MEGAZORD - Webhook Bearer Token (CON CORS FIX)')
 print('═══════════════════════════════════════════════════════════')
-print(f'✅ Database: {DATABASE_URL[:50]}...')
-print(f'✅ Tabla: bearer_token_history')
-print(f'✅ Columnas: id_cuenta, token_encriptado, captured_at, status')
+
+# ═══════════════════════════════════════════════════════════
+# 🔓 CORS MIDDLEWARE - AGREGAR HEADERS A TODAS LAS RESPUESTAS
+# ═══════════════════════════════════════════════════════════
+
+@app.before_request
+def handle_preflight():
+    """Maneja OPTIONS requests (CORS preflight)"""
+    if request.method == "OPTIONS":
+        response = jsonify({'status': 'OK'})
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type,X-Webhook-Secret,Authorization")
+        response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        response.headers.add("Access-Control-Max-Age", "3600")
+        return response
+
+@app.after_request
+def add_cors_headers(response):
+    """Agrega headers CORS a TODAS las respuestas"""
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    response.headers.add("Access-Control-Allow-Headers", "Content-Type,X-Webhook-Secret,Authorization")
+    response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+    response.headers.add("Access-Control-Allow-Credentials", "true")
+    return response
 
 # ═══════════════════════════════════════════════════════════
 # 🔗 ENDPOINT PRINCIPAL
 # ═══════════════════════════════════════════════════════════
 
-@app.route('/api/save-bearer-token', methods=['POST'])
+@app.route('/api/save-bearer-token', methods=['POST', 'OPTIONS'])
 def save_bearer_token():
     """
     Recibe el token bearer y lo guarda en bearer_token_history
+    Maneja tanto POST como OPTIONS (preflight)
     """
+    if request.method == "OPTIONS":
+        return jsonify({'status': 'OK'}), 200
+    
     try:
         print('═══════════════════════════════════════════════════════════')
         print('📨 POST /api/save-bearer-token')
+        print(f'🌍 Origin: {request.origin}')
+        print(f'📍 Remote addr: {request.remote_addr}')
         
         # Verificar secret
         secret = request.headers.get('X-Webhook-Secret')
+        if not secret:
+            print('❌ X-Webhook-Secret no está en headers')
+            print(f'Headers recibidos: {dict(request.headers)}')
+            return jsonify({'success': False, 'error': 'Missing X-Webhook-Secret header'}), 400
+        
         if secret != WEBHOOK_SECRET:
             print('❌ Secret incorrecto')
+            print(f'   Esperado: {WEBHOOK_SECRET[:30]}...')
+            print(f'   Recibido: {secret[:30]}...')
             return jsonify({'success': False, 'error': 'Unauthorized'}), 401
         
         print('✅ Secret validado')
@@ -80,12 +108,14 @@ def save_bearer_token():
         
         if result['success']:
             print(f"✅ Token guardado con ID: {result.get('id', 'N/A')}")
-            return jsonify({
+            response = {
                 'success': True,
                 'message': 'Token guardado exitosamente',
                 'id': result.get('id'),
                 'timestamp': datetime.now().isoformat()
-            }), 200
+            }
+            print(f'📤 Retornando: {response}')
+            return jsonify(response), 200
         else:
             print(f"❌ Error: {result.get('error')}")
             return jsonify({
@@ -95,6 +125,8 @@ def save_bearer_token():
             
     except Exception as e:
         print(f'❌ Error: {str(e)}')
+        import traceback
+        print(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
     finally:
         print('═══════════════════════════════════════════════════════════')
@@ -106,23 +138,19 @@ def save_bearer_token():
 def save_to_database(token, timestamp, account_id):
     """
     Guarda el bearer token en tabla bearer_token_history
-    Estructura existente:
-      - id_cuenta (varchar)
-      - token_encriptado (varchar) 
-      - captured_at (timestamp)
-      - status (varchar) default 'active'
     """
     try:
         print('🌐 Conectando a PostgreSQL...')
+        print(f'   URL: {DATABASE_URL[:50]}...')
         
         with psycopg.connect(DATABASE_URL) as conn:
             with conn.cursor() as cur:
-                print('✅ Conexión exitosa')
+                print('✅ Conexión exitosa a PostgreSQL')
                 
                 # Preparar datos
                 captured_at = timestamp or datetime.now().isoformat()
                 
-                # ✅ SQL AJUSTADO para tabla existente
+                # SQL AJUSTADO para tabla existente
                 sql = """
                 INSERT INTO bearer_token_history (
                     id_cuenta,
@@ -139,7 +167,6 @@ def save_to_database(token, timestamp, account_id):
                 print(f'   - id_cuenta: {account_id}')
                 print(f'   - token_encriptado: {token[:30]}...')
                 print(f'   - captured_at: {captured_at}')
-                print(f'   - status: active')
                 
                 # Ejecutar INSERT
                 cur.execute(sql, (account_id, token, captured_at))
@@ -149,7 +176,15 @@ def save_to_database(token, timestamp, account_id):
                 result = cur.fetchone()
                 token_id = result[0] if result else None
                 
-                print(f'✅ Insertado exitosamente con ID: {token_id}')
+                print(f'✅ INSERT exitoso con ID: {token_id}')
+                
+                # Verificar que se guardó
+                cur.execute("SELECT id, token_encriptado FROM bearer_token_history WHERE id = %s", (token_id,))
+                verify = cur.fetchone()
+                if verify:
+                    print(f'✅ VERIFICACIÓN: Registro existe en BD con ID {verify[0]}')
+                else:
+                    print('❌ VERIFICACIÓN: Registro NO encontrado después de INSERT')
                 
                 return {
                     'success': True,
@@ -159,12 +194,16 @@ def save_to_database(token, timestamp, account_id):
                 
     except psycopg.Error as e:
         print(f'❌ Error PostgreSQL: {str(e)}')
+        import traceback
+        print(traceback.format_exc())
         return {
             'success': False,
             'error': f'Database error: {str(e)}'
         }
     except Exception as e:
         print(f'❌ Error: {str(e)}')
+        import traceback
+        print(traceback.format_exc())
         return {
             'success': False,
             'error': f'Error: {str(e)}'
@@ -174,9 +213,12 @@ def save_to_database(token, timestamp, account_id):
 # 🏥 HEALTH CHECK
 # ═══════════════════════════════════════════════════════════
 
-@app.route('/health', methods=['GET'])
+@app.route('/health', methods=['GET', 'OPTIONS'])
 def health():
     """Health check endpoint"""
+    if request.method == "OPTIONS":
+        return jsonify({'status': 'OK'}), 200
+    
     try:
         with psycopg.connect(DATABASE_URL) as conn:
             with conn.cursor() as cur:
@@ -199,9 +241,12 @@ def health():
 # 📊 GET ÚLTIMOS TOKENS
 # ═══════════════════════════════════════════════════════════
 
-@app.route('/api/bearer-tokens/recent', methods=['GET'])
+@app.route('/api/bearer-tokens/recent', methods=['GET', 'OPTIONS'])
 def get_recent_tokens():
     """Obtiene los últimos 10 tokens capturados"""
+    if request.method == "OPTIONS":
+        return jsonify({'status': 'OK'}), 200
+    
     try:
         with psycopg.connect(DATABASE_URL) as conn:
             with conn.cursor() as cur:
@@ -239,11 +284,12 @@ def get_recent_tokens():
 # ═══════════════════════════════════════════════════════════
 
 if __name__ == '__main__':
-    print('🚀 Iniciando servidor Flask...')
+    print('🚀 Iniciando servidor Flask con CORS habilitado...')
     print('📍 Endpoints disponibles:')
     print('   - POST /api/save-bearer-token (guarda token)')
     print('   - GET /health (verifica salud)')
     print('   - GET /api/bearer-tokens/recent (últimos 10)')
+    print('🔓 CORS habilitado para todas las origins')
     print('')
     app.run(
         host='0.0.0.0',
