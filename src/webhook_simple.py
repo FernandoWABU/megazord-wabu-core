@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🤖 MEGAZORD - Railway Webhook MÍNIMO
-Para recibir Bearer tokens de Chrome Extension
-VERSIÓN NUCLEAR: SIN PostgreSQL (evita libpq error)
+🤖 MEGAZORD - Railway Webhook EXPANDIDO
+Soporta AMBOS:
+1. Liverpool (en memoria) - POST /update-bearer, GET /get-latest-bearer
+2. Chrome Extension (en BD) - POST /api/save-bearer-token
 """
 
 import os
@@ -15,6 +16,13 @@ from functools import wraps
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
+
+# Importar psycopg solo si DATABASE_URL existe
+try:
+    import psycopg
+    PSYCOPG_AVAILABLE = True
+except ImportError:
+    PSYCOPG_AVAILABLE = False
 
 # Setup logging
 logging.basicConfig(
@@ -32,11 +40,19 @@ CORS(app)
 
 # Config
 WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET_KEY', 'render_webhook_secret_fernando_2026_v2_safe')
+DATABASE_URL = os.getenv('DATABASE_URL')
 
-logger.info('✅ Webhook iniciado - VERSIÓN MÍNIMA (sin PostgreSQL)')
+logger.info('═' * 60)
+logger.info('✅ Webhook iniciado - VERSIÓN EXPANDIDA')
+logger.info('✅ Soporta: Liverpool (memoria) + Extension (PostgreSQL)')
 logger.info(f'🔐 Webhook Secret Key: {"*" * 40}')
+if DATABASE_URL:
+    logger.info(f'✅ PostgreSQL: {DATABASE_URL[:50]}...')
+else:
+    logger.info('⚠️ PostgreSQL: NO configurada')
+logger.info('═' * 60)
 
-# Storage en memoria (para esta sesión)
+# Storage en memoria (para Liverpool)
 TOKEN_STORE = {
     'latest_token': None,
     'latest_timestamp': None,
@@ -75,7 +91,7 @@ def require_secret_key(f):
     return decorated_function
 
 # ═══════════════════════════════════════════════════════════════
-# ENDPOINTS
+# ENDPOINTS LIVERPOOL (EXISTENTES)
 # ═══════════════════════════════════════════════════════════════
 
 @app.route('/health', methods=['GET'])
@@ -91,10 +107,10 @@ def health():
 @app.route('/update-bearer', methods=['POST'])
 @require_secret_key
 def update_bearer():
-    """Recibir y procesar Bearer token de Chrome Extension"""
+    """Recibir y procesar Bearer token de Liverpool"""
     try:
         logger.info('═' * 60)
-        logger.info('🔐 POST /update-bearer recibido')
+        logger.info('🔐 POST /update-bearer recibido (LIVERPOOL)')
         logger.info('═' * 60)
         
         # Obtener JSON
@@ -162,7 +178,7 @@ def update_bearer():
 @app.route('/get-latest-bearer', methods=['GET'])
 @require_secret_key
 def get_latest_bearer():
-    """Obtener el Bearer token más reciente capturado"""
+    """Obtener el Bearer token más reciente capturado (LIVERPOOL)"""
     try:
         logger.info('🔐 GET /get-latest-bearer recibido')
         
@@ -202,6 +218,90 @@ def status():
     }), 200
 
 # ═══════════════════════════════════════════════════════════════
+# NUEVO ENDPOINT - CHROME EXTENSION (PostgreSQL)
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/api/save-bearer-token', methods=['POST'])
+@require_secret_key
+def save_bearer_token():
+    """
+    Nuevo endpoint para Chrome Extension
+    Guarda token en PostgreSQL (tabla bearer_token_history)
+    """
+    try:
+        logger.info('═' * 60)
+        logger.info('📨 POST /api/save-bearer-token recibido (CHROME EXTENSION)')
+        logger.info('═' * 60)
+        
+        # Verificar que tenemos PostgreSQL
+        if not DATABASE_URL or not PSYCOPG_AVAILABLE:
+            logger.error('❌ PostgreSQL no configurada o psycopg no disponible')
+            return jsonify({
+                'success': False,
+                'error': 'Database not configured'
+            }), 500
+        
+        # Obtener datos
+        data = request.get_json()
+        token = data.get('bearer_token')
+        timestamp = data.get('timestamp', datetime.now().isoformat())
+        account_id = data.get('account_id', 'LVP_01')
+        
+        logger.info(f'📋 Token: {token[:50] if token else "FALTA"}...')
+        logger.info(f'   Account: {account_id}')
+        
+        # Validar
+        if not token or len(token) < 100:
+            logger.error('❌ Token inválido')
+            return jsonify({'success': False, 'error': 'Token inválido'}), 400
+        
+        logger.info('✅ Token válido')
+        
+        # Guardar en BD
+        logger.info('💾 Conectando a PostgreSQL...')
+        
+        with psycopg.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                logger.info('✅ Conexión exitosa')
+                
+                sql = """
+                INSERT INTO bearer_token_history (
+                    id_cuenta,
+                    token_encriptado,
+                    captured_at,
+                    status
+                ) VALUES (%s, %s, %s, 'active')
+                RETURNING id;
+                """
+                
+                logger.info(f'📝 Insertando token en tabla bearer_token_history')
+                
+                cur.execute(sql, (account_id, token, timestamp))
+                conn.commit()
+                
+                result = cur.fetchone()
+                token_id = result[0] if result else None
+                
+                logger.info(f'✅ TOKEN GUARDADO!!! ID: {token_id}')
+                
+                response = {
+                    'success': True,
+                    'id': token_id,
+                    'message': 'Token guardado exitosamente',
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+                logger.info(f'📤 Respondiendo: {response}')
+                logger.info('═' * 60)
+                
+                return jsonify(response), 200
+    
+    except Exception as e:
+        logger.error(f'❌ Error en /api/save-bearer-token: {str(e)}')
+        logger.error('═' * 60)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ═══════════════════════════════════════════════════════════════
 # ERROR HANDLERS
 # ═══════════════════════════════════════════════════════════════
 
@@ -234,8 +334,9 @@ if __name__ == '__main__':
     logger.info('═' * 60)
     logger.info('✅ Ready to receive Bearer tokens')
     logger.info('✅ Endpoints disponibles:')
-    logger.info('   POST /update-bearer (Recibir token)')
-    logger.info('   GET /get-latest-bearer (Obtener token)')
+    logger.info('   POST /update-bearer (Liverpool - Recibir token)')
+    logger.info('   GET /get-latest-bearer (Liverpool - Obtener token)')
+    logger.info('   POST /api/save-bearer-token (Chrome Extension - Guardar en BD)')
     logger.info('   GET /health (Health check)')
     logger.info('   GET /status (Estado)')
     logger.info('═' * 60)
