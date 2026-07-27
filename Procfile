@@ -1,1 +1,1 @@
-web: pip install -r requirements-webhook.txt && python -u src/webhook_simple.py
+web: pip install -r requirements.txt && python -u bot_webhooks.py
