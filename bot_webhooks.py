@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 
 """
-🤖 MEGAZORD - Bot Webhooks FastAPI
-VERSIÓN COMPLETA: Captura Bearer tokens, actualiza cuentas_liverpool, rota 5 tokens
-Endpoints:
-  - POST /api/capture-bearer (original)
-  - POST /api/save-bearer-token (Chrome Extension)
+🤖 MEGAZORD - Bot Webhooks FastAPI v2.1
+CORREGIDO: Usa psycopg3[binary] en lugar de psycopg2
+Captura Bearer tokens, actualiza cuentas_liverpool, rota 5 tokens
 """
 
 import os
 import logging
-import psycopg2
 import requests
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Header
@@ -18,6 +15,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from cryptography.fernet import Fernet
 from pydantic import BaseModel
 from dotenv import load_dotenv
+
+# CAMBIO PRINCIPAL: Usar psycopg3 en lugar de psycopg2
+import psycopg
+from psycopg import sql
 
 # CARGAR VARIABLES DE ENTORNO
 load_dotenv()
@@ -46,7 +47,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Megazord Bot Webhooks",
     description="Webhooks para captura automática de Bearer tokens",
-    version="2.0.0"
+    version="2.1.0"
 )
 
 # CORS MIDDLEWARE
@@ -115,7 +116,8 @@ def procesar_bearer(token, seller_id, x_extension_id=None):
             logger.error(f"❌ Token inválido: len={len(token) if token else 0}")
             raise ValueError("Token inválido")
         
-        with psycopg2.connect(DATABASE_URL) as conn:
+        # CAMBIO: Usar psycopg.connect() en lugar de psycopg2.connect()
+        with psycopg.connect(DATABASE_URL) as conn:
             with conn.cursor() as cursor:
                 
                 # 1️⃣ VERIFICAR QUE LA CUENTA EXISTE
@@ -319,7 +321,7 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "service": "megazord-webhooks-v2",
+        "service": "megazord-webhooks-v2.1",
         "endpoints": ["/api/save-bearer-token", "/api/capture-bearer"]
     }
 
@@ -333,7 +335,7 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     
     logger.info('═' * 60)
-    logger.info('🚀 Iniciando Megazord Bot Webhooks FastAPI v2.0...')
+    logger.info('🚀 Iniciando Megazord Bot Webhooks FastAPI v2.1...')
     logger.info('═' * 60)
     logger.info('✅ Endpoints disponibles:')
     logger.info('   POST /api/save-bearer-token (Chrome Extension)')
