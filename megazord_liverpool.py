@@ -38,13 +38,6 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # ==========================================
-# 🔥 TOKEN MANUAL DE EMERGENCIA (v5.6)
-# ==========================================
-# Si llenas este token, el bot lo usará DIRECTAMENTE sin esperar BD/webhook
-# Formato: Tu Bearer Token de Liverpool
-BEARER_TOKEN_MANUAL_EMERGENCIA = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjlqbWJpUUdqalNrZ2pXOWFtVlVLSCJ9.eyJodHRwczovL2xvZ2luLWVudHJhZGF1bmljYS5saXZlcnBvb2wuY29tLm14L3BvcnRhbHMiOnsiU2luZ2xlRW50cnkiOlt7ImlkIjoiMDAwMDE2Mzg0NSIsImludml0ZSI6Im1haW5NYXJrZXRwbGFjZSIsInBvcnRhbHMiOlsibWFpbk1hcmtldHBsYWNlIiwibWFpblBvcnRhbFNlbGxlciIsIm1haW5DYXRhbG9naW5nIiwibWFpbkVVIl0sInRyYWRlbmFtZSI6IldBQlUgU0EgREUgQ1YiLCJ0eXBlIjoiIn1dfSwiaXNzIjoiaHR0cHM6Ly9sb2dpbi1lbnRyYWRhdW5pY2EubGl2ZXJwb29sLmNvbS5teC8iLCJzdWIiOiJhdXRoMHw2OGNhZjlmNDU1YmE2MGNlNDYyMjRmZmEiLCJhdWQiOlsiaHR0cHM6Ly92ZW5kb3ItY2VudGVyLXByb2QudXMuYXV0aDAuY29tL2FwaS92Mi8iLCJodHRwczovL3ZlbmRvci1jZW50ZXItcHJvZC51cy5hdXRoMC5jb20vdXNlcmluZm8iXSwiaWF0IjoxNzg1MTAwMzExLCJleHAiOjE3ODUxODY3MTEsInNjb3BlIjoib3BlbmlkIHByb2ZpbGUgZW1haWwgb2ZmbGluZV9hY2Nlc3MiLCJhenAiOiJ2WDRjODczcDVINGhXTEJpTEFGWXFUOUs0OTFmTGJUbSJ9.oMeEgc50V4usIE91lxLbvycq3B9m60021tjFGdAxXWW39pWlRV8J1vM_DBGHHLoKb_x4ij6iuWQSsx8zNAAgddWye19h_qMJZ6z9W-k185FtqurhsECc-TAHLEuooNC1hFHjdr6XcCO860qKBJ5Qp0TDmudA5cwfZn-gCQMF-XTc1w08VYuB52HmHBMS279jLeH1uE5Gk85SrOlGI9-hE0EXUIZEExJIF8BBB80-8LvcIUQdNKK60c0ftWpN7Od01bHu8njEXUezh_74jPXDP47o3hCJ_9Rz5EFsfE0ue03eK5rK1xPhktxEJWaxNqNwxdI3flYlN6ZjvlMr6BE6HA"
-
-# ==========================================
 # 🧪 MODO SIMULACRO (DRY-RUN)
 # ==========================================
 MODO_SIMULACION = False  
@@ -2185,16 +2178,7 @@ def ejecutar_bot():
     for cuenta in cuentas_activas:
         id_cuenta, nombre_desc, email_usuario, token_cuenta, cookie_vip, timestamp_token = cuenta
         
-        # 🔥 v5.6: INTENTAR USAR TOKEN MANUAL PRIMERO
-        if BEARER_TOKEN_MANUAL_EMERGENCIA and len(BEARER_TOKEN_MANUAL_EMERGENCIA) > 100:
-            print(f"\n🔥🔥🔥 MODO EMERGENCIA ACTIVADO 🔥🔥🔥")
-            print(f"✅ Usando TOKEN MANUAL en lugar de BD")
-            logger.info(f"🔥 MODO EMERGENCIA: Usando TOKEN MANUAL")
-            token_cuenta = BEARER_TOKEN_MANUAL_EMERGENCIA
-            print(f"✅ Token manual cargado! (primeros 50 chars): {token_cuenta[:50]}")
-            logger.info(f"✅ Token manual cargado! (primeros 50 chars): {token_cuenta[:50]}")
-        else:
-            # 🔐 DESENCRIPTAR TOKEN DE BD
+        # 🔐 DESENCRIPTAR TOKEN DE BD
             FERNET_ENCRYPTION_KEY = os.getenv("FERNET_ENCRYPTION_KEY")
             print(f"🔐 Intentando leer token de BD...")
             print(f"🔐 FERNET_ENCRYPTION_KEY existe?: {bool(FERNET_ENCRYPTION_KEY)}")
