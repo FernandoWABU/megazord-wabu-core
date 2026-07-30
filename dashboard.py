@@ -194,6 +194,8 @@ class PostgreSQLManager:
             return False
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL and "postgresql://" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://")
 if not DATABASE_URL:
     st.error("❌ DATABASE_URL no configurada en Streamlit Secrets")
     st.stop()
