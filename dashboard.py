@@ -224,7 +224,7 @@ def get_historial_precios(days: int = 7) -> pd.DataFrame:
 @st.cache_data(ttl=3600)
 def get_catalogo_maestro() -> pd.DataFrame:
     query = """
-    SELECT id, sku_limpio, sku_interno, sku_liverpool, sku_walmart, sku_coppel,
+    SELECT id, sku_limpio, sku_interno, sku_liverpool, sku_liverpool_product_id, sku_walmart, sku_coppel,
            precio_minimo, precio_maximo, costo_odoo, estatus, id_cuenta,
            COALESCE(regla_estrategia, '1. Gladiador') AS regla
     FROM catalogo_maestro_v3 
@@ -1510,7 +1510,10 @@ def show_admin_dashboard():
                 
                 with col1:
                     sku_buscar = st.text_input("🔍 Buscar SKU Liverpool:", placeholder="Ej: 789012")
-                    df_filtered = df_cat[df_cat['sku_liverpool'].astype(str).str.contains(sku_buscar, case=False, na=False)] if sku_buscar else df_cat
+                    df_filtered = df_cat[
+                        (df_cat['sku_liverpool'].astype(str).str.contains(sku_buscar, case=False, na=False)) |
+                        (df_cat['sku_liverpool_product_id'].astype(str).str.contains(sku_buscar, case=False, na=False))
+                    ] if sku_buscar else df_cat
                     
                     if not df_filtered.empty:
                         sku_selected = st.selectbox(
@@ -1817,7 +1820,10 @@ def show_admin_dashboard():
             
             if not df_cat.empty:
                 sku_buscar = st.text_input("🔍 Buscar SKU Liverpool:", placeholder="Ej: 789012", key="sku_rule_search")
-                df_filtered = df_cat[df_cat['sku_liverpool'].astype(str).str.contains(sku_buscar, case=False, na=False)] if sku_buscar else df_cat
+                    df_filtered = df_cat[
+                        (df_cat['sku_liverpool'].astype(str).str.contains(sku_buscar, case=False, na=False)) |
+                        (df_cat['sku_liverpool_product_id'].astype(str).str.contains(sku_buscar, case=False, na=False))
+                    ] if sku_buscar else df_cat
                 
                 if not df_filtered.empty:
                     sku_selected = st.selectbox(
@@ -1912,7 +1918,10 @@ def show_admin_dashboard():
             
             if not df_cat.empty:
                 sku_buscar = st.text_input("🔍 Buscar SKU Liverpool:", placeholder="Ej: 789012", key="sku_status_search")
-                df_filtered = df_cat[df_cat['sku_liverpool'].astype(str).str.contains(sku_buscar, case=False, na=False)] if sku_buscar else df_cat
+                    df_filtered = df_cat[
+                        (df_cat['sku_liverpool'].astype(str).str.contains(sku_buscar, case=False, na=False)) |
+                        (df_cat['sku_liverpool_product_id'].astype(str).str.contains(sku_buscar, case=False, na=False))
+                    ] if sku_buscar else df_cat
                 
                 if not df_filtered.empty:
                     sku_selected = st.selectbox(
