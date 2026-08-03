@@ -1820,10 +1820,10 @@ def show_admin_dashboard():
             
             if not df_cat.empty:
                 sku_buscar = st.text_input("🔍 Buscar SKU Liverpool:", placeholder="Ej: 789012", key="sku_rule_search")
-                    df_filtered = df_cat[
-                        (df_cat['sku_liverpool'].astype(str).str.contains(sku_buscar, case=False, na=False)) |
-                        (df_cat['sku_liverpool_product_id'].astype(str).str.contains(sku_buscar, case=False, na=False))
-                    ] if sku_buscar else df_cat
+                df_filtered = df_cat[
+                    (df_cat['sku_liverpool'].astype(str).str.contains(sku_buscar, case=False, na=False)) |
+                    (df_cat['sku_liverpool_product_id'].astype(str).str.contains(sku_buscar, case=False, na=False))
+                ] if sku_buscar else df_cat
                 
                 if not df_filtered.empty:
                     sku_selected = st.selectbox(
@@ -1918,10 +1918,10 @@ def show_admin_dashboard():
             
             if not df_cat.empty:
                 sku_buscar = st.text_input("🔍 Buscar SKU Liverpool:", placeholder="Ej: 789012", key="sku_status_search")
-                    df_filtered = df_cat[
-                        (df_cat['sku_liverpool'].astype(str).str.contains(sku_buscar, case=False, na=False)) |
-                        (df_cat['sku_liverpool_product_id'].astype(str).str.contains(sku_buscar, case=False, na=False))
-                    ] if sku_buscar else df_cat
+                df_filtered = df_cat[
+                    (df_cat['sku_liverpool'].astype(str).str.contains(sku_buscar, case=False, na=False)) |
+                    (df_cat['sku_liverpool_product_id'].astype(str).str.contains(sku_buscar, case=False, na=False))
+                ] if sku_buscar else df_cat
                 
                 if not df_filtered.empty:
                     sku_selected = st.selectbox(
