@@ -2015,6 +2015,7 @@ def show_admin_dashboard():
                 sku_limpio = st.text_input("SKU Limpio:", placeholder="PERFUME-001")
                 sku_interno = st.text_input("SKU Interno:", placeholder="123456")
                 sku_liverpool = st.text_input("SKU Liverpool:", placeholder="789012")
+                sku_liverpool_product_id = st.text_input("SKU Liverpool ProductID (Opcional):", placeholder="999681310636", help="ProductID diferente a SkuID en algunos productos")
             
             with col2:
                 precio_minimo = st.number_input("Precio Mínimo ($):", min_value=0.0, step=0.01)
@@ -2154,7 +2155,7 @@ def show_admin_dashboard():
                                 insert_query = f"""
                                 INSERT INTO catalogo_maestro_v3 
                                 (sku_limpio, sku_interno, sku_liverpool, precio_minimo, precio_maximo, costo_odoo, regla_estrategia, estatus, id_cuenta)
-                                VALUES ('{sku_limpio}', '{sku_interno}', '{sku_liverpool}', {float(precio_minimo)}, {float(precio_maximo)}, {costo_sql}, '{regla}', '{estatus}', '{id_cuenta}')
+                                VALUES ('{sku_limpio}', '{sku_interno}', '{sku_liverpool}', {f"'{sku_liverpool_product_id}'" if sku_liverpool_product_id else 'NULL'}, {float(precio_minimo)}, {float(precio_maximo)}, {costo_sql}, '{regla}', '{estatus}', '{id_cuenta}')
                                 RETURNING id
                                 """
                                 resultado = db.execute_update(insert_query)
