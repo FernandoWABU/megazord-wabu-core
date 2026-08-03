@@ -1216,14 +1216,15 @@ def extraer_precio_actual(precio_cell):
 # ║         (Agregado sin romper código existente - 2x más rápido)║
 # ╚═══════════════════════════════════════════════════════════════╝
 
-def buscar_en_plataforma_thread(nombre_plataforma: str, sku_id: str, timeout=15) -> dict:
+def buscar_en_plataforma_thread(nombre_plataforma: str, sku_id: str, product_id: str = None, timeout=15) -> dict:
     """
     🔍 Busca en UNA plataforma (thread separado)
     Retorna rivales con precio más bajo primero
     """
     
     if nombre_plataforma == 'liverpool':
-        url = f"https://www.liverpool.com.mx/tienda/mirakl/offerListing?productId={sku_id}&skuId={sku_id}"
+        product_id_final = product_id if product_id else sku_id
+        url = f"https://www.liverpool.com.mx/tienda/mirakl/offerListing?productId={product_id_final}&skuId={sku_id}"
     elif nombre_plataforma == 'suburbia':
         url = f"https://www.suburbia.com.mx/tienda/mirakl/offerListing?productId={sku_id}&skuId={sku_id}"
     else:
@@ -1303,7 +1304,7 @@ def buscar_en_plataforma_thread(nombre_plataforma: str, sku_id: str, timeout=15)
         return {'plataforma': nombre_plataforma, 'exito': False, 'rivales': [], 'tiempo': tiempo}
 
 
-def obtener_info_rivales_paralelo(token, liverpool_sku, timeout=15):
+def obtener_info_rivales_paralelo(token, liverpool_sku, liverpool_product_id=None, timeout=15):
     """
     ⚡ BÚSQUEDA PARALELA - Liverpool + Suburbia simultáneamente
     2 VECES MÁS RÁPIDO - Fallback automático
@@ -1314,8 +1315,8 @@ def obtener_info_rivales_paralelo(token, liverpool_sku, timeout=15):
     
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = {
-            executor.submit(buscar_en_plataforma_thread, 'liverpool', liverpool_sku, timeout): 'liverpool',
-            executor.submit(buscar_en_plataforma_thread, 'suburbia', liverpool_sku, timeout): 'suburbia'
+            executor.submit(buscar_en_plataforma_thread, 'liverpool', liverpool_sku, liverpool_product_id, timeout): 'liverpool',
+            executor.submit(buscar_en_plataforma_thread, 'suburbia', liverpool_sku, None, timeout): 'suburbia'
         }
         
         resultados = []
@@ -1356,7 +1357,7 @@ def obtener_info_rivales_paralelo(token, liverpool_sku, timeout=15):
 # INTEGRAR EN obtener_info_rivales()
 # ============================================================
 
-def obtener_info_rivales(token, liverpool_sku):
+def obtener_info_rivales(token, liverpool_sku, liverpool_product_id=None):
     """
     Scraping de offerListing con PARSING ROBUSTO.
     Filtra "PRECIO GENIAL" automáticamente.
@@ -1373,7 +1374,8 @@ def obtener_info_rivales(token, liverpool_sku):
     TIENDA_NOMBRES = ["PRECIO GENIAL", "PRECIOS UNICOS", "WABU", "WABU SHOP", "8579"]
     SHOP_ID_PUBLICO = "8579"
     
-    url_liverpool = f"https://www.liverpool.com.mx/tienda/mirakl/offerListing?productId={liverpool_sku}&skuId={liverpool_sku}"
+    product_id_final = liverpool_product_id if liverpool_product_id else liverpool_sku
+    url_liverpool = f"https://www.liverpool.com.mx/tienda/mirakl/offerListing?productId={product_id_final}&skuId={liverpool_sku}"
     
     logger.info(f"🔍 Scrapeando: {liverpool_sku}")
     logger.info(f"📍 URL: {url_liverpool}")
@@ -1708,7 +1710,9 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
             if estatus_regla == 'ACTIVO': resultados.apagar_sku_liverpool(fila_excel, sku_i)
             return
 
-        info_rivales = obtener_info_rivales(token, sku_lp)  # ← Agregar token
+        # Obtener product_id desde regla (puede ser None si no está en DB)
+        sku_product_id = regla.get('sku_liverpool_product_id')
+        info_rivales = obtener_info_rivales(token, sku_lp, sku_product_id)
         precios_rivales = [r["precio"] for r in info_rivales]
 
         precio_minimo_regla = safe_float(regla.get('precio_minimo', 0))
@@ -2165,7 +2169,7 @@ def ejecutar_bot():
                             continue  # Salta esta cuenta
                 
                 # Extraemos de una vez todo el catálogo activo
-                cursor.execute("SELECT id, sku_limpio, sku_interno, sku_liverpool, precio_minimo, precio_maximo, costo_odoo, regla_estrategia, estatus, id_cuenta FROM catalogo_maestro_v3 WHERE estatus = 'ACTIVO' AND sku_liverpool IS NOT NULL AND sku_liverpool != ''")
+                cursor.execute("SELECT id, sku_limpio, sku_interno, sku_liverpool, sku_liverpool_product_id, precio_minimo, precio_maximo, costo_odoo, regla_estrategia, estatus, id_cuenta FROM catalogo_maestro_v3 WHERE estatus = 'ACTIVO' AND sku_liverpool IS NOT NULL AND sku_liverpool != ''")
                 columnas_cat = [desc[0] for desc in cursor.description]
                 catalogo_completo = cursor.fetchall()
                 
