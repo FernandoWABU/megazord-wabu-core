@@ -31,7 +31,7 @@ from playwright.sync_api import sync_playwright
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
 import json
-import psycopg2 
+import psycopg
 from db_manager import DbManager
 
 load_dotenv()
@@ -791,7 +791,7 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                             cookies_json = json.dumps(context.cookies())
                             cookie_final = cipher.encrypt(cookies_json.encode()).decode() if cipher else cookies_json
                             try:
-                                with psycopg2.connect(DATABASE_URL) as conn:
+                                with psycopg.connect(DATABASE_URL) as conn:
                                     with conn.cursor() as cursor:
                                         cursor.execute("""
                                             UPDATE cuentas_liverpool 
@@ -815,7 +815,7 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                             cookies_json = json.dumps(context.cookies())
                             cookie_final = cipher.encrypt(cookies_json.encode()).decode() if cipher else cookies_json
                             try:
-                                with psycopg2.connect(DATABASE_URL) as conn:
+                                with psycopg.connect(DATABASE_URL) as conn:
                                     with conn.cursor() as cursor:
                                         cursor.execute("""
                                             UPDATE cuentas_liverpool 
@@ -919,7 +919,7 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                 cookie_final = cipher.encrypt(cookies_json.encode()).decode() if cipher else cookies_json
                 
                 try:
-                    with psycopg2.connect(DATABASE_URL) as conn:
+                    with psycopg.connect(DATABASE_URL) as conn:
                         with conn.cursor() as cursor:
                             # Calcular cuándo expira el token (por si lo tienes)
                             token_expira_en = datetime.now() + timedelta(seconds=expires_in)
@@ -1079,7 +1079,7 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
             cookie_final = cipher.encrypt(cookies_json.encode()).decode() if cipher else cookies_json
             
             try:
-                with psycopg2.connect(DATABASE_URL) as conn:
+                with psycopg.connect(DATABASE_URL) as conn:
                     with conn.cursor() as cursor:
                         cursor.execute("""
                             UPDATE cuentas_liverpool 
@@ -1226,8 +1226,8 @@ def buscar_en_plataforma_thread(nombre_plataforma: str, sku_id: str, product_id:
         product_id_final = product_id if product_id else sku_id
         url = f"https://www.liverpool.com.mx/tienda/mirakl/offerListing?productId={product_id_final}&skuId={sku_id}"
     elif nombre_plataforma == 'suburbia':
-        url = f"https://www.suburbia.com.mx/tienda/mirakl/offerListing?productId={sku_id}&skuId={sku_id}"
-    else:
+        product_id_final = product_id if product_id else sku_id
+        url = f"https://www.suburbia.com.mx/tienda/mirakl/offerListing?productId={product_id_final}&skuId={sku_id}"
         return {'plataforma': nombre_plataforma, 'exito': False, 'rivales': [], 'tiempo': 0}
     
     inicio = time.time()
@@ -1316,7 +1316,7 @@ def obtener_info_rivales_paralelo(token, liverpool_sku, liverpool_product_id=Non
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = {
             executor.submit(buscar_en_plataforma_thread, 'liverpool', liverpool_sku, liverpool_product_id, timeout): 'liverpool',
-            executor.submit(buscar_en_plataforma_thread, 'suburbia', liverpool_sku, None, timeout): 'suburbia'
+            executor.submit(buscar_en_plataforma_thread, 'suburbia', liverpool_sku, liverpool_product_id, timeout): 'suburbia'
         }
         
         resultados = []
@@ -1330,26 +1330,26 @@ def obtener_info_rivales_paralelo(token, liverpool_sku, liverpool_product_id=Non
     tiempo_total = time.time() - inicio_total
     exitosos = [r for r in resultados if r['exito'] and r['rivales']]
     
-    if exitosos:
-        todos_rivales = []
-        for r in exitosos:
-            todos_rivales.extend(r['rivales'])
-        
-        todos_rivales = sorted(todos_rivales, key=lambda x: x['precio'])
-        
-        vistos = set()
-        rivales_unicos = []
-        for rival in todos_rivales:
-            vendedor_key = f"{rival['vendedor']}_{rival['precio']}"
-            if vendedor_key not in vistos:
-                vistos.add(vendedor_key)
-                rivales_unicos.append(rival)
-        
-        logger.info(f"🏆 PARALELO: {len(rivales_unicos)} rivales en {tiempo_total:.2f}s")
-        return rivales_unicos
+    # 🎯 OPCIÓN B: PRIORIDAD CLARA - Liverpool primero, Suburbia como fallback
     
-    logger.warning(f"❌ No encontrado. ⚡ {tiempo_total:.2f}s")
+    # Prioridad 1: Si Liverpool fue exitoso, USA SOLO LIVERPOOL
+    resultados_liverpool = [r for r in exitosos if r['plataforma'] == 'liverpool']
+    if resultados_liverpool:
+        rivales_liverpool = resultados_liverpool[0]['rivales']
+        logger.info(f"✅ [LIVERPOOL] {len(rivales_liverpool)} rivales en {tiempo_total:.2f}s (PRIMARIA)")
+        return rivales_liverpool
+    
+    # Prioridad 2: Si Liverpool no funciona, FALLBACK a Suburbia
+    resultados_suburbia = [r for r in exitosos if r['plataforma'] == 'suburbia']
+    if resultados_suburbia:
+        rivales_suburbia = resultados_suburbia[0]['rivales']
+        logger.warning(f"⚠️ [FALLBACK A SUBURBIA] {len(rivales_suburbia)} rivales en {tiempo_total:.2f}s (Liverpool no disponible)")
+        return rivales_suburbia
+    
+    # Si ambas fallan
+    logger.error(f"❌ [ERROR] Ambas plataformas fallaron en {tiempo_total:.2f}s")
     return []
+
 
 # ╚═══════════════════════════════════════════════════════════════╝
 
@@ -2025,7 +2025,7 @@ def guardar_en_sql(filas):
     if MODO_SIMULACION: return
     if not filas: return
     try:
-        with psycopg2.connect(DATABASE_URL) as conn:
+        with psycopg.connect(DATABASE_URL) as conn:
             with conn.cursor() as cursor:
                 query = """INSERT INTO historial_precios (fecha_hora, sku_interno, sku_liverpool, precio_rival, nuestro_precio, stock, posicion, buybox, id_cuenta) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"""
                 cursor.executemany(query, filas)
@@ -2122,7 +2122,7 @@ def ejecutar_bot():
     
     # ✅ NUEVA: Verificar si hay orden de reset del Circuit Breaker
     try:
-        with psycopg2.connect(DATABASE_URL) as conn:
+        with psycopg.connect(DATABASE_URL) as conn:
             with conn.cursor() as cursor:
                 cursor.execute("SELECT valor FROM config_sistema WHERE clave = 'reset_circuit_breaker'")
                 resultado = cursor.fetchone()
@@ -2147,7 +2147,7 @@ def ejecutar_bot():
 
     # 🛡️ ALTO #1: Fuga de conexión parchada en el bloque inicial
     try:
-        with psycopg2.connect(DATABASE_URL) as conn:
+        with psycopg.connect(DATABASE_URL) as conn:
             with conn.cursor() as cursor:
                 cursor.execute("SELECT id_cuenta, nombre_descriptivo, email_usuario, token_autorizacion, cookie_vip, timestamp_token FROM cuentas_liverpool WHERE is_active = TRUE")
                 cuentas_activas = cursor.fetchall()
@@ -2250,7 +2250,7 @@ def ejecutar_bot():
                 logger.warning(f"💀 El Ping devolvió 401. Intentando rescate...")
     
                 try:
-                    with psycopg2.connect(DATABASE_URL) as conn:
+                    with psycopg.connect(DATABASE_URL) as conn:
                         with conn.cursor() as cursor:
                             # Buscar PENÚLTIMO token
                             cursor.execute("""
@@ -2328,7 +2328,7 @@ if __name__ == "__main__":
     if args.reset_breaker:
         try:
             print("🔄 Reseteando Circuit Breaker en PostgreSQL...")
-            with psycopg2.connect(DATABASE_URL) as conn:
+            with psycopg.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cursor:
                     cursor.execute("UPDATE config_sistema SET valor = 'true' WHERE clave = 'reset_circuit_breaker'")
                     conn.commit()
