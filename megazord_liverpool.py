@@ -31,7 +31,7 @@ from playwright.sync_api import sync_playwright
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
 import json
-import psycopg
+import psycopg2
 from db_manager import DbManager
 
 load_dotenv()
@@ -791,7 +791,7 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                             cookies_json = json.dumps(context.cookies())
                             cookie_final = cipher.encrypt(cookies_json.encode()).decode() if cipher else cookies_json
                             try:
-                                with psycopg.connect(DATABASE_URL) as conn:
+                                with psycopg2.connect(DATABASE_URL) as conn:
                                     with conn.cursor() as cursor:
                                         cursor.execute("""
                                             UPDATE cuentas_liverpool 
@@ -815,7 +815,7 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                             cookies_json = json.dumps(context.cookies())
                             cookie_final = cipher.encrypt(cookies_json.encode()).decode() if cipher else cookies_json
                             try:
-                                with psycopg.connect(DATABASE_URL) as conn:
+                                with psycopg2.connect(DATABASE_URL) as conn:
                                     with conn.cursor() as cursor:
                                         cursor.execute("""
                                             UPDATE cuentas_liverpool 
@@ -919,7 +919,7 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
                 cookie_final = cipher.encrypt(cookies_json.encode()).decode() if cipher else cookies_json
                 
                 try:
-                    with psycopg.connect(DATABASE_URL) as conn:
+                    with psycopg2.connect(DATABASE_URL) as conn:
                         with conn.cursor() as cursor:
                             # Calcular cuándo expira el token (por si lo tienes)
                             token_expira_en = datetime.now() + timedelta(seconds=expires_in)
@@ -1079,7 +1079,7 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
             cookie_final = cipher.encrypt(cookies_json.encode()).decode() if cipher else cookies_json
             
             try:
-                with psycopg.connect(DATABASE_URL) as conn:
+                with psycopg2.connect(DATABASE_URL) as conn:
                     with conn.cursor() as cursor:
                         cursor.execute("""
                             UPDATE cuentas_liverpool 
@@ -2025,7 +2025,7 @@ def guardar_en_sql(filas):
     if MODO_SIMULACION: return
     if not filas: return
     try:
-        with psycopg.connect(DATABASE_URL) as conn:
+        with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor() as cursor:
                 query = """INSERT INTO historial_precios (fecha_hora, sku_interno, sku_liverpool, precio_rival, nuestro_precio, stock, posicion, buybox, id_cuenta) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"""
                 cursor.executemany(query, filas)
@@ -2122,7 +2122,7 @@ def ejecutar_bot():
     
     # ✅ NUEVA: Verificar si hay orden de reset del Circuit Breaker
     try:
-        with psycopg.connect(DATABASE_URL) as conn:
+        with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor() as cursor:
                 cursor.execute("SELECT valor FROM config_sistema WHERE clave = 'reset_circuit_breaker'")
                 resultado = cursor.fetchone()
@@ -2147,7 +2147,7 @@ def ejecutar_bot():
 
     # 🛡️ ALTO #1: Fuga de conexión parchada en el bloque inicial
     try:
-        with psycopg.connect(DATABASE_URL) as conn:
+        with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor() as cursor:
                 cursor.execute("SELECT id_cuenta, nombre_descriptivo, email_usuario, token_autorizacion, cookie_vip, timestamp_token FROM cuentas_liverpool WHERE is_active = TRUE")
                 cuentas_activas = cursor.fetchall()
@@ -2250,7 +2250,7 @@ def ejecutar_bot():
                 logger.warning(f"💀 El Ping devolvió 401. Intentando rescate...")
     
                 try:
-                    with psycopg.connect(DATABASE_URL) as conn:
+                    with psycopg2.connect(DATABASE_URL) as conn:
                         with conn.cursor() as cursor:
                             # Buscar PENÚLTIMO token
                             cursor.execute("""
@@ -2328,7 +2328,7 @@ if __name__ == "__main__":
     if args.reset_breaker:
         try:
             print("🔄 Reseteando Circuit Breaker en PostgreSQL...")
-            with psycopg.connect(DATABASE_URL) as conn:
+            with psycopg2.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cursor:
                     cursor.execute("UPDATE config_sistema SET valor = 'true' WHERE clave = 'reset_circuit_breaker'")
                     conn.commit()
