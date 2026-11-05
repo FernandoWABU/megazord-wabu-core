@@ -23,7 +23,7 @@ class PostgreSQLManager:
             logger.error(f"Error conectando a PostgreSQL: {e}")
             self.engine = None
 
-    def execute_query(self, query: str, params: dict = None) -> pd.DataFrame:
+    def execute_query(self, query: str, params: dict = None, silencioso: bool = False) -> pd.DataFrame:
         if self.engine is None:
             return pd.DataFrame()
         try:
@@ -32,7 +32,8 @@ class PostgreSQLManager:
                 return pd.DataFrame(res.fetchall(), columns=list(res.keys()))
         except Exception as e:
             logger.error(f"Error en query: {e}")
-            st.warning(f"⚠️ Error consultando la base: {str(e)[:120]}")
+            if not silencioso:
+                st.warning(f"⚠️ Error consultando la base: {str(e)[:120]}")
             return pd.DataFrame()
 
 

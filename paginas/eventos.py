@@ -88,9 +88,9 @@ def render():
         cerca = int((res["Sobre el piso %"].fillna(99) < 5).sum())
         estilo.kpi(k[3], "Cerca del piso", cerca, "a menos de 5% del mínimo", "bad" if cerca else "ok")
         st.dataframe(res, hide_index=True, width="stretch", column_config={
-            "Inicio del día": st.column_config.NumberColumn(format="$%.2f"),
-            "Ahora": st.column_config.NumberColumn(format="$%.2f"),
-            "Mínimo": st.column_config.NumberColumn(format="$%.2f"),
+            "Inicio del día": st.column_config.NumberColumn(format="dollar"),
+            "Ahora": st.column_config.NumberColumn(format="dollar"),
+            "Mínimo": st.column_config.NumberColumn(format="dollar"),
             "Caída %": st.column_config.NumberColumn(format="%.2f%%"),
             "Sobre el piso %": st.column_config.NumberColumn(format="%.1f%%"),
             "Ganando %": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.0f%%"),

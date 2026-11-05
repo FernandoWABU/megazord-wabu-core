@@ -37,6 +37,11 @@ def _rerun():
     st.rerun()
 
 
+def _d(t):
+    """Escapa $ para que Streamlit no lo lea como fórmula."""
+    return str(t).replace("$", "\\$")
+
+
 def _fragment(fn):
     """st.fragment evita recargar TODO el dashboard en cada clic (si la versión de Streamlit lo soporta)."""
     frag = getattr(st, "fragment", None)
@@ -217,12 +222,12 @@ def render_catalogo_rapido(db, reglas: list, usuario: str = "admin"):
             "sku_limpio": st.column_config.TextColumn("SKU", width="medium"),
             "estatus": st.column_config.SelectboxColumn("Estatus", options=ESTATUS_VALIDOS, required=True, width="small"),
             "regla": st.column_config.SelectboxColumn("Regla", options=reglas, required=True, width="medium"),
-            "precio_minimo": st.column_config.NumberColumn("Mínimo", format="$%.2f", min_value=0.0, step=0.01),
-            "precio_maximo": st.column_config.NumberColumn("Máximo", format="$%.2f", min_value=0.0, step=0.01),
-            "util_min": st.column_config.NumberColumn("Utilidad al mín.", format="$%.2f", help="Ganancia por pieza si vendes al precio mínimo"),
-            "costo_odoo": st.column_config.NumberColumn("Costo", format="$%.2f"),
-            "precio_actual": st.column_config.NumberColumn("Mi precio", format="$%.2f"),
-            "buybox": st.column_config.NumberColumn("BuyBox", format="$%.2f"),
+            "precio_minimo": st.column_config.NumberColumn("Mínimo", format="dollar", min_value=0.0, step=0.01),
+            "precio_maximo": st.column_config.NumberColumn("Máximo", format="dollar", min_value=0.0, step=0.01),
+            "util_min": st.column_config.NumberColumn("Utilidad al mín.", format="dollar", help="Ganancia por pieza si vendes al precio mínimo"),
+            "costo_odoo": st.column_config.NumberColumn("Costo", format="dollar"),
+            "precio_actual": st.column_config.NumberColumn("Mi precio", format="dollar"),
+            "buybox": st.column_config.NumberColumn("BuyBox", format="dollar"),
             "id": None, "id_cuenta": st.column_config.TextColumn("Cuenta", width="small"),
         },
     )
@@ -261,9 +266,9 @@ def render_catalogo_rapido(db, reglas: list, usuario: str = "admin"):
         } for c in cambios])
         st.dataframe(resumen, hide_index=True, width="stretch")
         for e in errores:
-            st.error(e)
+            st.error(_d(e))
         for a in avisos:
-            st.warning(a)
+            st.warning(_d(a))
         if any(c["despues"]["regla"].startswith("9") and not c["antes"]["regla"].startswith("9") for c in cambios):
             st.info("🎲 Vas a activar la Regla 9. Verifica que el mínimo de cada SKU sea un piso con el que aceptes vender.")
 
@@ -333,7 +338,7 @@ def _modo_celular(db, vis, base, reglas, usuario):
     etiquetas = {int(r.id): f"{r.sku_limpio}  ·  {r.estatus}  ·  {r.regla[:1]}" for r in vis.itertuples()}
     elegido = st.selectbox("SKU", list(etiquetas), format_func=lambda i: etiquetas[i], key="cr_cel_sku")
     r = base[base.id == elegido].iloc[0]
-    st.markdown(f"**{r.sku_limpio}** · costo ${r.costo_odoo:,.2f} · stock {r.stock if pd.notna(r.stock) else '—'}")
+    st.markdown(_d(f"**{r.sku_limpio}** · costo ${r.costo_odoo:,.2f} · stock {r.stock if pd.notna(r.stock) else '—'}"))
     estatus = st.radio("Estatus", ESTATUS_VALIDOS, index=ESTATUS_VALIDOS.index(r.estatus) if r.estatus in ESTATUS_VALIDOS else 1,
                        horizontal=True, key=f"cr_cel_e_{elegido}")
     regla = st.selectbox("Regla", reglas, index=reglas.index(r.regla) if r.regla in reglas else 0, key=f"cr_cel_r_{elegido}")
@@ -342,16 +347,16 @@ def _modo_celular(db, vis, base, reglas, usuario):
     pmax = c2.number_input("Máximo", value=float(r.precio_maximo), min_value=0.0, step=1.0, format="%.2f", key=f"cr_cel_x_{elegido}")
     u = utilidad_a_precio(pmin, r.costo_odoo)
     if u is not None:
-        (st.success if u >= 0 else st.error)(f"Utilidad al mínimo: ${u:,.2f} por pieza")
+        (st.success if u >= 0 else st.error)(_d(f"Utilidad al mínimo: ${u:,.2f} por pieza"))
     cambio = {"id": int(r.id), "sku": r.sku_limpio, "costo": float(r.costo_odoo),
               "antes": {"estatus": r.estatus, "regla": r.regla, "precio_minimo": round(float(r.precio_minimo), 2), "precio_maximo": round(float(r.precio_maximo), 2)},
               "despues": {"estatus": estatus, "regla": regla, "precio_minimo": round(pmin, 2), "precio_maximo": round(pmax, 2)}}
     hay = cambio["antes"] != cambio["despues"]
     errores, avisos = _validar([cambio]) if hay else ([], [])
     for e in errores:
-        st.error(e)
+        st.error(_d(e))
     for a in avisos:
-        st.warning(a)
+        st.warning(_d(a))
     if st.button("💾 Guardar", type="primary", disabled=(not hay) or bool(errores), width="stretch", key="cr_cel_save"):
         ok, msg = _guardar_cambios(db, [cambio], usuario)
         if ok:
@@ -397,3 +402,4 @@ def _historial_cambios(db):
 # Alias públicos para usar desde otras páginas
 cargar_catalogo = _cargar_catalogo
 panel_panico = _panel_panico
+guardar_cambios = _guardar_cambios

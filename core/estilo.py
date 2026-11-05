@@ -32,13 +32,24 @@ def aplicar():
     st.markdown(CSS, unsafe_allow_html=True)
 
 
+def _h(t):
+    """Escapa $ para que Streamlit no lo interprete como fórmula matemática."""
+    return str(t).replace("$", "&#36;")
+
+
+def d(t):
+    """Escapa $ en textos Markdown normales (st.caption, st.error, ...)."""
+    return str(t).replace("$", "\\$")
+
+
 def kpi(col, etiqueta, valor, sub="", tono="info"):
+    etiqueta, valor, sub = _h(etiqueta), _h(valor), _h(sub)
     col.markdown(f"<div class='mz-kpi {tono}'><div class='l'>{etiqueta}</div>"
                  f"<div class='v'>{valor}</div><div class='s'>{sub}</div></div>", unsafe_allow_html=True)
 
 
 def chip(texto, tono="info"):
-    return f"<span class='mz-chip {tono}'>{texto}</span>"
+    return f"<span class='mz-chip {tono}'>{_h(texto)}</span>"
 
 
 def titulo(texto):

@@ -8,6 +8,7 @@ import streamlit as st
 
 from core import estilo
 from core.db import get_db
+from core.odoo import cargar_nombres, describir
 from modulos.catalogo_rapido import utilidad_a_precio
 
 CDMX = ZoneInfo("America/Mexico_City")
@@ -15,7 +16,7 @@ CDMX = ZoneInfo("America/Mexico_City")
 
 @st.cache_data(ttl=120, show_spinner=False)
 def _lista(_db) -> pd.DataFrame:
-    df = _db.execute_query("""SELECT id, sku_limpio, sku_interno, id_cuenta, regla_estrategia AS regla,
+    df = _db.execute_query("""SELECT id, sku_limpio, sku_interno, sku_liverpool, id_cuenta, regla_estrategia AS regla,
                                      precio_minimo, precio_maximo, costo_odoo
                               FROM catalogo_maestro_v3 WHERE estatus = 'ACTIVO' ORDER BY sku_limpio""")
     for c in ("precio_minimo", "precio_maximo", "costo_odoo"):
@@ -65,6 +66,17 @@ def render():
     horas = c2.radio("Ventana", [6, 24, 48, 168], index=1, horizontal=True, key="bat_h",
                      format_func=lambda h: f"{h} h" if h < 168 else "7 días")
     r = lista[lista.id == elegido].iloc[0]
+
+    # ---- etiqueta con el nombre real (Odoo)
+    nombres = cargar_nombres(db)
+    d = describir(r.sku_limpio, nombres)
+    tipo_txt = {"simple": "Producto", "paquete": "Paquete", "combo": "Combo"}.get(d["tipo"], "Producto")
+    st.markdown(estilo.chip(tipo_txt, "info") + f"<b>{d['titulo']}</b>", unsafe_allow_html=True)
+    st.caption(f"{d['referencia']} · SKU limpio {r.sku_limpio} · SKU Liverpool {r.sku_liverpool}")
+    if not nombres:
+        st.caption("ℹ️ Los nombres se llenan cuando corre el sincronizador de Odoo (una vez actualizado, se verán aquí).")
+    elif d["faltan"]:
+        st.warning("No encontré en Odoo el código: " + ", ".join(d["faltan"]) + ". Revisa que exista y esté activo.")
     serie = _serie(db, r.id_cuenta, r.sku_interno, horas)
     num = serie.dropna(subset=["nuestro_precio", "precio_rival"]) if not serie.empty else serie
 
@@ -108,7 +120,7 @@ def render():
     else:
         st.dataframe(riv[["posicion", "nombre_rival", "precio_rival"]], hide_index=True, width="stretch",
                      column_config={"posicion": "Lugar", "nombre_rival": "Vendedor",
-                                    "precio_rival": st.column_config.NumberColumn("Precio", format="$%.2f")})
+                                    "precio_rival": st.column_config.NumberColumn("Precio", format="dollar")})
 
     # ---- cambios de precio
     estilo.titulo("🕘 Cambios de precio propios")
@@ -124,7 +136,7 @@ def render():
             st.dataframe(ch.sort_values("fecha_hora", ascending=False)[["fecha_hora", "anterior", "nuestro_precio", "cambio", "motivo"]].head(60),
                          hide_index=True, width="stretch",
                          column_config={"fecha_hora": "Hora (CDMX)",
-                                        "anterior": st.column_config.NumberColumn("Antes", format="$%.2f"),
-                                        "nuestro_precio": st.column_config.NumberColumn("Después", format="$%.2f"),
-                                        "cambio": st.column_config.NumberColumn("Cambio", format="$%.2f"),
+                                        "anterior": st.column_config.NumberColumn("Antes", format="dollar"),
+                                        "nuestro_precio": st.column_config.NumberColumn("Después", format="dollar"),
+                                        "cambio": st.column_config.NumberColumn("Cambio", format="dollar"),
                                         "motivo": "Qué pasó"})
