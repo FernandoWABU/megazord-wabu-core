@@ -259,7 +259,7 @@ def get_cuentas_disponibles() -> list:
 
 @st.cache_data(ttl=120)
 def get_reglas_disponibles() -> list:
-    return ['1. Gladiador', '2. Sombra', '3. Invasor', '4. Mantener Margen']
+    return ['1. Gladiador', '2. Ancla Mínimo', '3. Cosecha Máximo', '4. Analista Histórico', '9. Ruleta Rusa']
 
 def get_buybox_price_actual(sku_interno: str) -> Optional[float]:
     """Obtiene el precio actual de Buybox para un SKU"""
