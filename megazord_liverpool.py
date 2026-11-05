@@ -1593,6 +1593,36 @@ def calcular_posicion_buybox(precios_rivales, nuestro_precio):
 # ==========================================
 # CLASE DE RESULTADOS THREAD-SAFE
 # ==========================================
+# ==========================================
+# REGLA 9 - MODO EVENTO (Buen Fin / Hot Sale) - se controla con variables de entorno
+# Sin variables definidas, la Regla 9 se comporta exactamente como antes.
+#   REGLA9_MODO_EVENTO=1     activa el modo evento
+#   REGLA9_PASO_PCT=0.012    el hachazo baja este % del precio actual (minimo 1.50)
+#   REGLA9_DADO=9            probabilidad 1 en N de dar el hachazo (por defecto 9)
+#   REGLA9_HORA_CORTE=17:50  hora CDMX desde la cual la Regla 9 deja de mover precios
+# ==========================================
+REGLA9_MODO_EVENTO = (os.getenv("REGLA9_MODO_EVENTO") or "0").strip() == "1"
+try:
+    REGLA9_PASO_PCT = float(os.getenv("REGLA9_PASO_PCT") or "0.012") if REGLA9_MODO_EVENTO else 0.0
+except ValueError:
+    REGLA9_PASO_PCT = 0.0
+try:
+    REGLA9_DADO = max(2, int(os.getenv("REGLA9_DADO") or "9"))
+except ValueError:
+    REGLA9_DADO = 9
+REGLA9_HORA_CORTE = (os.getenv("REGLA9_HORA_CORTE") or "17:50").strip()
+
+def regla9_pasado_el_corte():
+    """True si estamos en modo evento y ya pasó la hora de corte (hora CDMX)."""
+    if not REGLA9_MODO_EVENTO:
+        return False
+    try:
+        hh, mm = REGLA9_HORA_CORTE.split(":")
+        ahora = datetime.now(timezone.utc) - timedelta(hours=6)
+        return (ahora.hour, ahora.minute) >= (int(hh), int(mm))
+    except Exception:
+        return False
+
 class ResultadosThreadSafe:
     def __init__(self):
         self._lock = threading.Lock()
@@ -1765,13 +1795,28 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                     resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, precios_rivales[0] if precios_rivales else "SIN RIVAL", precio_actual, cantidad, pos, bb, id_cuenta])
 
             elif tipo_regla.startswith('9'):
+                # 🧊 MODO EVENTO: después de la hora de corte no se mueve el precio
+                if regla9_pasado_el_corte():
+                    pos, bb = calcular_posicion_buybox(precios_rivales, precio_actual)
+                    resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, precios_rivales[0] if precios_rivales else "SIN RIVAL", precio_actual, cantidad, pos, f"{bb} | 🧊 Congelado pre-corte", id_cuenta])
+                    return
+
+                # 🔁 DOBLE CHECK (sin rivales): reconsulta antes de declarar monopolio
+                if not precios_rivales:
+                    time.sleep(3)
+                    info_rivales = obtener_info_rivales(token, sku_lp)
+                    precios_rivales = [r["precio"] for r in info_rivales]
+                    if precios_rivales:
+                        logger.info(f"🔁 [{sku_i}] Doble check Regla 9: la API sí devolvió rivales en la segunda consulta")
+
                 if precios_rivales:
                     rival_mas_bajo = precios_rivales[0]
                     if rival_mas_bajo >= precio_minimo_regla:
                         nuevo_precio_propuesto = round(rival_mas_bajo - round(random.uniform(1.50, 1.95), 2), 2)
                         if nuevo_precio_propuesto >= precio_actual:
-                            if random.randint(1, 9) == 1:
-                                nuevo_precio = round(precio_actual - 1.50, 2)
+                            if random.randint(1, REGLA9_DADO) == 1:
+                                paso_hachazo = max(1.50, round(precio_actual * REGLA9_PASO_PCT, 2))
+                                nuevo_precio = round(precio_actual - paso_hachazo, 2)
                                 # 🛡️ CRÍTICO #3: Evitar precio negativo en Ruleta Rusa
                                 if nuevo_precio <= 0: nuevo_precio = precio_minimo_regla
                                 motivo = "🔥 Hachazo Ruleta Rusa"
@@ -1791,7 +1836,7 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                             motivo = "🛑 Alerta Roja (Perdida BB)"
                 else:
                     nuevo_precio = precio_maximo_regla
-                    motivo = "👑 Monopolio"
+                    motivo = "👑 Monopolio (confirmado en 2 consultas)"
                     
                 nuevo_precio = max(nuevo_precio, precio_minimo_regla)
                 nuevo_precio = min(nuevo_precio, precio_maximo_regla)
