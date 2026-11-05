@@ -43,7 +43,7 @@ jobs:
 
       - name: 🟣 Desplegar Megazord Liverpool
         # Se ejecuta SI le das al botón manual O SI el reloj que lo despertó fue el de 15,35,55
-        if: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.tienda == 'liverpool' || github.event.inputs.tienda == 'ambas')) || github.event.schedule == '15,35,55 * * * *' }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.tienda == 'liverpool' || github.event.inputs.tienda == 'ambas')) || github.event.schedule == '7,19,31,43,55 * * * *' }}
         env:
           SHOP_ID_INTERNO: ${{ secrets.SHOP_ID_INTERNO }}
           SHOP_ID_PUBLICO: ${{ secrets.SHOP_ID_PUBLICO }}
@@ -55,6 +55,11 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GOOGLE_ENCRYPTION_KEY: ${{ secrets.GOOGLE_ENCRYPTION_KEY }}
           FERNET_ENCRYPTION_KEY: ${{ secrets.FERNET_ENCRYPTION_KEY }}
+          # Regla 9 - modo evento. Se cambian en GitHub: Settings > Secrets and variables > Actions > Variables
+          REGLA9_MODO_EVENTO: ${{ vars.REGLA9_MODO_EVENTO }}
+          REGLA9_PASO_PCT: ${{ vars.REGLA9_PASO_PCT }}
+          REGLA9_DADO: ${{ vars.REGLA9_DADO }}
+          REGLA9_HORA_CORTE: ${{ vars.REGLA9_HORA_CORTE }}
         run: python megazord_liverpool.py
 
       - name: 🔵 Desplegar Megazord Walmart
