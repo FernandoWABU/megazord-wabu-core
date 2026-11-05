@@ -392,3 +392,8 @@ def _historial_cambios(db):
         else:
             st.dataframe(h, hide_index=True, width="stretch")
             st.caption("El detalle (antes y después de cada SKU) queda en logs_auditoria.detalles por si necesitas revertir.")
+
+
+# Alias públicos para usar desde otras páginas
+cargar_catalogo = _cargar_catalogo
+panel_panico = _panel_panico
