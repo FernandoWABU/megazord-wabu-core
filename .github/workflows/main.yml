@@ -43,7 +43,7 @@ jobs:
 
       - name: 🟣 Desplegar Megazord Liverpool
         # Se ejecuta SI le das al botón manual O SI el reloj que lo despertó fue el de 15,35,55
-        if: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.tienda == 'liverpool' || github.event.inputs.tienda == 'ambas')) || github.event.schedule == '7,19,31,43,55 * * * *' }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.tienda == 'liverpool' || github.event.inputs.tienda == 'ambas')) || github.event.schedule == '15,35,55 * * * *' }}
         env:
           SHOP_ID_INTERNO: ${{ secrets.SHOP_ID_INTERNO }}
           SHOP_ID_PUBLICO: ${{ secrets.SHOP_ID_PUBLICO }}
