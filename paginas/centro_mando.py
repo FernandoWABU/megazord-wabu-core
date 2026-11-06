@@ -69,8 +69,8 @@ def _tabla_perdiendo(db, df):
         return
 
     f1, f2 = st.columns([1, 1])
-    max_baja = f1.number_input("Baja máxima que aceptaría ($)", min_value=1.0, max_value=500.0, value=15.0, step=1.0, key="cm_maxbaja",
-                               help="Hasta cuántos pesos bajaría mi precio actual para tomar el BuyBox.")
+    max_baja = f1.number_input("Hasta cuánto por debajo del BuyBox aceptaría ($)", min_value=1.0, max_value=500.0, value=15.0, step=1.0, key="cm_maxbaja",
+                               help="Peor caso: quedar este monto por debajo del precio actual del BuyBox del rival.")
     solo_pzas = f2.toggle("Solo SKUs con piezas", value=True, key="cm_pzas")
     if solo_pzas:
         perdiendo = perdiendo[perdiendo.piezas > 0]
@@ -86,8 +86,8 @@ def _tabla_perdiendo(db, df):
         filas.append({
             "SKU": r.sku_limpio, "Producto": describir(r.sku_limpio, nombres)["titulo"] if nombres else "—",
             "Piezas": r.piezas, "Mi precio": r.nuestro_precio, "BuyBox rival": r.precio_rival,
-            "Bajaría a": esc["precio"], "Baja $": esc["baja"],
-            "¿Alcanza?": {"ok": "✅ Sí", "tope": f"❌ Tope ${max_baja:,.0f}", "minimo": "❌ Mínimo"}[esc["limite"]],
+            "Peor caso (BuyBox − tope)": esc["precio"], "Baja vs mi precio": esc["baja"],
+            "¿Bot puede ganar ya?": "✅ Sí" if esc["puede_ahora"] else "❌ Mínimo lo impide",
             "Utilidad / pieza": gan, "Utilidad %": mar,
             "Total a recibir": round(neto * r.piezas, 2) if neto is not None else None,
             "Utilidad / pérdida total": round(gan * r.piezas, 2) if gan is not None else None,
@@ -106,19 +106,18 @@ def _tabla_perdiendo(db, df):
             "Producto": st.column_config.TextColumn(width="medium"),
             "Piezas": st.column_config.NumberColumn(format="%d"),
             "Mi precio": pesos("Mi precio"), "BuyBox rival": pesos("BuyBox rival"),
-            "Bajaría a": pesos("Bajaría a"), "Baja $": pesos("Baja $"),
+            "Peor caso (BuyBox − tope)": pesos("Peor caso (BuyBox − tope)"), "Baja vs mi precio": pesos("Baja vs mi precio"),
             "Utilidad / pieza": pesos("Utilidad / pieza"),
             "Utilidad %": st.column_config.NumberColumn("Utilidad %", format="%.1f%%"),
             "Total a recibir": pesos("Total a recibir"),
             "Utilidad / pérdida total": pesos("Utilidad / pérdida total"),
             "Mínimo": pesos("Mínimo"),
         })
-    ok = tabla[tabla["¿Alcanza?"] == "✅ Sí"]
-    total_util = ok["Utilidad / pérdida total"].sum(skipna=True)
-    st.caption(estilo.d(f"Si compites en los {len(ok)} SKUs donde sí alcanza: total a recibir "
-                        f"${ok['Total a recibir'].sum(skipna=True):,.2f} · utilidad/pérdida ${total_util:,.2f}. "
+    total_util = tabla["Utilidad / pérdida total"].sum(skipna=True)
+    st.caption(estilo.d(f"Peor caso en los {len(tabla)} SKUs (quedando ${max_baja:,.0f} abajo del BuyBox): total a recibir "
+                        f"${tabla['Total a recibir'].sum(skipna=True):,.2f} · utilidad/pérdida ${total_util:,.2f}. "
                         "Utilidad con la fórmula del bot (comisión 17%, envío $130, retenciones). "
-                        "Selecciona una fila para evaluar la baja."))
+                        "Selecciona una fila para evaluar."))
 
     filas_sel = sel.selection.rows if sel and sel.selection else []
     if filas_sel:
@@ -137,33 +136,36 @@ def _dialogo_competir(db, f, max_baja):
     c1, c2, c3 = st.columns(3)
     c1.metric("Mi precio hoy", f"${f['Mi precio']:,.2f}")
     c2.metric("BuyBox rival", f"${f['BuyBox rival']:,.2f}")
-    c3.metric("Bajaría a", f"${esc['precio']:,.2f}", delta=f"-${esc['baja']:,.2f}", delta_color="off")
+    c3.metric("Peor caso", f"${esc['precio']:,.2f}", delta=f"-${max_baja:,.0f} vs BuyBox", delta_color="off")
     gan, mar, pzs = f["Utilidad / pieza"], f["Utilidad %"], int(f["Piezas"])
+    pierde = False
     if gan is None or pd.isna(gan):
         st.warning("Este SKU no tiene costo en Odoo: no puedo calcular la utilidad.")
     elif gan < 0:
-        st.error(estilo.d(f"Pierdes ${abs(gan):,.2f} por pieza ({mar:.1f}%). Con {pzs} piezas: pérdida de ${abs(f['Utilidad / pérdida total']):,.2f}."))
+        pierde = True
+        st.error(estilo.d(f"En el peor caso pierdes ${abs(gan):,.2f} por pieza ({mar:.1f}%). Con {pzs} piezas: pérdida de ${abs(f['Utilidad / pérdida total']):,.2f}."))
     else:
-        st.success(estilo.d(f"Ganas ${gan:,.2f} por pieza ({mar:.1f}%). Con {pzs} piezas: utilidad de ${f['Utilidad / pérdida total']:,.2f} "
+        st.success(estilo.d(f"En el peor caso ganas ${gan:,.2f} por pieza ({mar:.1f}%). Con {pzs} piezas: utilidad de ${f['Utilidad / pérdida total']:,.2f} "
                             f"y recibes ${f['Total a recibir']:,.2f}."))
 
-    if not esc["alcanza"]:
-        if esc["limite"] == "minimo":
-            st.error(estilo.d(f"Aun sin tope no se alcanza: el rival está por debajo de tu mínimo (${f['Mínimo']:,.2f})."))
-        else:
-            st.error(estilo.d(f"Con una baja máxima de ${max_baja:,.0f} no se logra pasar al rival. Sube el tope en la pantalla anterior."))
-        return
-
-    necesita_min = esc["precio"] < f["Mínimo"]
-    if necesita_min:
-        st.warning(estilo.d(f"Para que el bot pueda llegar a ${esc['precio']:,.2f}, el **mínimo de este SKU** pasaría de "
-                            f"${f['Mínimo']:,.2f} a ${esc['precio']:,.2f}."))
+    minimo = esc["minimo_actual"]
+    necesita = not esc["puede_ahora"]
+    if necesita:
+        st.warning(estilo.d(f"Hoy tu mínimo (${minimo:,.2f}) está por arriba del rival y el bot no puede ganarle. "
+                            f"Si apruebas, el mínimo pasa a ${esc['precio']:,.2f}: el bot podrá bajar hasta ahí, "
+                            "aunque normalmente se queda cerca del precio del rival."))
+    elif esc["precio"] < minimo:
+        st.info(estilo.d(f"El bot ya puede ganar. Se detendrá en tu mínimo (${minimo:,.2f}), que está por arriba de este peor caso. "
+                         "No hace falta cambiar nada."))
     else:
-        st.info("Tu mínimo ya permite esta baja. El bot la hará solo en su próxima corrida (cerca de 12 minutos). "
-                "No necesitas cambiar nada.")
-    a, b = st.columns(2)
-    if a.button("✅ Sí, estoy de acuerdo", type="primary", disabled=not necesita_min, width="stretch"):
-        antes = {"estatus": "ACTIVO", "regla": f["_regla"], "precio_minimo": round(float(f["Mínimo"]), 2), "precio_maximo": round(float(f["_max"]), 2)}
+        st.info("El bot ya puede ganar y tu mínimo cubre este peor caso. No hace falta cambiar nada.")
+
+    entiende = True
+    if necesita and pierde:
+        entiende = st.checkbox("Entiendo que podría vender con pérdida", key="cm_ok_perdida")
+    a_, b_ = st.columns(2)
+    if a_.button("✅ Sí, estoy de acuerdo", type="primary", disabled=(not necesita) or (not entiende), width="stretch"):
+        antes = {"estatus": "ACTIVO", "regla": f["_regla"], "precio_minimo": round(minimo, 2), "precio_maximo": round(float(f["_max"]), 2)}
         despues = dict(antes, precio_minimo=round(float(esc["precio"]), 2))
         cambio = {"id": int(f["_id"]), "sku": f["SKU"], "costo": float(f["_costo"] or 0), "antes": antes, "despues": despues}
         ok, msg = guardar_cambios(db, [cambio], "admin (Centro de Mando: competir)")
@@ -173,7 +175,7 @@ def _dialogo_competir(db, f, max_baja):
             st.rerun()
         else:
             st.error(msg)
-    if b.button("Cancelar", width="stretch"):
+    if b_.button("Cancelar", width="stretch"):
         st.rerun()
 
 

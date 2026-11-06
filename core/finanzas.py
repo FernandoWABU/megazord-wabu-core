@@ -21,18 +21,12 @@ def economia(precio, costo):
     return round(neto, 2), round(ganancia, 2), round(ganancia / costo_iva * 100, 1)
 
 
-def escenario_baja(precio_actual, precio_rival, precio_minimo, max_baja=15.0, rebaja_vs_rival=1.50):
-    """Precio al que bajaríamos para tomar el BuyBox, respetando el mínimo y un tope de baja.
-    Devuelve dict(precio, baja, alcanza, limite) con limite en {'ok', 'tope', 'minimo'}."""
-    ideal = round(precio_rival - rebaja_vs_rival, 2)
-    piso_tope = round(precio_actual - max_baja, 2)
-    precio = max(ideal, piso_tope, float(precio_minimo or 0))
-    precio = round(min(precio, precio_actual), 2)
-    alcanza = precio < precio_rival
-    if alcanza:
-        limite = "ok"
-    elif ideal < float(precio_minimo or 0):
-        limite = "minimo"   # ni sin tope de baja se podría ganar: el mínimo está por arriba
-    else:
-        limite = "tope"
-    return {"precio": precio, "baja": round(precio_actual - precio, 2), "alcanza": alcanza, "limite": limite}
+def escenario_baja(precio_actual, precio_rival, precio_minimo, max_baja=15.0):
+    """Peor caso aceptado para competir: quedar hasta `max_baja` pesos por DEBAJO del BuyBox del rival.
+    - piso: el precio más bajo que aceptaría (BuyBox - tope).
+    - puede_ahora: el mínimo actual ya deja al bot ponerse por debajo del rival.
+    - baja: cuánto bajaría mi precio actual para llegar al piso."""
+    piso = round(max(float(precio_rival) - float(max_baja), 0.01), 2)
+    puede_ahora = float(precio_minimo or 0) < float(precio_rival)
+    return {"precio": piso, "baja": round(float(precio_actual) - piso, 2),
+            "puede_ahora": puede_ahora, "minimo_actual": float(precio_minimo or 0)}

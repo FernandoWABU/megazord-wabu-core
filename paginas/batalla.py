@@ -60,7 +60,17 @@ def render():
     if lista.empty:
         st.warning("No hay SKUs activos.")
         return
-    et = {int(r.id): f"{r.sku_limpio} · {r.regla[:1]}" for r in lista.itertuples()}
+    q = st.text_input("🔍 Buscar", placeholder="SKU limpio, SKU Liverpool o SKU interno (sucio)", key="bat_q").strip().lower()
+    vis = lista
+    if q:
+        m = (lista.sku_limpio.astype(str).str.lower().str.contains(q, regex=False)
+             | lista.sku_liverpool.astype(str).str.lower().str.contains(q, regex=False)
+             | lista.sku_interno.astype(str).str.lower().str.contains(q, regex=False))
+        vis = lista[m]
+        if vis.empty:
+            st.warning("No encontré ese SKU entre los activos.")
+            return
+    et = {int(r.id): f"{r.sku_limpio} · LP {r.sku_liverpool} · {r.sku_interno} · R{r.regla[:1]}" for r in vis.itertuples()}
     c1, c2 = st.columns([3, 2])
     elegido = c1.selectbox("SKU", list(et), format_func=lambda i: et[i], key="bat_sku")
     horas = c2.radio("Ventana", [6, 24, 48, 168], index=1, horizontal=True, key="bat_h",
