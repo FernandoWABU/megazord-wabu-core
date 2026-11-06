@@ -2066,9 +2066,20 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
 # ==========================================
 # GUARDADO DE HISTORIAL SEGURO EN SQL
 # ==========================================
+# Filas "ruido" que ya no se guardan en historial_precios (SKU oculto/agotado, o primera/segunda lectura sin rivales).
+# Se apaga con la variable HISTORIAL_FILTRAR_RUIDO=0.
+HISTORIAL_RUIDO = {"Oculto/Agotado", "PRIMERA VEZ - SIN RIVAL", "DOBLE CHECK - SIN RIVAL"}
+HISTORIAL_FILTRAR_RUIDO = (os.getenv("HISTORIAL_FILTRAR_RUIDO") or "1").strip() != "0"
+
 def guardar_en_sql(filas):
     if MODO_SIMULACION: return
     if not filas: return
+    if HISTORIAL_FILTRAR_RUIDO:
+        total = len(filas)
+        filas = [f for f in filas if len(f) > 3 and str(f[3]) not in HISTORIAL_RUIDO]
+        if total != len(filas):
+            logger.info(f"🧹 Historial: {total - len(filas)} filas de ruido omitidas, {len(filas)} guardadas")
+        if not filas: return
     try:
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor() as cursor:
