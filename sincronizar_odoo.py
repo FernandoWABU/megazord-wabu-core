@@ -63,6 +63,7 @@ def sincronizar_costos():
     # FASE 1: EXTRAER COSTOS BÁSICOS DE ODOO
     # ==========================================
     costos_dict = {}
+    nombres_dict = {}   # {CODIGO: (nombre, costo)} -> tabla odoo_productos (para mostrar nombres en el dashboard)
     try:
         logger.info("🔵 Conectando a Odoo (Autenticando)...")
         common = xmlrpc.client.ServerProxy('{}/xmlrpc/2/common'.format(ODOO_URL))
@@ -80,7 +81,7 @@ def sincronizar_costos():
             ODOO_DB, uid, ODOO_PASSWORD,
             'product.product', 'search_read',
             [[('active', '=', True)]],
-            {'fields': ['default_code', 'standard_price']}
+            {'fields': ['default_code', 'name', 'standard_price']}
         )
         
         for p in productos_odoo:
@@ -88,6 +89,8 @@ def sincronizar_costos():
             costo = float(p.get('standard_price', 0.0))
             if sku:
                 costos_dict[sku] = costo
+            if p.get('default_code'):   # solo productos con código real (Odoo manda False si no tiene)
+                nombres_dict[sku] = (str(p.get('name') or '').strip(), costo)
                 
         logger.info(f"📦 {len(costos_dict)} productos base leídos desde Odoo.")
         
@@ -103,7 +106,23 @@ def sincronizar_costos():
         logger.info("🔵 Conectando a PostgreSQL (DBeaver)...")
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
-        
+
+        # Guarda nombres reales de Odoo para el dashboard (si falla, NO afecta la sincronización de costos)
+        try:
+            cursor.execute("""CREATE TABLE IF NOT EXISTS odoo_productos (
+                               default_code VARCHAR PRIMARY KEY, nombre TEXT, costo NUMERIC,
+                               actualizado TIMESTAMP DEFAULT NOW())""")
+            filas_nombres = [(codigo, n, c) for codigo, (n, c) in nombres_dict.items()]
+            cursor.executemany("""INSERT INTO odoo_productos (default_code, nombre, costo, actualizado)
+                                   VALUES (%s, %s, %s, NOW())
+                                   ON CONFLICT (default_code) DO UPDATE
+                                   SET nombre = EXCLUDED.nombre, costo = EXCLUDED.costo, actualizado = NOW()""", filas_nombres)
+            conn.commit()
+            logger.info(f"📛 {len(filas_nombres)} nombres de producto guardados en odoo_productos")
+        except Exception as e:
+            conn.rollback()
+            logger.warning(f"⚠️ No se pudieron guardar los nombres de Odoo (los costos siguen normal): {e}")
+
         # Leemos TODOS los registros por su id, usando sku_limpio
         cursor.execute("SELECT id, sku_limpio, costo_odoo FROM catalogo_maestro_v3 WHERE sku_limpio IS NOT NULL")
         catalogo_db = cursor.fetchall()
