@@ -52,6 +52,56 @@ def _resumen(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(filas).sort_values("Caída %")
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def _bitacora(_db, horas: int) -> pd.DataFrame:
+    desde = datetime.now(CDMX).replace(tzinfo=None) - timedelta(hours=horas)
+    return _db.execute_query("""
+        SELECT fecha_hora, sku_interno, regla, precio_api, precio_publico, rival1, rival1_nombre, rival2, rival3,
+               minimo, maximo, stock, accion, precio_enviado, put_ok, http_status
+        FROM bitacora_evento WHERE fecha_hora >= :d ORDER BY fecha_hora""", {"d": desde}, silencioso=True)
+
+
+def _seccion_bitacora(db):
+    estilo.titulo("📒 Bitácora del evento")
+    horas = st.radio("Ventana", [6, 24, 72], index=1, horizontal=True, key="ev_bit_h", format_func=lambda h: f"{h} h")
+    b = _bitacora(db, horas)
+    if b.empty:
+        st.info("Todavía no hay registros. El bot crea la tabla y empieza a anotar en la primera corrida con el bot nuevo "
+                "(solo SKUs con Regla 9; BITACORA_SOLO_REGLA9 = 0 en GitHub para anotar todos).")
+        return
+    for c in ("precio_api", "precio_publico", "rival1", "rival2", "rival3", "minimo", "maximo", "precio_enviado"):
+        b[c] = pd.to_numeric(b[c], errors="coerce")
+    puts = b[b.accion == "PUT"]
+    fallidos = puts[puts.put_ok == False]  # noqa: E712
+    ult = b.sort_values("fecha_hora").groupby("sku_interno").tail(1).copy()
+    ult["dif"] = (ult.precio_publico - ult.precio_api).round(2)
+    desfase = ult[ult.dif.notna() & (ult.dif.abs() > 0.005)]
+    k = st.columns(4)
+    estilo.kpi(k[0], "Lecturas", len(b), f"{b.sku_interno.nunique()} SKUs", "info")
+    estilo.kpi(k[1], "Cambios enviados", len(puts), "PUT a Liverpool", "info")
+    estilo.kpi(k[2], "Envíos con error", len(fallidos), "respuesta distinta de 200", "bad" if len(fallidos) else "ok")
+    estilo.kpi(k[3], "Público ≠ API", len(desfase), "cambio aún sin publicarse", "warn" if len(desfase) else "ok")
+
+    if len(desfase):
+        st.markdown("**SKUs cuyo precio público todavía no refleja el que mandamos**")
+        t = desfase[["sku_interno", "precio_api", "precio_publico", "dif", "fecha_hora"]].rename(columns={
+            "sku_interno": "SKU", "precio_api": "Precio en el API", "precio_publico": "Precio público", "dif": "Diferencia", "fecha_hora": "Última lectura"})
+        pesos = lambda x: st.column_config.NumberColumn(x, format="dollar")
+        st.dataframe(t, hide_index=True, width="stretch", column_config={
+            "Precio en el API": pesos("Precio en el API"), "Precio público": pesos("Precio público"), "Diferencia": pesos("Diferencia")})
+        st.caption("Si esta lista se vacía después de la hora en que Liverpool publica, el cambio sí entró.")
+
+    with st.expander("Detalle de lecturas"):
+        sku = st.selectbox("SKU", ["(todos)"] + sorted(b.sku_interno.unique().tolist()), key="ev_bit_sku")
+        d = b if sku == "(todos)" else b[b.sku_interno == sku]
+        d = d.sort_values("fecha_hora", ascending=False).head(300).rename(columns={
+            "fecha_hora": "Hora", "sku_interno": "SKU", "regla": "Regla", "precio_api": "API", "precio_publico": "Público",
+            "rival1": "Rival 1", "rival1_nombre": "Vendedor 1", "rival2": "Rival 2", "rival3": "Rival 3", "minimo": "Mín",
+            "maximo": "Máx", "stock": "Stock", "accion": "Acción", "precio_enviado": "Enviado", "put_ok": "OK", "http_status": "HTTP"})
+        money = {c: st.column_config.NumberColumn(c, format="dollar") for c in ("API", "Público", "Rival 1", "Rival 2", "Rival 3", "Mín", "Máx", "Enviado")}
+        st.dataframe(d, hide_index=True, width="stretch", column_config=money)
+
+
 def render():
     db = get_db()
     estilo.titulo("🎯 Eventos · Buen Fin")
@@ -96,6 +146,9 @@ def render():
             "Ganando %": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.0f%%"),
         })
         st.caption("Si 'Cerca del piso' sube rápido, sube el mínimo de esos SKUs o regresa a Gladiador.")
+
+    # ---- bitácora
+    _seccion_bitacora(db)
 
     # ---- checklist
     estilo.titulo("✅ Antes del evento")

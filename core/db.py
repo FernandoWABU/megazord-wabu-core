@@ -31,8 +31,8 @@ class PostgreSQLManager:
                 res = conn.execute(text(query), params or {})
                 return pd.DataFrame(res.fetchall(), columns=list(res.keys()))
         except Exception as e:
-            logger.error(f"Error en query: {e}")
             if not silencioso:
+                logger.error(f"Error en query: {e}")
                 st.warning(f"⚠️ Error consultando la base: {str(e)[:120]}")
             return pd.DataFrame()
 

@@ -1364,6 +1364,7 @@ def obtener_info_rivales(token, liverpool_sku, liverpool_product_id=None):
     Extrae PRECIO ACTUAL (no el tachado).
     """
     global STATS_PW
+    PRECIO_PUBLICO_PROPIO.pop(str(liverpool_sku), None)
     
     with CIRCUIT_LOCK:
         if STATS_PW["abortar"]:
@@ -1534,6 +1535,7 @@ def obtener_info_rivales(token, liverpool_sku, liverpool_product_id=None):
             for nombre_nuestro in TIENDA_NOMBRES:
                 if nombre_nuestro.upper() in rival['vendedor'].upper():
                     es_nuestro = True
+                    PRECIO_PUBLICO_PROPIO[str(liverpool_sku)] = rival['precio']
                     logger.info(f"🛡️ EXCLUIDO (NOMBRE): ${rival['precio']:.2f} - {rival['vendedor']}")
                     break
             
@@ -1633,6 +1635,10 @@ class ResultadosThreadSafe:
         self.ultimo_precio_conocido = {}
         self.max_precio_buybox_historico = {}
         self.ultimo_estado_conocido = {}
+        self.bitacora_rows = []
+
+    def agregar_bitacora(self, fila):
+        with self._lock: self.bitacora_rows.append(fila)
 
     # 🛡️ ALTO #2: Race Condition parchado con método thread-safe
     def obtener_precio_conocido(self, sku, default):
@@ -1658,6 +1664,33 @@ class ResultadosThreadSafe:
     def obtener_todos(self):
         with self._lock:
             return (list(self.historial_rows), list(self.archivo_negro_rows), list(self.alertas))
+
+# ==========================================
+# BITÁCORA DEL EVENTO (tabla bitacora_evento)
+# Una fila por SKU y por corrida: precio en el API, precio PÚBLICO que se ve en la página,
+# rivales, y si se mandó un PUT (con su respuesta). Sirve para saber si Liverpool publica los cambios.
+# BITACORA_EVENTO=0 la apaga. Por defecto solo registra SKUs con Regla 9 (BITACORA_SOLO_REGLA9=0 para todos).
+# ==========================================
+BITACORA_EVENTO = (os.getenv("BITACORA_EVENTO") or "1").strip() != "0"
+BITACORA_SOLO_REGLA9 = (os.getenv("BITACORA_SOLO_REGLA9") or "1").strip() != "0"
+_CTX = threading.local()
+PRECIO_PUBLICO_PROPIO = {}
+
+def guardar_bitacora(filas):
+    if MODO_SIMULACION or not filas: return
+    try:
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""CREATE TABLE IF NOT EXISTS bitacora_evento (
+                    id SERIAL PRIMARY KEY, fecha_hora TIMESTAMP, sku_interno TEXT, sku_liverpool TEXT, regla TEXT,
+                    precio_api NUMERIC, precio_publico NUMERIC, rival1 NUMERIC, rival1_nombre TEXT, rival2 NUMERIC, rival3 NUMERIC,
+                    minimo NUMERIC, maximo NUMERIC, stock INT, accion TEXT, precio_enviado NUMERIC, put_ok BOOLEAN, http_status INT)""")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_bitacora_evento_fecha ON bitacora_evento (fecha_hora)")
+                cur.executemany("""INSERT INTO bitacora_evento (fecha_hora, sku_interno, sku_liverpool, regla, precio_api, precio_publico,
+                    rival1, rival1_nombre, rival2, rival3, minimo, maximo, stock, accion, precio_enviado, put_ok, http_status)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""", filas)
+    except Exception as e:
+        logger.warning(f"⚠️ Bitácora del evento no guardada: {e}")
 
 # ==========================================
 # DISPARAR PRECIO
@@ -1696,6 +1729,7 @@ def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notifi
         print(f"📤 Response Body (primeros 300 chars): {response.text[:300]}", flush=True)
         logger.info(f"📤 PUT Response: {response.status_code} - {response.text[:100]}")
         
+        _CTX.put = {"ok": response.status_code in [200, 204], "status": response.status_code, "precio": float(nuevo_precio)}
         if response.status_code in [200, 204]:
             print(f"✅ Ajuste ejecutado: ${nuevo_precio}", flush=True)
             logger.info(f"✅ Ajuste ejecutado: {enmascarar_precio(nuevo_precio)}")
@@ -1706,6 +1740,7 @@ def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notifi
             return False
             
     except Exception as e:
+        _CTX.put = {"ok": False, "status": 0, "precio": float(nuevo_precio)}
         print(f"❌ Exception en disparar_precio: {e}", flush=True)
         print(f"❌ Traceback: {traceback.format_exc()}", flush=True)
         logger.error(f"❌ disparar_precio exception: {e}")
@@ -1715,7 +1750,7 @@ def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notifi
 # ==========================================
 # CEREBRO ESTRATÉGICO MULTI-CUENTA
 # ==========================================
-def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_config, session, id_cuenta):
+def _procesar_sku_core(token, sku_lp, regla, resultados, gc_client, hoja_config, session, id_cuenta):
     try:
         sku_i = str(regla.get('sku') or regla.get('sku_interno') or regla.get('SKU_Interno') or regla.get('SKU') or 'Sin SKU')
         estatus_regla = str(regla.get('estatus', '')).strip().upper()
@@ -1753,6 +1788,8 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
         logger.info(f"🔍 [{id_cuenta}] Escaneando {sku_display} | BB: {enmascarar_vendedor(info_rivales[0]['nombre'] if info_rivales else 'N/A')}")
 
         hora_actual_str = (datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
+        _CTX.info = {"rivales": info_rivales, "precio_api": precio_actual, "min": precio_minimo_regla,
+                     "max": precio_maximo_regla, "stock": cantidad}
         
         catalogo_id = regla.get('id')
         if catalogo_id:
@@ -1900,17 +1937,13 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
                             
                             # ✅ CASO 1: ATAQUE POSIBLE - Podemos bajar y competir dentro de mínimo
                             if nuevo_precio >= precio_minimo_regla:
-                                pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
-                                if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
-                                    resultados.agregar_historial([
-                                        hora_actual_str, sku_i, sku_lp, rival_mas_bajo, 
-                                        nuevo_precio, cantidad, pos, bb, id_cuenta
-                                    ])
-                                    with resultados._lock:
-                                        resultados.ultimo_estado_conocido[sku_i] = {
-                                            'hay_rivales': True,
-                                            'ciclo_anterior': 'ataque_ejecutado'
-                                        }
+                                # El envío a Liverpool y el historial se hacen UNA sola vez en el bloque común de abajo
+                                # (antes se enviaba aquí y otra vez abajo = doble PUT y doble fila de historial).
+                                with resultados._lock:
+                                    resultados.ultimo_estado_conocido[sku_i] = {
+                                        'hay_rivales': True,
+                                        'ciclo_anterior': 'ataque_ejecutado'
+                                    }
                             # ❌ CASO 2: NO PODEMOS VENCER AL #1 (MODO SOMBRA ACTIVADO)
                             else:
                                 # 🦇 MODO SOMBRA: Si no podemos vencer al #1, nos posicionamos cerca del #2
@@ -2062,6 +2095,35 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
 
     except Exception as e:
         logger.error(f"❌ Error en procesar_sku_threadsafe: {e}")
+
+
+def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_config, session, id_cuenta):
+    """Envoltura: corre la lógica del SKU y después anota la bitácora del evento (sin tocar la lógica)."""
+    _CTX.info = None
+    _CTX.put = None
+    _procesar_sku_core(token, sku_lp, regla, resultados, gc_client, hoja_config, session, id_cuenta)
+    if not BITACORA_EVENTO:
+        return
+    try:
+        info = getattr(_CTX, "info", None)
+        if not info:
+            return
+        tipo = str(regla.get('regla_estrategia', '')).strip()
+        if BITACORA_SOLO_REGLA9 and not tipo.startswith('9'):
+            return
+        sku_i = str(regla.get('sku') or regla.get('sku_interno') or 'Sin SKU')
+        riv = info["rivales"] or []
+        r = lambda i: float(riv[i]["precio"]) if len(riv) > i else None
+        put = getattr(_CTX, "put", None)
+        resultados.agregar_bitacora((
+            datetime.now() - timedelta(hours=6), sku_i, str(sku_lp), tipo[:40],
+            info["precio_api"], PRECIO_PUBLICO_PROPIO.get(str(sku_lp)),
+            r(0), (riv[0]["nombre"][:60] if riv else None), r(1), r(2),
+            info["min"], info["max"], info["stock"],
+            "PUT" if put else "SIN CAMBIO", (put or {}).get("precio"), (put or {}).get("ok"), (put or {}).get("status"),
+        ))
+    except Exception as e:
+        logger.warning(f"⚠️ Bitácora: {e}")
 
 # ==========================================
 # GUARDADO DE HISTORIAL SEGURO EN SQL
@@ -2357,6 +2419,7 @@ def ejecutar_bot():
     historial_rows, archivo_negro_rows, alertas = resultados.obtener_todos()
     for alerta in alertas: enviar_alerta_telegram(alerta)
     if historial_rows: guardar_en_sql(historial_rows)
+    if BITACORA_EVENTO and resultados.bitacora_rows: guardar_bitacora(list(resultados.bitacora_rows))
     if archivo_negro_rows and db:
         for rival_data in archivo_negro_rows:
             try: db.registrar_rival(*rival_data)
