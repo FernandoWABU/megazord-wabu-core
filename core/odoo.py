@@ -49,3 +49,36 @@ def _ref(tipo, items):
     if tipo == "combo":
         return "Combo de los códigos Odoo " + " + ".join(c for c, _ in items)
     return f"Código Odoo {items[0][0]}"
+
+
+# ---- Stock por almacén (tabla odoo_stock, la llena sincronizar_odoo.py) ----
+ALMACENES_CONTAR = ["01", "COPPEL", "MELI", "PRIVALIA", "WALMART", "WEB"]                       # <nombre>/EXISTENCIAS
+ALMACENES_IGNORAR = ["MALTRATADO", "MERMA", "VENCO", "MELIFULL", "LIVFULL"]
+
+
+def _almacen(ubicacion: str) -> str:
+    """'WH/MELI/Existencias' -> 'MELI' (toma el penúltimo tramo si el último es EXISTENCIAS)."""
+    partes = [p.strip().upper() for p in str(ubicacion or "").split("/") if p.strip()]
+    if len(partes) >= 2 and partes[-1] == "EXISTENCIAS":
+        return partes[-2]
+    return partes[-1] if partes else ""
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def cargar_stock(_db) -> pd.DataFrame:
+    """Filas: default_code, almacen, cantidad (solo ubicaciones internas con nombre reconocible). Vacío si no existe la tabla."""
+    df = _db.execute_query("SELECT default_code, ubicacion, cantidad FROM odoo_stock", silencioso=True)
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["default_code", "almacen", "cantidad"])
+    df["default_code"] = df.default_code.astype(str).str.strip().str.upper()
+    df["almacen"] = df.ubicacion.apply(_almacen)
+    df["cantidad"] = pd.to_numeric(df.cantidad, errors="coerce").fillna(0.0)
+    return df[["default_code", "almacen", "cantidad"]]
+
+
+def unidades_disponibles(sku_limpio: str, stock_codigo: dict) -> int:
+    """Cuántas unidades vendibles del SKU salen de las piezas sueltas: HNAU/2 con 5 piezas = 2 paquetes; combo = mínimo de sus partes."""
+    _, items = descomponer(sku_limpio)
+    if not items:
+        return 0
+    return int(max(0, min(int(stock_codigo.get(c, 0) // n) for c, n in items)))

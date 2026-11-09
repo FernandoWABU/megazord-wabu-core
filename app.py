@@ -11,11 +11,12 @@ if not auth.modo():
     auth.pantalla_login()
     st.stop()
 
-from paginas import centro_mando, batalla, catalogo, eventos  # noqa: E402
+from paginas import centro_mando, batalla, catalogo, eventos, full  # noqa: E402
 
 paginas = [
     st.Page(centro_mando.render, title="Centro de Mando", icon="🏠", url_path="centro", default=True),
     st.Page(batalla.render, title="Batalla", icon="⚔️", url_path="batalla"),
+    st.Page(full.render, title="Full", icon="📦", url_path="full"),
 ]
 if auth.es_admin():
     paginas += [

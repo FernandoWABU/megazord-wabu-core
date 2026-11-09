@@ -63,6 +63,8 @@ def sincronizar_costos():
     # FASE 1: EXTRAER COSTOS BÁSICOS DE ODOO
     # ==========================================
     costos_dict = {}
+    codigo_por_id = {}  # id de producto Odoo -> código (para el stock por almacén)
+    stock_filas = []    # (codigo, ubicación, cantidad, reservado)
     nombres_dict = {}   # {CODIGO: (nombre, costo)} -> tabla odoo_productos (para mostrar nombres en el dashboard)
     try:
         logger.info("🔵 Conectando a Odoo (Autenticando)...")
@@ -81,7 +83,7 @@ def sincronizar_costos():
             ODOO_DB, uid, ODOO_PASSWORD,
             'product.product', 'search_read',
             [[('active', '=', True)]],
-            {'fields': ['default_code', 'name', 'standard_price']}
+            {'fields': ['id', 'default_code', 'name', 'standard_price']}
         )
         
         for p in productos_odoo:
@@ -91,8 +93,26 @@ def sincronizar_costos():
                 costos_dict[sku] = costo
             if p.get('default_code'):   # solo productos con código real (Odoo manda False si no tiene)
                 nombres_dict[sku] = (str(p.get('name') or '').strip(), costo)
+                codigo_por_id[p['id']] = sku
                 
         logger.info(f"📦 {len(costos_dict)} productos base leídos desde Odoo.")
+
+        # Stock por ubicación (solo lectura). Si falla, NO afecta la sincronización de costos.
+        try:
+            quants = models.execute_kw(
+                ODOO_DB, uid, ODOO_PASSWORD, 'stock.quant', 'search_read',
+                [[('location_id.usage', '=', 'internal')]],
+                {'fields': ['product_id', 'location_id', 'quantity', 'reserved_quantity']}
+            )
+            for q in quants:
+                pid = q['product_id'][0] if q.get('product_id') else None
+                codigo = codigo_por_id.get(pid)
+                if not codigo or not q.get('location_id'):
+                    continue
+                stock_filas.append((codigo, str(q['location_id'][1]).strip(), float(q.get('quantity') or 0), float(q.get('reserved_quantity') or 0)))
+            logger.info(f"🏬 {len(stock_filas)} registros de stock por ubicación leídos desde Odoo.")
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudo leer el stock de Odoo (los costos siguen normal): {e}")
         
     except Exception as e:
         logger.error(f"❌ Error conectando o leyendo de Odoo: {e}")
@@ -122,6 +142,24 @@ def sincronizar_costos():
         except Exception as e:
             conn.rollback()
             logger.warning(f"⚠️ No se pudieron guardar los nombres de Odoo (los costos siguen normal): {e}")
+
+        # Stock por ubicación: se reemplaza completo en cada corrida (si no se pudo leer, se conserva el anterior)
+        if stock_filas:
+            try:
+                cursor.execute("""CREATE TABLE IF NOT EXISTS odoo_stock (
+                                   default_code VARCHAR NOT NULL, ubicacion VARCHAR NOT NULL, cantidad NUMERIC, reservado NUMERIC,
+                                   actualizado TIMESTAMP DEFAULT NOW(), PRIMARY KEY (default_code, ubicacion))""")
+                cursor.execute("DELETE FROM odoo_stock")
+                agregado = {}
+                for codigo, ubic, cant, res in stock_filas:
+                    a = agregado.setdefault((codigo, ubic), [0.0, 0.0]); a[0] += cant; a[1] += res
+                cursor.executemany("INSERT INTO odoo_stock (default_code, ubicacion, cantidad, reservado, actualizado) VALUES (%s, %s, %s, %s, NOW())",
+                                   [(c, u, v[0], v[1]) for (c, u), v in agregado.items()])
+                conn.commit()
+                logger.info(f"🏬 {len(agregado)} filas guardadas en odoo_stock")
+            except Exception as e:
+                conn.rollback()
+                logger.warning(f"⚠️ No se pudo guardar el stock de Odoo (los costos siguen normal): {e}")
 
         # Leemos TODOS los registros por su id, usando sku_limpio
         cursor.execute("SELECT id, sku_limpio, costo_odoo FROM catalogo_maestro_v3 WHERE sku_limpio IS NOT NULL")
