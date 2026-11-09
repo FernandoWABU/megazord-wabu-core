@@ -18,7 +18,7 @@ CDMX = ZoneInfo("America/Mexico_City")
 def _estado_activos(_db) -> pd.DataFrame:
     """Última lectura de cada SKU ACTIVO (usa el índice cuenta+sku+fecha)."""
     df = _db.execute_query("""
-        SELECT c.id, c.sku_limpio, c.sku_interno, c.id_cuenta, c.regla_estrategia AS regla,
+        SELECT c.id, c.sku_limpio, c.sku_interno, c.sku_liverpool, c.id_cuenta, c.regla_estrategia AS regla,
                c.precio_minimo, c.precio_maximo, c.costo_odoo, c.stock AS stock_cat,
                h.fecha_hora, h.precio_rival, h.nuestro_precio, h.posicion, h.buybox, h.stock AS stock_lectura
         FROM catalogo_maestro_v3 c
@@ -84,7 +84,7 @@ def _tabla_perdiendo(db, df):
         esc = escenario_baja(r.nuestro_precio, r.precio_rival, r.precio_minimo, max_baja)
         neto, gan, mar = economia(esc["precio"], r.costo_odoo)
         filas.append({
-            "SKU": r.sku_limpio, "Producto": describir(r.sku_limpio, nombres)["titulo"] if nombres else "—",
+            "SKU": r.sku_limpio, "SKU Liverpool": str(r.sku_liverpool or ""), "Producto": describir(r.sku_limpio, nombres)["titulo"] if nombres else "—",
             "Piezas": r.piezas, "Mi precio": r.nuestro_precio, "BuyBox rival": r.precio_rival,
             "Peor caso (BuyBox − tope)": esc["precio"], "Baja vs mi precio": esc["baja"],
             "¿Bot puede ganar ya?": "✅ Sí" if esc["puede_ahora"] else "❌ Mínimo lo impide",
