@@ -60,7 +60,7 @@ def _stock_buybox(_db) -> pd.DataFrame:
     try:
         df = _db.execute_query("""SELECT DISTINCT ON (sku_liverpool) sku_liverpool, vendedor, stock, estado, medido_en
                                   FROM stock_buybox WHERE sku_liverpool <> '__BLOQUEO__'
-                                  ORDER BY sku_liverpool, medido_en DESC""")
+                                  ORDER BY sku_liverpool, medido_en DESC""", silencioso=True)
         return df if df is not None else pd.DataFrame()
     except Exception:
         return pd.DataFrame()     # la tabla aún no existe (nadie ha corrido el módulo)
@@ -70,7 +70,7 @@ def _stock_buybox(_db) -> pd.DataFrame:
 def _bloqueo_activo(_db, horas: int = 3) -> bool:
     try:
         df = _db.execute_query("""SELECT 1 AS x FROM stock_buybox WHERE sku_liverpool = '__BLOQUEO__'
-                                  AND medido_en > (now() AT TIME ZONE 'America/Mexico_City') - interval '%d hours' LIMIT 1""" % int(horas))
+                                  AND medido_en > (now() AT TIME ZONE 'America/Mexico_City') - interval '%d hours' LIMIT 1""" % int(horas), silencioso=True)
         return df is not None and len(df) > 0
     except Exception:
         return False
