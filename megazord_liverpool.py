@@ -1386,6 +1386,7 @@ def obtener_info_rivales(token, liverpool_sku, liverpool_product_id=None):
     """
     global STATS_PW
     PRECIO_PUBLICO_PROPIO.pop(str(liverpool_sku), None)
+    _CTX.pubs = []   # todos los precios propios (Precio Genial) vistos en la página, por hilo
     
     with CIRCUIT_LOCK:
         if STATS_PW["abortar"]:
@@ -1582,6 +1583,8 @@ def obtener_info_rivales(token, liverpool_sku, liverpool_product_id=None):
                 if nombre_nuestro.upper() in rival['vendedor'].upper():
                     es_nuestro = True
                     PRECIO_PUBLICO_PROPIO[str(liverpool_sku)] = rival['precio']
+                    try: _CTX.pubs.append(float(rival['precio']))
+                    except Exception: pass
                     logger.info(f"🛡️ EXCLUIDO (NOMBRE): ${rival['precio']:.2f} - {rival['vendedor']}")
                     break
             
@@ -1741,6 +1744,86 @@ def guardar_bitacora(filas):
 # ==========================================
 # DISPARAR PRECIO
 # ==========================================
+
+# ==========================================
+# GUARDIA ANTI FALSO MONOPOLIO (Regla 9)
+# REGLA9_GUARDIA_SIN_RIVAL_HORAS=0 la apaga. Por defecto 6 horas.
+# ==========================================
+try:
+    REGLA9_GUARDIA_HORAS = float(os.getenv("REGLA9_GUARDIA_SIN_RIVAL_HORAS") or "6")
+except ValueError:
+    REGLA9_GUARDIA_HORAS = 6.0
+
+def hubo_rivales_recientes(id_cuenta, sku_interno, horas):
+    """True si en las últimas `horas` el historial guardó un precio de rival numérico para este SKU.
+    Ante cualquier error de BD responde True (lo seguro es NO subir al máximo)."""
+    if MODO_SIMULACION or not horas or horas <= 0:
+        return False
+    try:
+        desde = (datetime.now() - timedelta(hours=6 + float(horas))).strftime("%Y-%m-%d %H:%M:%S")
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM historial_precios WHERE id_cuenta = %s AND sku_interno = %s "
+                    "AND fecha_hora >= %s AND precio_rival ~ '^[0-9]+(\\.[0-9]+)?$' LIMIT 1",
+                    (str(id_cuenta), str(sku_interno), desde))
+                return cur.fetchone() is not None
+    except Exception as e:
+        logger.warning(f"⚠️ Guardia sin-rival: error de BD ({e}); se asume que había rivales")
+        return True
+
+
+# ==========================================
+# REBASE AL PRECIO PUBLICADO (Regla 9)
+# Liverpool publica una vez al día (~00:20). Cuando el precio público propio cambia respecto a la lectura anterior,
+# el precio de la API se regresa al publicado y los Hachazos arrancan desde ahí (no desde donde ya iban sin publicarse).
+# REGLA9_REBASE_PUBLICADO=0 lo apaga.
+# ==========================================
+REGLA9_REBASE_PUBLICADO = (os.getenv("REGLA9_REBASE_PUBLICADO") or "1").strip() != "0"
+
+def pub_de_la_fila(id_cuenta, sku_interno, candidatos):
+    """Si la página trae VARIAS ofertas propias (p. ej. Full y almacén comparten SKU de Liverpool), elige la que es de
+    esta fila: la que coincide con un precio que esta fila tuvo en la API en las últimas 72 h. Ambigua o sin
+    coincidencia -> None (no se hace rebase)."""
+    cands = sorted({round(float(c), 2) for c in (candidatos or [])})
+    if not cands:
+        return None
+    if len(cands) == 1:
+        return cands[0]
+    if MODO_SIMULACION:
+        return None
+    try:
+        desde = (datetime.now() - timedelta(hours=6 + 72)).strftime("%Y-%m-%d %H:%M:%S")
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT DISTINCT nuestro_precio::numeric FROM historial_precios WHERE id_cuenta = %s AND sku_interno = %s "
+                    "AND fecha_hora >= %s AND nuestro_precio ~ '^[0-9]+(\\.[0-9]+)?$'",
+                    (str(id_cuenta), str(sku_interno), desde))
+                propios = {round(float(r[0]), 2) for r in cur.fetchall()}
+        coinciden = [c for c in cands if c in propios]
+        return coinciden[0] if len(coinciden) == 1 else None
+    except Exception as e:
+        logger.warning(f"⚠️ pub_de_la_fila: {e}")
+        return None
+
+def publicacion_nueva(sku_interno, pub_actual):
+    """True si el precio público propio cambió respecto a la última lectura guardada en la bitácora."""
+    if MODO_SIMULACION or pub_actual is None:
+        return False
+    try:
+        with psycopg2.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT precio_publico FROM bitacora_evento WHERE sku_interno = %s "
+                            "AND precio_publico IS NOT NULL ORDER BY fecha_hora DESC LIMIT 1", (str(sku_interno),))
+                fila = cur.fetchone()
+        if not fila or fila[0] is None:
+            return False
+        return abs(float(fila[0]) - float(pub_actual)) >= 0.005
+    except Exception as e:
+        logger.warning(f"⚠️ Rebase: no se pudo leer la bitácora ({e}); no se hace rebase")
+        return False
+
 def disparar_precio(token, offer_id, stock, base_price, nuevo_precio, sku_notificacion=""):
     url = "https://pro-api.liverpool.com.mx/api/offermanagement/offers/price-quantity"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "shopid": SHOP_ID_INTERNO}
@@ -1884,6 +1967,17 @@ def _procesar_sku_core(token, sku_lp, regla, resultados, gc_client, hoja_config,
                     resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, precios_rivales[0] if precios_rivales else "SIN RIVAL", precio_actual, cantidad, pos, f"{bb} | 🧊 Congelado pre-corte", id_cuenta])
                     return
 
+                # 📌 REBASE: si acaba de publicarse un precio nuevo, los Hachazos arrancan desde el precio publicado
+                precio_api_real = precio_actual
+                _pub = pub_de_la_fila(id_cuenta, sku_i, getattr(_CTX, "pubs", None))
+                _CTX.pub_fila = _pub
+                if REGLA9_REBASE_PUBLICADO:
+                    if _pub and precio_minimo_regla <= _pub <= precio_maximo_regla \
+                            and abs(_pub - precio_actual) >= 0.005 and publicacion_nueva(sku_i, _pub):
+                        logger.info(f"📌 [{sku_i}] Precio nuevo publicado ${_pub:.2f} (API estaba en ${precio_actual:.2f}): "
+                                    f"los Hachazos arrancan desde ${_pub:.2f}")
+                        precio_actual = _pub
+
                 # 🔁 DOBLE CHECK (sin rivales): reconsulta antes de declarar monopolio
                 if not precios_rivales:
                     time.sleep(3)
@@ -1918,13 +2012,21 @@ def _procesar_sku_core(token, sku_lp, regla, resultados, gc_client, hoja_config,
                             nuevo_precio = precio_actual
                             motivo = "🛑 Alerta Roja (Perdida BB)"
                 else:
-                    nuevo_precio = precio_maximo_regla
-                    motivo = "👑 Monopolio (confirmado en 2 consultas)"
+                    # 🛡️ GUARDIA ANTI FALSO MONOPOLIO: si hace pocas horas SÍ había rivales, una lectura vacía
+                    # es casi seguro una falla de lectura de Liverpool (el 10-nov 08:20 le pasó a los 29 SKUs a la vez
+                    # y todos se mandaron al máximo). En ese caso se conserva el precio actual.
+                    if hubo_rivales_recientes(id_cuenta, sku_i, REGLA9_GUARDIA_HORAS):
+                        nuevo_precio = precio_actual
+                        motivo = f"🛑 Sin rivales sospechoso (había rivales hace <{REGLA9_GUARDIA_HORAS:g} h): se mantiene el precio"
+                        logger.warning(f"🛑 [{sku_i}] lectura sin rivales pero hubo rivales recientes → no se sube al máximo")
+                    else:
+                        nuevo_precio = precio_maximo_regla
+                        motivo = "👑 Monopolio (confirmado en 2 consultas)"
                     
                 nuevo_precio = max(nuevo_precio, precio_minimo_regla)
                 nuevo_precio = min(nuevo_precio, precio_maximo_regla)
                 
-                if float(precio_actual) != float(nuevo_precio):
+                if float(precio_api_real) != float(nuevo_precio):
                     pos, bb = calcular_posicion_buybox(precios_rivales, nuevo_precio)
                     if disparar_precio(token, offer_id, cantidad, base_price, nuevo_precio, sku_i):
                         resultados.agregar_historial([hora_actual_str, sku_i, sku_lp, rival_mas_bajo if precios_rivales else "SIN RIVAL", nuevo_precio, cantidad, pos, f"{bb} | {motivo}", id_cuenta])
@@ -2194,6 +2296,7 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
     """Envoltura: corre la lógica del SKU y después anota la bitácora del evento (sin tocar la lógica)."""
     _CTX.info = None
     _CTX.put = None
+    _CTX.pub_fila = None
     if PARES_FULL_ALMACEN and not _es_fbl(regla):
         with _PARES_LOCK:
             par = PARES_FULL.get((str(id_cuenta), str(sku_lp)))
@@ -2229,7 +2332,7 @@ def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_co
         put = getattr(_CTX, "put", None)
         resultados.agregar_bitacora((
             datetime.now() - timedelta(hours=6), sku_i, str(sku_lp), tipo[:40],
-            info["precio_api"], PRECIO_PUBLICO_PROPIO.get(str(sku_lp)),
+            info["precio_api"], (getattr(_CTX, "pub_fila", None) or PRECIO_PUBLICO_PROPIO.get(str(sku_lp))),
             r(0), (riv[0]["nombre"][:60] if riv else None), r(1), r(2),
             info["min"], info["max"], info["stock"],
             "PUT" if put else "SIN CAMBIO", (put or {}).get("precio"), (put or {}).get("ok"), (put or {}).get("status"),
