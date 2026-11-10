@@ -1,8 +1,10 @@
 # Centro de Mando: estado general y "qué necesita atención hoy".
+import os
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import requests
 import streamlit as st
 
 from core import auth, estilo
@@ -52,6 +54,75 @@ def _tokens(_db) -> pd.DataFrame:
                                 FROM cuentas_liverpool WHERE is_active = TRUE ORDER BY id_cuenta""")
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def _stock_buybox(_db) -> pd.DataFrame:
+    """Última medición del stock del vendedor con la BuyBox, por sku_liverpool (módulo aparte)."""
+    try:
+        df = _db.execute_query("""SELECT DISTINCT ON (sku_liverpool) sku_liverpool, vendedor, stock, estado, medido_en
+                                  FROM stock_buybox WHERE sku_liverpool <> '__BLOQUEO__'
+                                  ORDER BY sku_liverpool, medido_en DESC""")
+        return df if df is not None else pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()     # la tabla aún no existe (nadie ha corrido el módulo)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _bloqueo_activo(_db, horas: int = 3) -> bool:
+    try:
+        df = _db.execute_query("""SELECT 1 AS x FROM stock_buybox WHERE sku_liverpool = '__BLOQUEO__'
+                                  AND medido_en > (now() AT TIME ZONE 'America/Mexico_City') - interval '%d hours' LIMIT 1""" % int(horas))
+        return df is not None and len(df) > 0
+    except Exception:
+        return False
+
+
+def _boton_medir_stock(db, tabla):
+    """Dispara el workflow aparte 'Medir stock BuyBox' (solo admin). Lote chico y con frenos para cuidar la IP."""
+    if not auth.es_admin():
+        return
+    MIN_H, LOTE = 2, 12
+    ahora = datetime.now(CDMX).replace(tzinfo=None)
+    pendientes = []
+    for sku, med in zip(tabla["SKU Liverpool"], tabla["_medido_en"]):
+        if not sku:
+            continue
+        if pd.isna(med) or (ahora - pd.to_datetime(med)).total_seconds() / 3600 >= MIN_H:
+            if sku not in pendientes:
+                pendientes.append(sku)
+    lote = pendientes[:LOTE]
+    token = os.getenv("GITHUB_TOKEN")
+    repo = os.getenv("GITHUB_REPO", "FernandoWABU/megazord-wabu-core")
+    rama = os.getenv("GITHUB_RAMA", "main")
+
+    bloqueado = _bloqueo_activo(db)
+    ult = st.session_state.get("cm_medir_ts")
+    reciente = ult is not None and (datetime.now() - ult).total_seconds() < 600
+
+    if bloqueado:
+        st.warning("⛔ Liverpool frenó la última corrida. Se pausa la medición 3 horas para cuidar la IP.")
+    if not token:
+        st.caption("Para medir desde aquí falta el secreto GITHUB_TOKEN en Streamlit Cloud (permiso Actions: write).")
+    texto = f"📦 Medir stock del vendedor BuyBox ({len(lote)} de {len(pendientes)} pendientes)"
+    if st.button(texto, key="cm_btn_medir", disabled=bool(bloqueado or not token or not lote or reciente),
+                 help=f"Mide como máximo {LOTE} SKUs por corrida, los que pierden BuyBox, con pausas y freno automático. "
+                      f"No se vuelve a medir un SKU medido hace menos de {MIN_H} h."):
+        try:
+            r = requests.post(
+                f"https://api.github.com/repos/{repo}/actions/workflows/medir_stock_buybox.yml/dispatches",
+                headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+                json={"ref": rama, "inputs": {"skus": ",".join(lote), "lote": str(len(lote)), "forzar": "0"}},
+                timeout=20)
+            if r.status_code == 204:
+                st.session_state["cm_medir_ts"] = datetime.now()
+                st.success(f"Corrida enviada con {len(lote)} SKUs. Tarda unos {max(1, len(lote) // 4 + 1)}-{len(lote) + 2} min; usa Actualizar ahora al terminar.")
+            else:
+                st.error(f"GitHub respondió {r.status_code}: {r.text[:160]}")
+        except Exception as e:  # noqa: BLE001
+            st.error(f"No se pudo enviar la corrida: {e}")
+    elif reciente:
+        st.caption("Ya enviaste una corrida hace menos de 10 min; espera a que termine.")
+
+
 def _humano(minutos: float) -> str:
     if minutos is None or pd.isna(minutos):
         return "—"
@@ -79,20 +150,34 @@ def _tabla_perdiendo(db, df):
         return
 
     nombres = cargar_nombres(db)
+    sb = _stock_buybox(db)
+    sb_map = {str(x.sku_liverpool): x for x in sb.itertuples()} if sb is not None and not sb.empty else {}
+    ahora_cm = datetime.now(CDMX).replace(tzinfo=None)
     filas = []
     for r in perdiendo.itertuples():
+        m = sb_map.get(str(r.sku_liverpool or ""))
+        if m is not None:
+            edad = _humano((ahora_cm - pd.to_datetime(m.medido_en)).total_seconds() / 60)
+            ok = str(m.estado or "").startswith("OK")
+            stock_bb = int(m.stock) if ok and pd.notna(m.stock) else None
+            medicion = edad if ok else f"no medible · {edad}"
+            vend_bb = m.vendedor or "—"
+            medido_en = m.medido_en
+        else:
+            stock_bb, medicion, vend_bb, medido_en = None, "sin medir", "—", None
         esc = escenario_baja(r.nuestro_precio, r.precio_rival, r.precio_minimo, max_baja)
         neto, gan, mar = economia(esc["precio"], r.costo_odoo)
         filas.append({
-            "SKU": r.sku_limpio, "SKU Liverpool": str(r.sku_liverpool or ""), "Canal": ("Full" if str(r.sku_interno).upper().endswith("-FBL") else "Almacén"), "Producto": describir(r.sku_limpio, nombres)["titulo"] if nombres else "—",
-            "Piezas": r.piezas, "Mi precio": r.nuestro_precio, "BuyBox rival": r.precio_rival,
+            "SKU": r.sku_limpio, "SKU Liverpool": str(r.sku_liverpool or ""), "Canal": ("Full" if str(r.sku_interno).upper().endswith("-FBL") else "Almacén"), "Lugar": str(r.posicion or "—"), "Producto": describir(r.sku_limpio, nombres)["titulo"] if nombres else "—",
+            "Piezas": r.piezas, "Stock BuyBox": stock_bb, "Vendedor BuyBox": vend_bb, "Medición": medicion,
+            "Mi precio": r.nuestro_precio, "BuyBox rival": r.precio_rival,
             "Peor caso (BuyBox − tope)": esc["precio"], "Baja vs mi precio": esc["baja"],
             "¿Bot puede ganar ya?": "✅ Sí" if esc["puede_ahora"] else "❌ Mínimo lo impide",
             "Utilidad / pieza": gan, "Utilidad %": mar,
             "Total a recibir": round(neto * r.piezas, 2) if neto is not None else None,
             "Utilidad / pérdida total": round(gan * r.piezas, 2) if gan is not None else None,
             "Mínimo": r.precio_minimo, "_id": int(r.id), "_regla": r.regla, "_max": r.precio_maximo,
-            "_esc": esc, "_costo": r.costo_odoo,
+            "_esc": esc, "_costo": r.costo_odoo, "_medido_en": medido_en,
         })
     tabla = pd.DataFrame(filas).sort_values("Utilidad / pérdida total", ascending=False, na_position="last").reset_index(drop=True)
 
@@ -105,6 +190,7 @@ def _tabla_perdiendo(db, df):
         column_config={
             "Producto": st.column_config.TextColumn(width="medium"),
             "Piezas": st.column_config.NumberColumn(format="%d"),
+            "Stock BuyBox": st.column_config.NumberColumn("Stock BuyBox", format="%d", help="Piezas que tiene el vendedor que hoy tiene la BuyBox (método del carrito). Vacío = sin medir o no medible."),
             "Mi precio": pesos("Mi precio"), "BuyBox rival": pesos("BuyBox rival"),
             "Peor caso (BuyBox − tope)": pesos("Peor caso (BuyBox − tope)"), "Baja vs mi precio": pesos("Baja vs mi precio"),
             "Utilidad / pieza": pesos("Utilidad / pieza"),
@@ -118,6 +204,8 @@ def _tabla_perdiendo(db, df):
                         f"${tabla['Total a recibir'].sum(skipna=True):,.2f} · utilidad/pérdida ${total_util:,.2f}. "
                         "Utilidad con la fórmula del bot (comisión 17%, envío $130, retenciones). "
                         "Selecciona una fila para evaluar."))
+
+    _boton_medir_stock(db, tabla)
 
     filas_sel = sel.selection.rows if sel and sel.selection else []
     if filas_sel:
