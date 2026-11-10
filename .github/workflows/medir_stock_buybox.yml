@@ -1,0 +1,41 @@
+name: Medir stock BuyBox
+
+# Solo se dispara A MANO o desde el boton del dashboard. NO tiene cron.
+# No toca el barrido de Megazord (workflow aparte, secretos propios minimos).
+on:
+  workflow_dispatch:
+    inputs:
+      skus:
+        description: "sku_liverpool separados por coma (vacio = automatico: los que pierden BuyBox)"
+        required: false
+        default: ""
+      lote:
+        description: "Maximo de SKUs en esta corrida"
+        required: false
+        default: "12"
+      forzar:
+        description: "1 = medir aunque se haya medido hace poco"
+        required: false
+        default: "0"
+
+concurrency:
+  group: medir-stock-buybox
+  cancel-in-progress: false
+
+jobs:
+  medir:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests psycopg2-binary
+      - name: Medir stock del vendedor con la BuyBox
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SKUS: ${{ github.event.inputs.skus }}
+          LOTE: ${{ github.event.inputs.lote }}
+          FORZAR: ${{ github.event.inputs.forzar }}
+        run: python medir_stock_buybox.py
