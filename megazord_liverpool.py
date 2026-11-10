@@ -2017,8 +2017,8 @@ def _procesar_sku_core(token, sku_lp, regla, resultados, gc_client, hoja_config,
                     # y todos se mandaron al máximo). En ese caso se conserva el precio actual.
                     if hubo_rivales_recientes(id_cuenta, sku_i, REGLA9_GUARDIA_HORAS):
                         nuevo_precio = precio_actual
-                        motivo = f"🛑 Sin rivales sospechoso (había rivales hace <{REGLA9_GUARDIA_HORAS:g} h): se mantiene el precio"
-                        logger.warning(f"🛑 [{sku_i}] lectura sin rivales pero hubo rivales recientes → no se sube al máximo")
+                        motivo = "🛑 Sin rivales dudoso: sin cambio"
+                        logger.warning(f"🛑 [{sku_i}] lectura sin rivales pero hubo rivales hace <{REGLA9_GUARDIA_HORAS:g} h → se mantiene el precio, no se sube al máximo")
                     else:
                         nuevo_precio = precio_maximo_regla
                         motivo = "👑 Monopolio (confirmado en 2 consultas)"
@@ -2357,6 +2357,21 @@ def guardar_en_sql(filas):
         if total != len(filas):
             logger.info(f"🧹 Historial: {total - len(filas)} filas de ruido omitidas, {len(filas)} guardadas")
         if not filas: return
+    # Red de seguridad: un solo texto largo hacía fallar TODO el lote (10-nov 15:57, columnas VARCHAR(50)).
+    # Se recorta cada texto al largo de su columna: id_cuenta 20, sku 100, el resto 50.
+    _LIMITES = {1: 100, 2: 100, 3: 50, 4: 50, 5: 50, 6: 50, 7: 50, 8: 20}
+    _recortadas = 0
+    _limpias = []
+    for f in filas:
+        f = list(f)
+        for i, lim in _LIMITES.items():
+            if i < len(f) and isinstance(f[i], str) and len(f[i]) > lim:
+                f[i] = f[i][:lim]
+                _recortadas += 1
+        _limpias.append(tuple(f))
+    filas = _limpias
+    if _recortadas:
+        logger.warning(f"✂️ Historial: {_recortadas} textos recortados al largo de su columna")
     try:
         with psycopg2.connect(DATABASE_URL) as conn:
             with conn.cursor() as cursor:
