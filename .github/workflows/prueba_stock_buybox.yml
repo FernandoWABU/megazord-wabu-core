@@ -1,0 +1,32 @@
+name: Prueba stock BuyBox (manual)
+
+# Solo se dispara A MANO (Actions -> "Prueba stock BuyBox (manual)" -> Run workflow).
+# No tiene cron: no corre solo.
+on:
+  workflow_dispatch:
+    inputs:
+      skus:
+        description: "SKUs de Liverpool separados por coma (vacio = los 4 de prueba)"
+        required: false
+        default: "1190647591,1131319611,1114048565,1193494401"
+
+concurrency:
+  group: prueba-stock-buybox
+  cancel-in-progress: false
+
+jobs:
+  medir:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: IP de salida del runner (solo informativo)
+        run: curl -s https://api.ipify.org || true
+      - name: Medir stock
+        env:
+          SKUS: ${{ github.event.inputs.skus }}
+        run: python prueba_stock_buybox_v3.py
