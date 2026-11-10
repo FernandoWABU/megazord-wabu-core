@@ -70,7 +70,7 @@ def render():
         if vis.empty:
             st.warning("No encontré ese SKU entre los activos.")
             return
-    et = {int(r.id): f"{r.sku_limpio} · LP {r.sku_liverpool} · {r.sku_interno} · R{r.regla[:1]}" for r in vis.itertuples()}
+    et = {int(r.id): f"{r.sku_limpio} · LP {r.sku_liverpool} · {'Full' if str(r.sku_interno).upper().endswith('-FBL') else 'Almacén'} · {r.sku_interno} · R{r.regla[:1]}" for r in vis.itertuples()}
     c1, c2 = st.columns([3, 2])
     elegido = c1.selectbox("SKU", list(et), format_func=lambda i: et[i], key="bat_sku")
     horas = c2.radio("Ventana", [6, 24, 48, 168], index=1, horizontal=True, key="bat_h",
