@@ -1121,22 +1121,44 @@ def renovar_credenciales_postgresql(db, gc_client, id_cuenta, email_usuario, coo
 # ==========================================
 # MÓDULO DE CACERÍA DE OFERTAS
 # ==========================================
+def _oferta_es_de_sku(prod, sku_interno):
+    """True si algún valor de la oferta es exactamente el SKU interno (no depende del nombre del campo)."""
+    sku_i = str(sku_interno).strip()
+    try:
+        return any(str(v).strip() == sku_i for v in prod.values() if isinstance(v, (str, int)))
+    except Exception:
+        return False
+
 def cazar_oferta_especifica(token, sku_interno, sku_liverpool):
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     sku_l = str(sku_liverpool).strip()
+    sku_i = str(sku_interno).strip()
+    es_fbl = sku_i.upper().endswith("-FBL")
     urls = [
-        f"https://pro-api.liverpool.com.mx/api/offermanagement/offers?shop_id={SHOP_ID_INTERNO}&sku={urllib.parse.quote(str(sku_interno).strip())}",
+        f"https://pro-api.liverpool.com.mx/api/offermanagement/offers?shop_id={SHOP_ID_INTERNO}&sku={urllib.parse.quote(sku_i)}",
         f"https://pro-api.liverpool.com.mx/api/offermanagement/offers?shop_id={SHOP_ID_INTERNO}&product_id={sku_l}"
     ]
-    for url in urls:
+    for n_url, url in enumerate(urls):
         try:
             liverpool_rate_limiter.wait()
             res = crear_session_con_retry().get(url, headers=headers, timeout=30)
             if res.status_code == 200:
-                for prod in res.json().get("offers", []):
-                    if str(prod.get("product_sku", "")).strip() == sku_l:
-                        return prod
-        except: pass
+                candidatas = [o for o in res.json().get("offers", []) if str(o.get("product_sku", "")).strip() == sku_l]
+                if not candidatas:
+                    continue
+                exactas = [o for o in candidatas if _oferta_es_de_sku(o, sku_i)]
+                if exactas:
+                    return exactas[0]
+                # Sin coincidencia exacta de SKU interno:
+                #  - fila de Full (-FBL): NO tomar la oferta de otro listado (evita repreciar la oferta equivocada)
+                #  - resto: comportamiento de siempre (primera oferta del producto)
+                if es_fbl and n_url == 1:
+                    continue
+                if es_fbl and len(candidatas) > 1:
+                    continue
+                return candidatas[0]
+        except Exception:
+            pass
     return None
 
 
@@ -1228,7 +1250,6 @@ def buscar_en_plataforma_thread(nombre_plataforma: str, sku_id: str, product_id:
     elif nombre_plataforma == 'suburbia':
         product_id_final = product_id if product_id else sku_id
         url = f"https://www.suburbia.com.mx/tienda/mirakl/offerListing?productId={product_id_final}&skuId={sku_id}"
-        return {'plataforma': nombre_plataforma, 'exito': False, 'rivales': [], 'tiempo': 0}
     
     inicio = time.time()
     
@@ -1391,6 +1412,31 @@ def obtener_info_rivales(token, liverpool_sku, liverpool_product_id=None):
         )
         
         logger.info(f"📊 Status Code: {response.status_code}")
+        
+        # 🔁 Si el productId guardado en el catálogo da 404, reintenta con el propio SKU
+        # (caso HRHL 1196707260: productId 99995934468 = 404, productId = SKU = 200)
+        if response.status_code == 404 and str(product_id_final) != str(liverpool_sku):
+            url_alt = f"https://www.liverpool.com.mx/tienda/mirakl/offerListing?productId={liverpool_sku}&skuId={liverpool_sku}"
+            logger.warning(f"🔁 404 con productId {product_id_final}; reintentando con productId={liverpool_sku}")
+            response = requests.get(url_alt, headers=HEADERS_STEALTH, timeout=15, allow_redirects=True)
+            url_liverpool = url_alt
+            logger.info(f"📊 Status Code (reintento): {response.status_code}")
+        
+        # 🛍️ Si Liverpool no tiene la página (404), la publicación pudo migrar a Suburbia
+        if response.status_code == 404:
+            for _pid in dict.fromkeys([str(product_id_final), str(liverpool_sku)]):
+                url_sub = f"https://www.suburbia.com.mx/tienda/mirakl/offerListing?productId={_pid}&skuId={liverpool_sku}"
+                try:
+                    r_sub = requests.get(url_sub, headers=HEADERS_STEALTH, timeout=20, allow_redirects=True)
+                except Exception as e_sub:
+                    logger.warning(f"⚠️ Suburbia error ({_pid}): {e_sub}")
+                    continue
+                logger.info(f"🛍️ Suburbia productId={_pid} → HTTP {r_sub.status_code}")
+                if r_sub.status_code == 200 and "<table" in r_sub.text and len(r_sub.text) > 1000:
+                    response = r_sub
+                    url_liverpool = url_sub
+                    logger.info(f"✅ Publicación encontrada en SUBURBIA para {liverpool_sku}")
+                    break
         
         if response.status_code != 200:
             logger.error(f"❌ Respuesta no-200: {response.status_code}")
@@ -2097,11 +2143,77 @@ def _procesar_sku_core(token, sku_lp, regla, resultados, gc_client, hoja_config,
         logger.error(f"❌ Error en procesar_sku_threadsafe: {e}")
 
 
+# ==========================================
+# PARES FULL (-FBL) + ALMACÉN con el mismo SKU de Liverpool
+# 1) Se procesan primero las filas -FBL con su regla normal.
+# 2) Si Full tiene piezas, la oferta de almacén se pone a precio_Full + PAR_PRIMA_ALMACEN
+#    (queda de respaldo y Full vende primero), respetando su mínimo y máximo.
+# 3) Si Full está agotado u oculto, la de almacén reprecia con su propia regla.
+# PAR_PRIMA_ALMACEN=0 o PARES_FULL_ALMACEN=0 apagan esta lógica.
+# ==========================================
+PARES_FULL_ALMACEN = (os.getenv("PARES_FULL_ALMACEN") or "1").strip() != "0"
+try:
+    PAR_PRIMA_ALMACEN = float(os.getenv("PAR_PRIMA_ALMACEN") or "0.01")
+except ValueError:
+    PAR_PRIMA_ALMACEN = 0.01
+PARES_FULL = {}
+_PARES_LOCK = threading.Lock()
+
+def _es_fbl(regla):
+    return str(regla.get('sku_interno') or '').strip().upper().endswith("-FBL")
+
+def _procesar_hermano_almacen(token, sku_lp, regla, resultados, id_cuenta, par):
+    """Oferta de almacén cuyo hermano de Full tiene piezas: queda un centavo arriba de Full."""
+    sku_i = str(regla.get('sku_interno') or 'Sin SKU')
+    hora = (datetime.now() - timedelta(hours=6)).strftime("%Y-%m-%d %H:%M:%S")
+    prod = cazar_oferta_especifica(token, sku_i, sku_lp)
+    if not prod or str(prod.get("state_code", "")).upper() != "ACTIVE":
+        resultados.agregar_historial([hora, sku_i, str(sku_lp), "Oculto/Agotado", 0, 0, "N/A", "N/A", id_cuenta])
+        return
+    cantidad = int(prod.get("quantity") or 0)
+    base_price = float(prod.get("basePrice", 0))
+    precio_actual = float(prod.get("discountPrice") or base_price)
+    if cantidad == 0:
+        resultados.agregar_historial([hora, sku_i, str(sku_lp), "Agotado", precio_actual, 0, "N/A", "N/A", id_cuenta])
+        return
+    pmin = safe_float(regla.get('precio_minimo', 0))
+    pmax = safe_float(regla.get('precio_maximo', base_price) or base_price)
+    objetivo = round(float(par["precio"]) + PAR_PRIMA_ALMACEN, 2)
+    if pmin and objetivo < pmin:
+        objetivo = pmin
+    if pmax and objetivo > pmax:
+        objetivo = pmax
+    logger.info(f"🤝 [{id_cuenta}] {sku_i} (almacén) sigue a Full: Full=${par['precio']:.2f} → almacén=${objetivo:.2f} (actual ${precio_actual:.2f})")
+    enviado = precio_actual
+    if abs(precio_actual - objetivo) >= 0.005:
+        if disparar_precio(token, prod.get("offerId"), cantidad, base_price, objetivo, sku_i):
+            enviado = objetivo
+    resultados.agregar_historial([hora, sku_i, str(sku_lp), f"{par['precio']:.2f}", enviado, cantidad, "Respaldo de Full", "Respaldo de Full", id_cuenta])
+
 def procesar_sku_threadsafe(token, sku_lp, regla, resultados, gc_client, hoja_config, session, id_cuenta):
     """Envoltura: corre la lógica del SKU y después anota la bitácora del evento (sin tocar la lógica)."""
     _CTX.info = None
     _CTX.put = None
+    if PARES_FULL_ALMACEN and not _es_fbl(regla):
+        with _PARES_LOCK:
+            par = PARES_FULL.get((str(id_cuenta), str(sku_lp)))
+        if par and par.get("stock", 0) > 0:
+            try:
+                _procesar_hermano_almacen(token, sku_lp, regla, resultados, id_cuenta, par)
+            except Exception as e:
+                logger.error(f"❌ Error en par almacén {regla.get('sku_interno')}: {e}")
+            return
     _procesar_sku_core(token, sku_lp, regla, resultados, gc_client, hoja_config, session, id_cuenta)
+    if PARES_FULL_ALMACEN and _es_fbl(regla):
+        try:
+            info_f = getattr(_CTX, "info", None)
+            if info_f and info_f.get("stock", 0) > 0:
+                put_f = getattr(_CTX, "put", None)
+                precio_f = put_f["precio"] if (put_f and put_f.get("ok")) else info_f["precio_api"]
+                with _PARES_LOCK:
+                    PARES_FULL[(str(id_cuenta), str(sku_lp))] = {"precio": float(precio_f), "stock": int(info_f["stock"])}
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudo registrar el par Full: {e}")
     if not BITACORA_EVENTO:
         return
     try:
@@ -2330,7 +2442,7 @@ def ejecutar_bot():
         for row in catalogo_completo:
             fila_dict = dict(zip(columnas_cat, row))
             if fila_dict['id_cuenta'] == id_cuenta:
-                reglas_cuenta[fila_dict['sku_liverpool']] = fila_dict
+                reglas_cuenta[fila_dict['id']] = fila_dict   # una entrada por fila del catálogo (Full y almacén comparten sku_liverpool)
 
         if not reglas_cuenta:
             continue
@@ -2409,12 +2521,19 @@ def ejecutar_bot():
                     continue
             
         total_skus_procesados += len(reglas_cuenta)
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            futures = {executor.submit(procesar_sku_threadsafe, token_cuenta, sku_lp, regla, resultados, gc_connection, None, sesion_compartida, id_cuenta): sku_lp for sku_lp, regla in reglas_cuenta.items()}
-            completados = 0
-            for future in as_completed(futures):
-                completados += 1
-                if completados % 10 == 0: logger.info(f"⏳ [{id_cuenta}] Progreso: {completados}/{len(reglas_cuenta)} SKUs")
+        # Fase 1: filas de Full (-FBL); Fase 2: el resto (las de almacén dependen del precio de su hermano Full)
+        filas_fbl = [r for r in reglas_cuenta.values() if _es_fbl(r)]
+        filas_resto = [r for r in reglas_cuenta.values() if not _es_fbl(r)]
+        completados = 0
+        for fase, filas in (("Full", filas_fbl), ("resto", filas_resto)):
+            if not filas:
+                continue
+            logger.info(f"▶️ [{id_cuenta}] Fase {fase}: {len(filas)} filas")
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                futures = {executor.submit(procesar_sku_threadsafe, token_cuenta, regla['sku_liverpool'], regla, resultados, gc_connection, None, sesion_compartida, id_cuenta): regla['sku_liverpool'] for regla in filas}
+                for future in as_completed(futures):
+                    completados += 1
+                    if completados % 10 == 0: logger.info(f"⏳ [{id_cuenta}] Progreso: {completados}/{len(reglas_cuenta)} SKUs")
 
     historial_rows, archivo_negro_rows, alertas = resultados.obtener_todos()
     for alerta in alertas: enviar_alerta_telegram(alerta)
