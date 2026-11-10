@@ -84,7 +84,7 @@ def _tabla_perdiendo(db, df):
         esc = escenario_baja(r.nuestro_precio, r.precio_rival, r.precio_minimo, max_baja)
         neto, gan, mar = economia(esc["precio"], r.costo_odoo)
         filas.append({
-            "SKU": r.sku_limpio, "SKU Liverpool": str(r.sku_liverpool or ""), "Producto": describir(r.sku_limpio, nombres)["titulo"] if nombres else "—",
+            "SKU": r.sku_limpio, "SKU Liverpool": str(r.sku_liverpool or ""), "Canal": ("Full" if str(r.sku_interno).upper().endswith("-FBL") else "Almacén"), "Producto": describir(r.sku_limpio, nombres)["titulo"] if nombres else "—",
             "Piezas": r.piezas, "Mi precio": r.nuestro_precio, "BuyBox rival": r.precio_rival,
             "Peor caso (BuyBox − tope)": esc["precio"], "Baja vs mi precio": esc["baja"],
             "¿Bot puede ganar ya?": "✅ Sí" if esc["puede_ahora"] else "❌ Mínimo lo impide",
