@@ -1,6 +1,8 @@
 # Centro de Mando: estado general y "qué necesita atención hoy".
 import os
-from datetime import datetime, timezone
+import re
+import unicodedata
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -123,6 +125,69 @@ def _boton_medir_stock(db, tabla):
         st.caption("Ya enviaste una corrida hace menos de 10 min; espera a que termine.")
 
 
+def _norm(t) -> str:
+    """minúsculas y sin acentos, para buscar sin fijarse en mayúsculas ni tildes."""
+    t = unicodedata.normalize("NFKD", str(t if t is not None else ""))
+    return "".join(c for c in t if not unicodedata.combining(c)).lower()
+
+
+def _parsear_vencimiento(txt: str):
+    """'2026-12-10 18:00:00 UTC' o '... -0600' -> datetime UTC (o None)."""
+    m = re.search(r"(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})\s*(UTC|Z|[+-]\d{4})?", txt or "")
+    if not m:
+        return None
+    dt = datetime.strptime(f"{m.group(1)} {m.group(2)}", "%Y-%m-%d %H:%M:%S")
+    z = m.group(3)
+    if z and z not in ("UTC", "Z"):
+        sig = 1 if z[0] == "+" else -1
+        dt = dt - sig * timedelta(hours=int(z[1:3]), minutes=int(z[3:5]))
+    return dt.replace(tzinfo=timezone.utc)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _vencimiento_token(_token: str, repo: str):
+    """Pregunta a GitHub cuándo vence el token (cabecera que GitHub manda en cada respuesta).
+    Devuelve (estado, vence_utc): estado = ok | sin_fecha | invalido | error."""
+    try:
+        r = requests.get(f"https://api.github.com/repos/{repo}",
+                         headers={"Authorization": f"Bearer {_token}", "Accept": "application/vnd.github+json"}, timeout=15)
+    except Exception:
+        return "error", None
+    if r.status_code in (401, 403):
+        return "invalido", None
+    if r.status_code != 200:
+        return "error", None
+    venc = _parsear_vencimiento(r.headers.get("github-authentication-token-expiration", ""))
+    return ("ok", venc) if venc else ("sin_fecha", None)
+
+
+def _chip_token():
+    """Etiqueta con el tiempo que le queda al token con el que el botón dispara la medición de stock."""
+    token = os.getenv("GITHUB_TOKEN")
+    repo = os.getenv("GITHUB_REPO", "FernandoWABU/megazord-wabu-core")
+    if not token:
+        st.markdown(estilo.chip("🔑 Token de medición de stock: no configurado", "info"), unsafe_allow_html=True)
+        return
+    estado, venc = _vencimiento_token(token, repo)
+    if estado == "invalido":
+        txt, tono = "🔑 Token de medición de stock: INVÁLIDO o vencido, crea uno nuevo", "bad"
+    elif estado == "ok":
+        dias = (venc - datetime.now(timezone.utc)).total_seconds() / 86400
+        fecha = venc.astimezone(CDMX).strftime("%d/%m/%Y")
+        if dias <= 0:
+            txt, tono = f"🔑 Token de medición de stock: VENCIDO el {fecha}", "bad"
+        elif dias < 1:
+            txt, tono = f"🔑 Token de medición de stock: vence en {int(dias * 24)} h ({fecha})", "bad"
+        else:
+            txt = f"🔑 Token de medición de stock: vence en {int(dias)} {'día' if int(dias) == 1 else 'días'} ({fecha})"
+            tono = "bad" if dias <= 3 else ("warn" if dias <= 14 else "ok")
+    elif estado == "sin_fecha":
+        txt, tono = "🔑 Token de medición de stock: activo (sin fecha de vencimiento)", "ok"
+    else:
+        txt, tono = "🔑 Token de medición de stock: no se pudo consultar a GitHub", "info"
+    st.markdown(estilo.chip(txt, tono), unsafe_allow_html=True)
+
+
 def _humano(minutos: float) -> str:
     if minutos is None or pd.isna(minutos):
         return "—"
@@ -177,11 +242,28 @@ def _tabla_perdiendo(db, df):
             "Total a recibir": round(neto * r.piezas, 2) if neto is not None else None,
             "Utilidad / pérdida total": round(gan * r.piezas, 2) if gan is not None else None,
             "Mínimo": r.precio_minimo, "_id": int(r.id), "_regla": r.regla, "_max": r.precio_maximo,
-            "_esc": esc, "_costo": r.costo_odoo, "_medido_en": medido_en,
+            "_esc": esc, "_costo": r.costo_odoo, "_medido_en": medido_en, "_sku_interno": str(r.sku_interno or ""),
         })
     tabla = pd.DataFrame(filas).sort_values("Utilidad / pérdida total", ascending=False, na_position="last").reset_index(drop=True)
 
-    st.markdown(estilo.chip(f"{len(tabla)} perdiendo BuyBox", "bad"), unsafe_allow_html=True)
+    tabla_total = tabla
+    q = st.text_input("🔎 Buscar en esta tabla", key="cm_buscar", placeholder="SKU limpio, SKU sucio, SKU Liverpool o nombre (varias palabras = todas deben aparecer)",
+                      help="Busca sin importar mayúsculas ni acentos en: SKU limpio, SKU sucio (SKU interno, p. ej. con -FBL), SKU Liverpool (de la oferta) y nombre del producto.")
+    terminos = [_norm(t) for t in (q or "").split() if t.strip()]
+    if terminos:
+        pajar = (tabla["SKU"].map(_norm) + " " + tabla["_sku_interno"].map(_norm) + " " +
+                 tabla["SKU Liverpool"].map(_norm) + " " + tabla["Producto"].map(_norm))
+        mask = pajar.map(lambda t: all(x in t for x in terminos))
+        tabla = tabla[mask].reset_index(drop=True)
+        if tabla.empty:
+            st.markdown(estilo.chip(f"Sin resultados para «{q}» ({len(tabla_total)} SKUs perdiendo BuyBox en total)", "info"), unsafe_allow_html=True)
+            _boton_medir_stock(db, tabla_total)
+            return
+
+    if terminos:
+        st.markdown(estilo.chip(f"{len(tabla)} de {len(tabla_total)} perdiendo BuyBox (filtrado)", "bad"), unsafe_allow_html=True)
+    else:
+        st.markdown(estilo.chip(f"{len(tabla)} perdiendo BuyBox", "bad"), unsafe_allow_html=True)
     pesos = lambda t: st.column_config.NumberColumn(t, format="dollar")
     visible = tabla.drop(columns=[c for c in tabla.columns if c.startswith("_")])
     sel = st.dataframe(
@@ -205,7 +287,7 @@ def _tabla_perdiendo(db, df):
                         "Utilidad con la fórmula del bot (comisión 17%, envío $130, retenciones). "
                         "Selecciona una fila para evaluar."))
 
-    _boton_medir_stock(db, tabla)
+    _boton_medir_stock(db, tabla_total)
 
     filas_sel = sel.selection.rows if sel and sel.selection else []
     if filas_sel:
@@ -307,6 +389,7 @@ def render():
 
     # ---------------- atención
     estilo.titulo("⚠️ Requiere atención")
+    _chip_token()
     _tabla_perdiendo(db, df)
 
     problemas = []
