@@ -21,6 +21,7 @@ on:
 jobs:
   ejecutar_barrido:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: 📥 Descargar Código Base
         uses: actions/checkout@v3
@@ -34,16 +35,23 @@ jobs:
           python-version: '3.10'
           cache: 'pip'
 
-      - name: ⚙️ Instalar Arsenal (Dependencias)
+      - name: ⚙️ Instalar Arsenal (Dependencias Python)
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-megazord.txt
+
+      # El navegador solo se usa para el login de respaldo; el barrido normal lee el token de la BD.
+      # Si los servidores de Ubuntu fallan (DNS), NO se debe tumbar el barrido: no fatal y con tope de tiempo.
+      - name: 🌐 Instalar navegador (opcional)
+        continue-on-error: true
+        timeout-minutes: 3
+        run: |
           python -m playwright install chromium
           python -m playwright install-deps chromium
 
       - name: 🟣 Desplegar Megazord Liverpool
         # Se ejecuta SI le das al botón manual O SI el reloj que lo despertó fue el de 15,35,55
-        if: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.tienda == 'liverpool' || github.event.inputs.tienda == 'ambas')) || github.event.schedule == '15,35,55 * * * *' }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.tienda == 'liverpool' || github.event.inputs.tienda == 'ambas')) || github.event.schedule == '7,19,31,43,55 * * * *' }}
         env:
           SHOP_ID_INTERNO: ${{ secrets.SHOP_ID_INTERNO }}
           SHOP_ID_PUBLICO: ${{ secrets.SHOP_ID_PUBLICO }}
