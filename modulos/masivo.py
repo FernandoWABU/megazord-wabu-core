@@ -670,12 +670,14 @@ def _tab_altas(db, base, reglas, usuario):
                 return
             st.caption(f"{len(df)} filas leídas · columnas: {', '.join(map(str, df.columns))}")
     else:
-        st.caption("Pega desde Excel directo en la tabla (Ctrl+V) con estas columnas, o escribe fila por fila.")
+        st.caption("Pega desde Excel directo en la tabla (Ctrl+V) con estas columnas, o escribe fila por fila. El Product ID es opcional.")
         vacio = pd.DataFrame({"sku_interno": pd.Series([""] * 5, dtype="object"), "sku_liverpool": pd.Series([""] * 5, dtype="object"),
-                              "sku_limpio": pd.Series([""] * 5, dtype="object"), "precio_minimo": pd.Series([None] * 5, dtype="float64"),
+                              "sku_limpio": pd.Series([""] * 5, dtype="object"),
+                              "sku_liverpool_product_id": pd.Series([""] * 5, dtype="object"), "precio_minimo": pd.Series([None] * 5, dtype="float64"),
                               "precio_maximo": pd.Series([None] * 5, dtype="float64"), "crear_full": pd.Series([False] * 5, dtype="bool")})
         df = st.data_editor(vacio, num_rows="dynamic", hide_index=True, width="stretch", key="ms_a_grid",
-                            column_config={"precio_minimo": st.column_config.NumberColumn("Mínimo", format="dollar", min_value=0.0),
+                            column_config={"sku_liverpool_product_id": st.column_config.TextColumn("Product ID (opcional)", help="Solo si es distinto al SKU Liverpool. Déjalo vacío si no aplica."),
+                                           "precio_minimo": st.column_config.NumberColumn("Mínimo", format="dollar", min_value=0.0),
                                            "precio_maximo": st.column_config.NumberColumn("Máximo", format="dollar", min_value=0.0),
                                            "crear_full": st.column_config.CheckboxColumn("¿Par Full?")})
     if df is None or df.empty:
