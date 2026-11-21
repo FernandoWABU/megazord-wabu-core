@@ -596,6 +596,10 @@ def _insertar_altas(db, registros: list, usuario: str):
         return False, "Sin conexión a la base de datos"
     try:
         with db.engine.begin() as conn:
+            # El contador de ids (serial) puede quedar atrasado si hubo cargas directas desde DBeaver:
+            # lo alineamos con el id más alto antes de insertar.
+            conn.execute(text("SELECT setval(pg_get_serial_sequence('catalogo_maestro_v3','id'), "
+                              "GREATEST((SELECT COALESCE(MAX(id),0) FROM catalogo_maestro_v3), 1))"))
             for r in registros:
                 dup = conn.execute(text("SELECT 1 FROM catalogo_maestro_v3 WHERE id_cuenta = :c AND UPPER(sku_interno) = UPPER(:s) LIMIT 1"),
                                    {"c": r["id_cuenta"], "s": r["sku_interno"]}).first()
